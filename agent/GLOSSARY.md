@@ -67,7 +67,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Live test**: a test that drives the real Aseprite and a real agent (`agent/tests/*_live.mjs`, run by `run_live.mjs`). The summary splits **tool** results (evals, deterministic) from **agent** results; hard checks prove the skill ran and its result is sound, **soft checks** (`soft()`) score the model's choices (names, thresholds, timing) and never fail the run.
 
-**Lua-tests stamp**: a hash of the extension and `protocol.json`, written by a full passing `run_lua_tests.sh` (`agent/tests/.lua-tests-passed`); `npm test` warns when the extension changed since, and fails with `ASEPRITE_AGENT_REQUIRE_LUA=1` (the pre-push hook, `agent/tools/pre-push.sh`). Generated files are rebuilt by `npm run gen` and checked by `npm run gen:check`.
+**Lua-tests stamp**: a hash of the extension and `protocol.json`, written by a full passing `run_lua_tests.sh` (a gitignored file in `agent/tests`); `npm test` warns when the extension changed since, and fails with `ASEPRITE_AGENT_REQUIRE_LUA=1` (the pre-push hook, `agent/tools/pre-push.sh`). Generated files are rebuilt by `npm run gen` and checked by `npm run gen:check`.
 
 **Saved Command**: Lua the agent wrote and saved with `save_command`, kept in `~/.aseprite-agent/commands` (`commands.json` plus `<name>.lua`, a git repository with a commit per change). It runs as one undo step with an `args` table, from **My Commands** in the menu, from `/name args` in the chat (no agent turn), or through `run_saved_command` (`agent/bridge/src/saved_commands.ts`, `agent/extension/saved_commands.lua`).
 
