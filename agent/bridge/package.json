@@ -1,6 +1,6 @@
 {
   "name": "aseprite-agent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server that lets Claude Code or Codex control Aseprite.",
   "license": "MIT",
   "type": "module",

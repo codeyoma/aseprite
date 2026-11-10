@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
-import { newToken, removeSession, writeSession } from "./session.js";
+import { keepSessionPublished, newToken, removeSession, writeSession, type Session } from "./session.js";
 
 const HELLO_TIMEOUT_MS = 5_000;
 
@@ -39,6 +39,7 @@ export class AsepriteLink extends EventEmitter {
   private pending = new Map<number, Pending>();
   private awaitingBinary?: { id: number; result: any };
   private readonly token = newToken();
+  private republishTimer?: NodeJS.Timeout;
   asepriteVersion?: string;
 
   get connected(): boolean {
@@ -64,11 +65,14 @@ export class AsepriteLink extends EventEmitter {
     const actualPort = (this.wss.address() as AddressInfo).port;
     this.wss.on("connection", (socket) => this.onConnection(socket));
 
-    writeSession({ port: actualPort, token: this.token, pid: process.pid, startedAt: new Date().toISOString() });
+    const session: Session = { port: actualPort, token: this.token, pid: process.pid, startedAt: new Date().toISOString() };
+    writeSession(session);
+    this.republishTimer = keepSessionPublished(session);
     return actualPort;
   }
 
   stop(): void {
+    if (this.republishTimer) clearInterval(this.republishTimer);
     removeSession(process.pid);
     this.client?.close();
     this.wss?.close();

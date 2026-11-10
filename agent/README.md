@@ -62,9 +62,16 @@ agent/extension/  (Aseprite Lua extension)
 | Tool | What it does |
 |---|---|
 | `get_state` | Open sprites; layers, frames, tags, palette, selection, active tool and colors |
+| `get_context` | What the user selected: active layer/frame/cel, timeline range, pixel selection, tool and brush |
 | `execute_lua` | Runs Lua in Aseprite as one undo step; rolls back on error |
+| `run_command` | Runs any of Aseprite's 183 built-in commands with parameters (dialogs skipped by default) |
+| `list_commands` | Finds commands and their parameters, generated from this fork's source |
 | `snapshot` | PNG of the sprite or a layer, upscaled so pixels are visible |
+| `read_pixels` | A region as a text grid with a color legend |
+| `read_guide` | Agent guide: `basics`, `recipes`, `pixel-art` (in [guide/](guide/)) |
 | `undo` / `redo` | Steps back and forward through the history |
+
+Several agent sessions can run at once. The newest bridge takes over Aseprite; when it exits, the previous one takes it back.
 
 ## Security
 

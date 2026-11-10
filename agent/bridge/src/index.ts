@@ -1,19 +1,49 @@
 #!/usr/bin/env node
 // aseprite-agent bridge: MCP server (stdio) <-> Aseprite extension (WebSocket).
 
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
 import { AsepriteLink, log } from "./aseprite.js";
 import { encodeSnapshot } from "./png.js";
+import commandCatalog from "./commands.json" with { type: "json" };
+
+interface CommandParam {
+  name: string;
+  type: string;
+  default?: string;
+  values?: string[];
+  aliases?: string[];
+}
+interface CommandInfo {
+  name: string;
+  title: string;
+  params: CommandParam[];
+}
+const COMMANDS = commandCatalog as CommandInfo[];
+const COMMANDS_BY_NAME = new Map(COMMANDS.map((c) => [c.name.toLowerCase(), c]));
+
+// Guide markdown lives in agent/guide, next to the bridge package.
+const GUIDE_DIR = fileURLToPath(new URL("../../guide/", import.meta.url));
+function guideTopics(): string[] {
+  try {
+    return readdirSync(GUIDE_DIR).filter((f) => f.endsWith(".md")).map((f) => f.slice(0, -3)).sort();
+  } catch {
+    return [];
+  }
+}
 
 const INSTRUCTIONS = `
 You control a running Aseprite (pixel-art and animation editor) through these tools.
 
 Workflow:
-1. Call get_state first to see the open sprite, layers, frames, tags and palette.
-2. Make changes with execute_lua. Each call is one undo step and rolls back on error.
-3. Call snapshot after visual changes and check the result before continuing.
+1. Before your first edit in a session, call read_guide("basics"). Use read_guide("recipes") for tested
+   snippets (pixelate, retime, idle animation, outline, sprite sheet export) and read_guide("pixel-art") when drawing.
+2. Call get_state to see the document and get_context to see what the user has selected.
+3. Make changes with execute_lua or run_command. Each execute_lua call is one undo step and rolls back on error.
+4. Call snapshot after visual changes and check the result. Use read_pixels for exact pixel work.
 
 Aseprite Lua essentials:
 - Globals: app, Sprite, Image, Color, Point, Rectangle, Size, Palette, ColorMode, json.
@@ -21,9 +51,11 @@ Aseprite Lua essentials:
 - Frames and layer stack indices are 1-based. sprite.layers is bottom to top.
 - A cel is the image of one layer in one frame: layer:cel(frame) or sprite:newCel(layer, frame, image, Point(x, y)).
 - cel.image is positioned at cel.position; edit a copy and assign it back, or draw with image:drawPixel(x, y, color).
-- Any menu command: app.command.CommandName{ param = value, ui = false }.
-  Examples: CanvasSize, SpriteSize, ChangePixelFormat{format="indexed"}, ColorQuantization, NewFrame, NewFrameTag,
-  ReverseFrames, Outline, Flip, Rotate, ExportSpriteSheet, Timeline, PaletteEditor, ShowGrid, ShowOnionSkin.
+- Edit cel images undoably: img = cel.image:clone(); edit img; cel.image = img. Direct drawPixel on cel.image is not undoable.
+- Cel images are trimmed: cel.position is their top-left in sprite coordinates.
+- Color("#ff0000") does not parse hex; use Color(255, 0, 0).
+- Any menu command: run_command (discover names and parameters with list_commands), or in Lua
+  app.command.CommandName{ param = value, ui = false }.
 - Tools: app.tool = "pencil"; app.useTool{ tool="pencil", color=Color(255,0,0), points={Point(0,0), Point(4,4)} }.
 - Frame duration is in seconds: sprite.frames[i].duration = 0.1.
 - Pass ui=false to commands so no modal dialog blocks the agent.
@@ -32,7 +64,7 @@ Aseprite Lua essentials:
 const link = new AsepriteLink();
 
 const server = new McpServer(
-  { name: "aseprite-agent", version: "0.1.0" },
+  { name: "aseprite-agent", version: "0.2.0" },
   { instructions: INSTRUCTIONS },
 );
 
@@ -139,6 +171,153 @@ server.registerTool(
     } catch (err) {
       return failure(err);
     }
+  },
+);
+
+server.registerTool(
+  "get_context",
+  {
+    title: "Get user context",
+    description:
+      "Return what the user is working on: active layer (with group path), frame, tag and cel bounds; the timeline " +
+      "range (selected layers/frames/cels); the pixel selection; the current tool, brush, colors and zoom. " +
+      "Use it to resolve requests like 'this layer', 'the selected frames' or 'the selected area'.",
+    inputSchema: z.object({}),
+  },
+  async () => {
+    try {
+      const { result } = await link.request("get_context");
+      return { content: [text(result)] };
+    } catch (err) {
+      return failure(err);
+    }
+  },
+);
+
+server.registerTool(
+  "read_pixels",
+  {
+    title: "Read pixels",
+    description:
+      "Read a region of the sprite (or one layer) as a text grid, at most 16384 pixels per call. In indexed sprites " +
+      "each pixel is its palette index; in RGB sprites each color gets a short key. A legend maps keys to hex. " +
+      "'.' is transparent and '-' is outside the canvas. Rows run top to bottom starting at y.",
+    inputSchema: z.object({
+      x: z.number().int().optional().describe("Left edge in sprite pixels. Default 0."),
+      y: z.number().int().optional().describe("Top edge in sprite pixels. Default 0."),
+      width: z.number().int().min(1).optional().describe("Default: to the right edge."),
+      height: z.number().int().min(1).optional().describe("Default: to the bottom edge."),
+      layer: z.string().optional().describe("Read only this layer. Default: all visible layers composited."),
+      frame: z.number().int().min(1).optional().describe("1-based frame. Default: active frame."),
+    }),
+  },
+  async (args) => {
+    try {
+      const { result } = await link.request("read_pixels", args);
+      const legend = Object.entries(result.legend ?? {})
+        .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+        .map(([k, v]) => `${k}=${v}`)
+        .join("  ");
+      const width = String(result.y + result.rows.length - 1).length;
+      const rows = (result.rows as string[]).map((r, i) => `${String(result.y + i).padStart(width)}| ${r}`);
+      const header =
+        `Region x=${result.x} y=${result.y} ${result.width}x${result.height}, frame ${result.frame}` +
+        (result.layer ? `, layer "${result.layer}"` : "") +
+        `. Keys: ${result.keys}. '.'=transparent '-'=outside canvas.`;
+      return { content: [text([header, `Legend: ${legend || "(none)"}`, ...rows].join("\n"))] };
+    } catch (err) {
+      return failure(err);
+    }
+  },
+);
+
+server.registerTool(
+  "list_commands",
+  {
+    title: "List Aseprite commands",
+    description:
+      "List Aseprite's built-in commands (menus, dialogs, filters, panels) with their parameters and accepted " +
+      "values. Filter by a substring of the name or title, e.g. 'size', 'frame', 'palette', 'export'.",
+    inputSchema: z.object({
+      filter: z.string().optional().describe("Case-insensitive substring of the command name or menu title."),
+    }),
+  },
+  async ({ filter }) => {
+    const f = filter?.toLowerCase();
+    const matches = COMMANDS.filter(
+      (c) => !f || c.name.toLowerCase().includes(f) || c.title.toLowerCase().includes(f),
+    );
+    const lines = matches.map((c) => {
+      const params = c.params
+        .filter((p) => p.name !== "ui" && !p.name.startsWith("_"))
+        .map((p) => {
+          let s = `${p.name}: ${p.type}`;
+          if (p.values) s += ` (${p.values.join("|")})`;
+          if (p.default) s += ` = ${p.default}`;
+          return s;
+        });
+      return `${c.name} — ${c.title || "(no title)"}${params.length ? `\n    ${params.join("\n    ")}` : ""}`;
+    });
+    const note =
+      "Parameters are read from Aseprite's source; a command may accept more. Commands with no listed parameters " +
+      "act on the active sprite/layer/frame. ui=false is added automatically by run_command.";
+    return { content: [text(`${matches.length} of ${COMMANDS.length} commands.\n${note}\n\n${lines.join("\n")}`)] };
+  },
+);
+
+server.registerTool(
+  "run_command",
+  {
+    title: "Run Aseprite command",
+    description:
+      "Run one of Aseprite's built-in commands by name (see list_commands), with parameters. Acts on the active " +
+      "sprite, layer and frame. Colors may be given as '#rrggbb' strings; rectangles as {x, y, width, height}. " +
+      "Pass ui: true only when the user should interact with the dialog. UI commands like Timeline, PaletteEditor, " +
+      "ShowGrid or PlayAnimation work too.",
+    inputSchema: z.object({
+      name: z.string().describe("Command name, e.g. 'CanvasSize', 'SpriteSize', 'ChangePixelFormat'."),
+      params: z.record(z.string(), z.unknown()).optional().describe("Command parameters."),
+    }),
+  },
+  async ({ name, params }) => {
+    const info = COMMANDS_BY_NAME.get(name.toLowerCase());
+    if (!info) {
+      const close = COMMANDS.filter((c) => c.name.toLowerCase().includes(name.toLowerCase().slice(0, 5)))
+        .slice(0, 8)
+        .map((c) => c.name);
+      return failure(`Unknown command: ${name}.${close.length ? ` Did you mean: ${close.join(", ")}?` : ""}`);
+    }
+    // Mark color-typed parameters so the extension builds Color objects.
+    const colorParams = new Set(info.params.filter((p) => p.type === "color").map((p) => p.name));
+    const converted: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(params ?? {})) {
+      converted[k] = colorParams.has(k) && typeof v === "string" ? { __color: v } : v;
+    }
+    try {
+      const { result } = await link.request("run_command", { name: info.name, params: converted }, 120_000);
+      if (!result.executed) return { content: [text(result.note ?? "Command did not run")], isError: true };
+      return { content: [text(`${info.name} ran.`)] };
+    } catch (err) {
+      return failure(err);
+    }
+  },
+);
+
+server.registerTool(
+  "read_guide",
+  {
+    title: "Read the Aseprite agent guide",
+    description:
+      "Read a guide topic: 'basics' (API rules that prevent bugs; read before the first edit), 'recipes' (tested " +
+      "Lua snippets for common tasks), 'pixel-art' (style rules and working loop). Call with no topic to list topics.",
+    inputSchema: z.object({ topic: z.string().optional() }),
+  },
+  async ({ topic }) => {
+    const topics = guideTopics();
+    if (!topic) return { content: [text(`Topics: ${topics.join(", ")}`)] };
+    const key = topic.toLowerCase().replace(/\.md$/, "");
+    if (!topics.includes(key)) return failure(`Unknown topic: ${topic}. Topics: ${topics.join(", ")}`);
+    return { content: [text(readFileSync(`${GUIDE_DIR}${key}.md`, "utf8"))] };
   },
 );
 

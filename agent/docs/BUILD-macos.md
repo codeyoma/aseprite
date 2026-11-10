@@ -51,6 +51,22 @@ ASEPRITE_AGENT_TEST=1 build/bin/aseprite -b \
   --script agent/tests/batch_test.lua
 ```
 
+Guide recipes, in batch mode (runs every `-- recipe:` block in `agent/guide/recipes.md`):
+
+```bash
+ASEPRITE_AGENT_TEST=1 build/bin/aseprite -b \
+  --script-param ext="$PWD/agent/extension" \
+  --script-param guide="$PWD/agent/guide" \
+  --script-param tmp="$(mktemp -d)" \
+  --script agent/tests/recipes_test.lua
+```
+
+Regenerate the command catalog after updating from upstream:
+
+```bash
+python3 agent/tools/gen_commands.py
+```
+
 End to end, with Aseprite open:
 
 ```bash

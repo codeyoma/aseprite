@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -31,4 +31,17 @@ export function removeSession(pid: number): void {
   } catch {
     // Already gone or unreadable: nothing to clean up.
   }
+}
+
+/**
+ * Several bridges can run at once (one per agent session). The newest one
+ * owns the session file. When it exits and removes the file, re-publish
+ * ours so Aseprite reconnects to a bridge that is still alive.
+ */
+export function keepSessionPublished(session: Session, intervalMs = 2000): NodeJS.Timeout {
+  const timer = setInterval(() => {
+    if (!existsSync(sessionFile)) writeSession(session);
+  }, intervalMs);
+  timer.unref();
+  return timer;
 }

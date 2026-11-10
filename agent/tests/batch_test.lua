@@ -95,4 +95,46 @@ A.executeLua{ code = [[ app.sprite:newLayer() ]] }
 A.handlers.undo{ steps = 1 }
 check("undo", #app.sprite.layers == layersNow, #app.sprite.layers)
 
+-- M2: run_command, get_context, read_pixels
+do
+  local spr = Sprite(8, 4)
+  app.sprite = spr
+  local img = Image(8, 4)
+  img:drawPixel(1, 0, Color(255, 0, 0))
+  img:drawPixel(2, 0, Color(0, 255, 0))
+  img:drawPixel(1, 1, Color(255, 0, 0))
+  spr:newCel(spr.layers[1], 1, img, Point(0, 0))
+
+  local res = A.handlers.run_command{ name = "CanvasSize", params = { right = 4, bottom = 2 } }
+  check("run_command CanvasSize", res.executed and spr.width == 12 and spr.height == 6, spr.width .. "x" .. spr.height)
+
+  res = A.handlers.run_command{ name = "SpriteSize", params = { width = 24, height = 12, method = "nearest" } }
+  check("run_command SpriteSize", res.executed and spr.width == 24, spr.width)
+  A.handlers.undo{ steps = 2 }
+  check("undo commands", spr.width == 8, spr.width)
+
+  check("run_command unknown", not pcall(A.handlers.run_command, { name = "NoSuchCommand" }))
+
+  res = A.handlers.run_command{ name = "ReplaceColor", params = { from = { __color = "#ff0000" }, to = { __color = "#0000ff" }, tolerance = 0 } }
+  local cel = spr.layers[1]:cel(1)
+  -- Filters trim the cel, so read relative to cel.position.
+  local px = cel.image:getPixel(1 - cel.position.x, 0 - cel.position.y)
+  check("run_command color param", res.executed and app.pixelColor.rgbaB(px) == 255 and app.pixelColor.rgbaR(px) == 0, res.note)
+  A.handlers.undo{ steps = 1 }
+
+  local ctx = A.handlers.get_context()
+  check("get_context", ctx.sprite and ctx.sprite.width == 8 and ctx.layer and ctx.frame == 1 and ctx.cel ~= nil, json.encode(ctx))
+  check("get_context json", pcall(json.encode, ctx))
+
+  local px = A.handlers.read_pixels{ x = 0, y = 0, width = 4, height = 2 }
+  check("read_pixels rows", #px.rows == 2 and px.rows[1] == ". 0 1 ." and px.rows[2] == ". 0 . .", px.rows[1] .. " / " .. px.rows[2])
+  check("read_pixels legend", px.legend["0"] == "#ff0000" and px.legend["1"] == "#00ff00", json.encode(px.legend))
+  check("read_pixels out of bounds", A.handlers.read_pixels{ x = 7, y = 0, width = 2, height = 1 }.rows[1] == ". -")
+  check("read_pixels too large", not pcall(A.handlers.read_pixels, { width = 200, height = 200 }))
+
+  A.executeLua{ code = [[ app.command.ChangePixelFormat{ format = "indexed", ui = false } ]] }
+  px = A.handlers.read_pixels{ x = 0, y = 0, width = 3, height = 1 }
+  check("read_pixels indexed keys", px.keys == "palette-index" and px.rows[1]:match("^%. %d+ %d+$") ~= nil, px.rows[1])
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

@@ -1,0 +1,2400 @@
+[
+ {
+  "name": "About",
+  "title": "About",
+  "params": []
+ },
+ {
+  "name": "AddColor",
+  "title": "Add \u2026 Color to Palette",
+  "params": [
+   {
+    "name": "color",
+    "type": "color",
+    "default": "app::Color::fromMask()"
+   },
+   {
+    "name": "source",
+    "type": "AddColorSource",
+    "default": "AddColorSource::Color"
+   }
+  ]
+ },
+ {
+  "name": "AdvancedMode",
+  "title": "Advanced Mode",
+  "params": []
+ },
+ {
+  "name": "Apply",
+  "title": "Apply",
+  "params": []
+ },
+ {
+  "name": "AutocropSprite",
+  "title": "Trim Sprite",
+  "params": [
+   {
+    "name": "height",
+    "type": "string"
+   },
+   {
+    "name": "width",
+    "type": "string"
+   },
+   {
+    "name": "x",
+    "type": "string"
+   },
+   {
+    "name": "y",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "BackgroundFromLayer",
+  "title": "Background from Layer",
+  "params": []
+ },
+ {
+  "name": "BrightnessContrast",
+  "title": "Adjust Brightness/Contrast",
+  "params": [
+   {
+    "name": "brightness",
+    "type": "number",
+    "default": "0.0"
+   },
+   {
+    "name": "channels",
+    "type": "filters::Target",
+    "default": "0"
+   },
+   {
+    "name": "contrast",
+    "type": "number",
+    "default": "0.0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "Cancel",
+  "title": "Cancel Current Operation",
+  "params": [
+   {
+    "name": "type",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "CanvasSize",
+  "title": "Canvas Size",
+  "params": [
+   {
+    "name": "bottom",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "bounds",
+    "type": "rectangle",
+    "default": "gfx::Rect(0, 0, 0, 0)"
+   },
+   {
+    "name": "left",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "right",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "top",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "trimOutside",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "CelOpacity",
+  "title": "Set Cel Opacity to \u2026 (\u2026%)",
+  "params": []
+ },
+ {
+  "name": "CelProperties",
+  "title": "Cel Properties",
+  "params": []
+ },
+ {
+  "name": "ChangeBrush",
+  "title": "Change Brush: \u2026",
+  "params": [
+   {
+    "name": "change",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "ChangeColor",
+  "title": "Change Color: \u2026",
+  "params": [
+   {
+    "name": "change",
+    "type": "string"
+   },
+   {
+    "name": "target",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "ChangePixelFormat",
+  "title": "Change Color Mode: \u2026",
+  "params": [
+   {
+    "name": "colorMode",
+    "type": "ColorMode",
+    "default": "ColorMode::RGB",
+    "values": [
+     "rgb",
+     "gray",
+     "grayscale",
+     "indexed"
+    ],
+    "aliases": [
+     "format"
+    ]
+   },
+   {
+    "name": "dithering",
+    "type": "render::DitheringAlgorithm",
+    "default": "render::DitheringAlgorithm::None",
+    "values": [
+     "ordered",
+     "old",
+     "error-diffusion"
+    ]
+   },
+   {
+    "name": "ditheringFactor",
+    "type": "number",
+    "default": "1.0"
+   },
+   {
+    "name": "ditheringMatrix",
+    "type": "string",
+    "default": "\"\""
+   },
+   {
+    "name": "fitCriteria",
+    "type": "doc::FitCriteria",
+    "default": "doc::FitCriteria::DEFAULT",
+    "values": [
+     "rgb",
+     "linearizedRGB",
+     "ciexyz",
+     "cielab"
+    ]
+   },
+   {
+    "name": "rgbmap",
+    "type": "doc::RgbMapAlgorithm",
+    "default": "RgbMapAlgorithm::DEFAULT",
+    "values": [
+     "octree",
+     "rgb5a3"
+    ]
+   },
+   {
+    "name": "toGray",
+    "type": "gen::ToGrayAlgorithm",
+    "default": "gen::ToGrayAlgorithm::DEFAULT",
+    "values": [
+     "luma",
+     "hsv",
+     "hsl"
+    ]
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "false"
+   }
+  ]
+ },
+ {
+  "name": "Clear",
+  "title": "Clear",
+  "params": []
+ },
+ {
+  "name": "ClearCel",
+  "title": "Clear Cel",
+  "params": []
+ },
+ {
+  "name": "ClearRecentFiles",
+  "title": "Clear Recent Files",
+  "params": []
+ },
+ {
+  "name": "CloseAllFiles",
+  "title": "Close All Files",
+  "params": []
+ },
+ {
+  "name": "CloseFile",
+  "title": "Close File",
+  "params": []
+ },
+ {
+  "name": "ColorCurve",
+  "title": "Color Curve",
+  "params": [
+   {
+    "name": "channels",
+    "type": "filters::Target",
+    "default": "0"
+   },
+   {
+    "name": "curve",
+    "type": "filters::ColorCurve",
+    "default": "filters::ColorCurve()"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "ColorQuantization",
+  "title": "Create Palette from Current Sprite (Color Quantization)",
+  "params": [
+   {
+    "name": "algorithm",
+    "type": "RgbMapAlgorithm",
+    "default": "RgbMapAlgorithm::DEFAULT",
+    "values": [
+     "octree",
+     "rgb5a3"
+    ]
+   },
+   {
+    "name": "maxColors",
+    "type": "integer",
+    "default": "256"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "useRange",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "withAlpha",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "ContiguousFill",
+  "title": "Switch Contiguous Fill",
+  "params": []
+ },
+ {
+  "name": "ConvertLayer",
+  "title": "Convert Layer",
+  "params": [
+   {
+    "name": "to",
+    "type": "ConvertLayerParam",
+    "default": "ConvertLayerParam::None"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "ConvolutionMatrix",
+  "title": "Convolution Matrix",
+  "params": [
+   {
+    "name": "channels",
+    "type": "filters::Target",
+    "default": "0"
+   },
+   {
+    "name": "fromResource",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "tiledMode",
+    "type": "filters::TiledMode",
+    "default": "filters::TiledMode::NONE",
+    "values": [
+     "both",
+     "x",
+     "y"
+    ]
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "Copy",
+  "title": "Copy",
+  "params": []
+ },
+ {
+  "name": "CopyCel",
+  "title": "Copy Cel",
+  "params": []
+ },
+ {
+  "name": "CopyColors",
+  "title": "Copy Colors",
+  "params": []
+ },
+ {
+  "name": "CopyMerged",
+  "title": "Copy Merged",
+  "params": []
+ },
+ {
+  "name": "CopyPath",
+  "title": "Copy Path",
+  "params": []
+ },
+ {
+  "name": "CopyTiles",
+  "title": "Copy Tiles",
+  "params": []
+ },
+ {
+  "name": "CropSprite",
+  "title": "Crop Sprite",
+  "params": [
+   {
+    "name": "height",
+    "type": "string"
+   },
+   {
+    "name": "width",
+    "type": "string"
+   },
+   {
+    "name": "x",
+    "type": "string"
+   },
+   {
+    "name": "y",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "Cut",
+  "title": "Cut",
+  "params": []
+ },
+ {
+  "name": "DeselectMask",
+  "title": "Deselect Mask",
+  "params": []
+ },
+ {
+  "name": "Despeckle",
+  "title": "Despeckle",
+  "params": [
+   {
+    "name": "channels",
+    "type": "filters::Target",
+    "default": "0"
+   },
+   {
+    "name": "height",
+    "type": "integer",
+    "default": "3"
+   },
+   {
+    "name": "tiledMode",
+    "type": "filters::TiledMode",
+    "default": "filters::TiledMode::NONE",
+    "values": [
+     "both",
+     "x",
+     "y"
+    ]
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "width",
+    "type": "integer",
+    "default": "3"
+   }
+  ]
+ },
+ {
+  "name": "DiscardBrush",
+  "title": "Discard Brush",
+  "params": []
+ },
+ {
+  "name": "DuplicateLayer",
+  "title": "Duplicate Layer",
+  "params": []
+ },
+ {
+  "name": "DuplicateSlice",
+  "title": "Duplicate Slice",
+  "params": [
+   {
+    "name": "id",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "DuplicateSprite",
+  "title": "Duplicate Sprite",
+  "params": [
+   {
+    "name": "filename",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "flatten",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "DuplicateView",
+  "title": "Duplicate View",
+  "params": []
+ },
+ {
+  "name": "Exit",
+  "title": "Exit",
+  "params": []
+ },
+ {
+  "name": "ExportSpriteSheet",
+  "title": "Export Sprite Sheet",
+  "params": [
+   {
+    "name": "_layerIndex",
+    "type": "integer",
+    "default": "-1"
+   },
+   {
+    "name": "askOverwrite",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "borderPadding",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "columns",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "dataFilename",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "dataFormat",
+    "type": "SpriteSheetDataFormat",
+    "default": "SpriteSheetDataFormat::Default",
+    "values": [
+     "JsonArray",
+     "json-array",
+     "json_array"
+    ]
+   },
+   {
+    "name": "extrude",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "filenameFormat",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "fromTilesets",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "height",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ignoreEmpty",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "innerPadding",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "layer",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "listLayers",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "listSlices",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "listTags",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "mergeDuplicates",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "openGenerated",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "powerOfTwoSize",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "recent",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "rows",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "shapePadding",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "splitGrid",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "splitLayers",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "splitTags",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "tag",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "tagnameFormat",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "textureFilename",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "trim",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "trimByGrid",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "trimSprite",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "type",
+    "type": "app::SpriteSheetType",
+    "default": "app::SpriteSheetType::None",
+    "values": [
+     "horizontal",
+     "vertical",
+     "rows",
+     "columns",
+     "packed"
+    ]
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "width",
+    "type": "integer",
+    "default": "0"
+   }
+  ]
+ },
+ {
+  "name": "ExportTileset",
+  "title": "Export Tileset",
+  "params": []
+ },
+ {
+  "name": "Eyedropper",
+  "title": "Eyedropper",
+  "params": [
+   {
+    "name": "target",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "Fill",
+  "title": "Fill Selection with Foreground Color",
+  "params": []
+ },
+ {
+  "name": "FitScreen",
+  "title": "Fit on Screen",
+  "params": []
+ },
+ {
+  "name": "FlattenLayers",
+  "title": "Flatten Layers",
+  "params": []
+ },
+ {
+  "name": "Flip",
+  "title": "Flip \u2026 \u2026",
+  "params": [
+   {
+    "name": "orientation",
+    "type": "string"
+   },
+   {
+    "name": "target",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "FrameProperties",
+  "title": "Frame Properties",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "FrameTagProperties",
+  "title": "Tag Properties",
+  "params": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "name",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "FullscreenMode",
+  "title": "Toggle Fullscreen Mode",
+  "params": []
+ },
+ {
+  "name": "FullscreenPreview",
+  "title": "Fullscreen Preview",
+  "params": []
+ },
+ {
+  "name": "GotoFirstFrame",
+  "title": "Go to First Frame",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "GotoFirstFrameInTag",
+  "title": "Go to First Frame In Tag",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "GotoFrame",
+  "title": "Go to Frame",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "GotoLastFrame",
+  "title": "Go to Last Frame",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "GotoLastFrameInTag",
+  "title": "Go to Last Frame In Tag",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "GotoNextFrame",
+  "title": "Go to Next Frame",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "GotoNextFrameWithSameTag",
+  "title": "Go to Next Frame with same tag",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "GotoNextLayer",
+  "title": "Go to Next Layer",
+  "params": []
+ },
+ {
+  "name": "GotoNextTab",
+  "title": "Go to Next Tab",
+  "params": []
+ },
+ {
+  "name": "GotoPreviousFrame",
+  "title": "Go to Previous Frame",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "GotoPreviousFrameWithSameTag",
+  "title": "Go to Previous Frame with same tag",
+  "params": [
+   {
+    "name": "frame",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "GotoPreviousLayer",
+  "title": "Go to Previous Layer",
+  "params": []
+ },
+ {
+  "name": "GotoPreviousTab",
+  "title": "Go to Previous tab",
+  "params": []
+ },
+ {
+  "name": "GridSettings",
+  "title": "Grid Settings",
+  "params": []
+ },
+ {
+  "name": "Home",
+  "title": "Home",
+  "params": []
+ },
+ {
+  "name": "HueSaturation",
+  "title": "Adjust Hue/Saturation",
+  "params": [
+   {
+    "name": "alpha",
+    "type": "number",
+    "default": "0.0"
+   },
+   {
+    "name": "channels",
+    "type": "filters::Target",
+    "default": "0"
+   },
+   {
+    "name": "hue",
+    "type": "number",
+    "default": "0.0"
+   },
+   {
+    "name": "lightness",
+    "type": "number",
+    "default": "0.0",
+    "aliases": [
+     "value"
+    ]
+   },
+   {
+    "name": "mode",
+    "type": "Mode",
+    "default": "Mode::HSL_MUL",
+    "values": [
+     "hsv",
+     "hsv_mul",
+     "hsv_add",
+     "hsl_add"
+    ]
+   },
+   {
+    "name": "saturation",
+    "type": "number",
+    "default": "0.0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "ImportSpriteSheet",
+  "title": "Import Sprite Sheet",
+  "params": [
+   {
+    "name": "columns",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "frameBounds",
+    "type": "rectangle",
+    "default": "gfx::Rect(0, 0, 0, 0)"
+   },
+   {
+    "name": "padding",
+    "type": "size",
+    "default": "gfx::Size(0, 0)"
+   },
+   {
+    "name": "partialTiles",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "rows",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "type",
+    "type": "app::SpriteSheetType",
+    "default": "app::SpriteSheetType::None",
+    "values": [
+     "horizontal",
+     "vertical",
+     "rows",
+     "columns",
+     "packed"
+    ]
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "InvertColor",
+  "title": "Invert Color",
+  "params": [
+   {
+    "name": "channels",
+    "type": "filters::Target",
+    "default": "0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "InvertMask",
+  "title": "Invert Selection",
+  "params": []
+ },
+ {
+  "name": "KeyboardShortcuts",
+  "title": "Keyboard Shortcuts",
+  "params": [
+   {
+    "name": "search",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "Launch",
+  "title": "Launch",
+  "params": [
+   {
+    "name": "path",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "LayerFromBackground",
+  "title": "Layer from Background",
+  "params": []
+ },
+ {
+  "name": "LayerLock",
+  "title": "Lock Layers",
+  "params": []
+ },
+ {
+  "name": "LayerOpacity",
+  "title": "Set Layer Opacity to \u2026 (\u2026%)",
+  "params": []
+ },
+ {
+  "name": "LayerProperties",
+  "title": "Layer Properties",
+  "params": []
+ },
+ {
+  "name": "LayerVisibility",
+  "title": "Layer Visibility",
+  "params": []
+ },
+ {
+  "name": "LinkCels",
+  "title": "Link Cels",
+  "params": []
+ },
+ {
+  "name": "LoadMask",
+  "title": "Load Selection",
+  "params": [
+   {
+    "name": "filename",
+    "type": "string"
+   },
+   {
+    "name": "ui",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "LoadPalette",
+  "title": "Load Palette",
+  "params": [
+   {
+    "name": "filename",
+    "type": "string"
+   },
+   {
+    "name": "preset",
+    "type": "string"
+   },
+   {
+    "name": "ui",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "MaskAll",
+  "title": "Mask All",
+  "params": []
+ },
+ {
+  "name": "MaskByColor",
+  "title": "Mask By Color",
+  "params": [
+   {
+    "name": "color",
+    "type": "color",
+    "default": "app::Color()"
+   },
+   {
+    "name": "mode",
+    "type": "gen::SelectionMode",
+    "default": "gen::SelectionMode::DEFAULT",
+    "values": [
+     "replace",
+     "add",
+     "subtract",
+     "intersect"
+    ]
+   },
+   {
+    "name": "tolerance",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "MaskContent",
+  "title": "Mask Content",
+  "params": []
+ },
+ {
+  "name": "MergeDownLayer",
+  "title": "Merge Down Layer",
+  "params": []
+ },
+ {
+  "name": "ModifySelection",
+  "title": "\u2026 Selection \u2026",
+  "params": [
+   {
+    "name": "brush",
+    "type": "string"
+   },
+   {
+    "name": "modifier",
+    "type": "string"
+   },
+   {
+    "name": "ui",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "MoveCel",
+  "title": "Move Cel",
+  "params": []
+ },
+ {
+  "name": "MoveColors",
+  "title": "Move Colors",
+  "params": []
+ },
+ {
+  "name": "MoveMask",
+  "title": "Move \u2026 \u2026",
+  "params": [
+   {
+    "name": "target",
+    "type": "string"
+   },
+   {
+    "name": "wrap",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "MoveTiles",
+  "title": "Move Tiles",
+  "params": []
+ },
+ {
+  "name": "NewBrush",
+  "title": "New Brush",
+  "params": []
+ },
+ {
+  "name": "NewFile",
+  "title": "New File",
+  "params": [
+   {
+    "name": "colorMode",
+    "type": "ColorMode",
+    "default": "ColorMode::RGB",
+    "values": [
+     "rgb",
+     "gray",
+     "grayscale",
+     "indexed"
+    ]
+   },
+   {
+    "name": "fromClipboard",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "fromDraggedData",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "height",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "width",
+    "type": "integer",
+    "default": "0"
+   }
+  ]
+ },
+ {
+  "name": "NewFrame",
+  "title": "New Frame",
+  "params": [
+   {
+    "name": "content",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "NewFrameTag",
+  "title": "New Tag",
+  "params": []
+ },
+ {
+  "name": "NewLayer",
+  "title": "New {}",
+  "params": [
+   {
+    "name": "ask",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "before",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "fromClipboard",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "fromFile",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "gridBounds",
+    "type": "rectangle",
+    "default": "gfx::Rect()"
+   },
+   {
+    "name": "group",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "name",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "reference",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "tilemap",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "top",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "type",
+    "type": "string",
+    "default": "{}"
+   },
+   {
+    "name": "viaCopy",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "viaCut",
+    "type": "boolean",
+    "default": "false"
+   }
+  ]
+ },
+ {
+  "name": "NewSpriteFromSelection",
+  "title": "New Sprite from Selection",
+  "params": []
+ },
+ {
+  "name": "OpenBrowser",
+  "title": "Open Browser",
+  "params": [
+   {
+    "name": "filename",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "OpenFile",
+  "title": "Open Sprite",
+  "params": [
+   {
+    "name": "filename",
+    "type": "string"
+   },
+   {
+    "name": "folder",
+    "type": "string"
+   },
+   {
+    "name": "sequence",
+    "type": "string"
+   },
+   {
+    "name": "ui",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "OpenGroup",
+  "title": "Open/Close Group",
+  "params": []
+ },
+ {
+  "name": "OpenInFolder",
+  "title": "Open In Folder",
+  "params": []
+ },
+ {
+  "name": "OpenWithApp",
+  "title": "Open With Associated Application",
+  "params": []
+ },
+ {
+  "name": "Options",
+  "title": "Preferences",
+  "params": [
+   {
+    "name": "installExtension",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "Outline",
+  "title": "Outline",
+  "params": [
+   {
+    "name": "bgColor",
+    "type": "color",
+    "default": "app::Color()"
+   },
+   {
+    "name": "channels",
+    "type": "filters::Target",
+    "default": "0"
+   },
+   {
+    "name": "color",
+    "type": "color",
+    "default": "app::Color()"
+   },
+   {
+    "name": "matrix",
+    "type": "filters::OutlineFilter::Matrix",
+    "default": "OutlineFilter::Matrix::Circle",
+    "values": [
+     "circle",
+     "square",
+     "horizontal",
+     "vertical"
+    ]
+   },
+   {
+    "name": "place",
+    "type": "filters::OutlineFilter::Place",
+    "default": "OutlineFilter::Place::Outside",
+    "values": [
+     "inside"
+    ]
+   },
+   {
+    "name": "tiledMode",
+    "type": "filters::TiledMode",
+    "default": "filters::TiledMode::NONE",
+    "values": [
+     "both",
+     "x",
+     "y"
+    ]
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "PaletteEditor",
+  "title": "Switch \u2026 \u2026 \u2026",
+  "params": [
+   {
+    "name": "edit",
+    "type": "string"
+   },
+   {
+    "name": "popup",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "PaletteSize",
+  "title": "Palette Size",
+  "params": [
+   {
+    "name": "ui",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "Paste",
+  "title": "Paste",
+  "params": [
+   {
+    "name": "x",
+    "type": "string"
+   },
+   {
+    "name": "y",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "PasteText",
+  "title": "Insert Text",
+  "params": [
+   {
+    "name": "color",
+    "type": "color",
+    "default": "app::Color::fromMask()"
+   },
+   {
+    "name": "fontName",
+    "type": "string",
+    "default": "\"Aseprite\""
+   },
+   {
+    "name": "fontSize",
+    "type": "number",
+    "default": "6"
+   },
+   {
+    "name": "text",
+    "type": "string",
+    "default": "\"\""
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "x",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "y",
+    "type": "integer",
+    "default": "0"
+   }
+  ]
+ },
+ {
+  "name": "PixelPerfectMode",
+  "title": "Switch Pixel Perfect Mode",
+  "params": []
+ },
+ {
+  "name": "PlayAnimation",
+  "title": "Play Animation",
+  "params": []
+ },
+ {
+  "name": "PlayPreviewAnimation",
+  "title": "Play Preview Animation",
+  "params": []
+ },
+ {
+  "name": "Redo",
+  "title": "Redo",
+  "params": []
+ },
+ {
+  "name": "Refresh",
+  "title": "Refresh",
+  "params": []
+ },
+ {
+  "name": "Register",
+  "title": "",
+  "params": []
+ },
+ {
+  "name": "RemoveFrame",
+  "title": "Remove Frame",
+  "params": []
+ },
+ {
+  "name": "RemoveFrameTag",
+  "title": "Remove Tag",
+  "params": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "name",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "RemoveLayer",
+  "title": "Remove Layer",
+  "params": []
+ },
+ {
+  "name": "RemoveSlice",
+  "title": "Remove Slice",
+  "params": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "name",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "ReopenClosedFile",
+  "title": "Reopen Closed File",
+  "params": []
+ },
+ {
+  "name": "RepeatLastExport",
+  "title": "Repeat Last Export",
+  "params": []
+ },
+ {
+  "name": "ReplaceColor",
+  "title": "Replace Color",
+  "params": [
+   {
+    "name": "channels",
+    "type": "filters::Target",
+    "default": "0"
+   },
+   {
+    "name": "from",
+    "type": "color",
+    "default": "app::Color()"
+   },
+   {
+    "name": "to",
+    "type": "color",
+    "default": "app::Color()"
+   },
+   {
+    "name": "tolerance",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "ReselectMask",
+  "title": "Reselect Mask",
+  "params": []
+ },
+ {
+  "name": "ReverseFrames",
+  "title": "Reverse Frames",
+  "params": []
+ },
+ {
+  "name": "Rotate",
+  "title": "Rotate \u2026 \u2026",
+  "params": [
+   {
+    "name": "angle",
+    "type": "string"
+   },
+   {
+    "name": "target",
+    "type": "string"
+   },
+   {
+    "name": "ui",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "RunCommand",
+  "title": "Run Command",
+  "params": []
+ },
+ {
+  "name": "SaveFile",
+  "title": "Save File",
+  "params": [
+   {
+    "name": "aniDir",
+    "type": "doc::AniDir",
+    "default": "doc::AniDir::FORWARD"
+   },
+   {
+    "name": "bounds",
+    "type": "rectangle",
+    "default": "gfx::Rect()"
+   },
+   {
+    "name": "filename",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "filenameFormat",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "fromFrame",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ignoreEmpty",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "playSubtags",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "recent",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "scale",
+    "type": "number",
+    "default": "1.0"
+   },
+   {
+    "name": "slice",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "tag",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "toFrame",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true",
+    "aliases": [
+     "useUI"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "SaveFileAs",
+  "title": "Save File As",
+  "params": [
+   {
+    "name": "aniDir",
+    "type": "doc::AniDir",
+    "default": "doc::AniDir::FORWARD"
+   },
+   {
+    "name": "bounds",
+    "type": "rectangle",
+    "default": "gfx::Rect()"
+   },
+   {
+    "name": "filename",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "filenameFormat",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "fromFrame",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ignoreEmpty",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "playSubtags",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "recent",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "scale",
+    "type": "number",
+    "default": "1.0"
+   },
+   {
+    "name": "slice",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "tag",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "toFrame",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true",
+    "aliases": [
+     "useUI"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "SaveFileCopyAs",
+  "title": "Export",
+  "params": [
+   {
+    "name": "aniDir",
+    "type": "doc::AniDir",
+    "default": "doc::AniDir::FORWARD"
+   },
+   {
+    "name": "bounds",
+    "type": "rectangle",
+    "default": "gfx::Rect()"
+   },
+   {
+    "name": "filename",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "filenameFormat",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "fromFrame",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ignoreEmpty",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "playSubtags",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "recent",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "scale",
+    "type": "number",
+    "default": "1.0"
+   },
+   {
+    "name": "slice",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "tag",
+    "type": "string",
+    "default": "std::string()"
+   },
+   {
+    "name": "toFrame",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true",
+    "aliases": [
+     "useUI"
+    ]
+   }
+  ]
+ },
+ {
+  "name": "SaveMask",
+  "title": "Save Selection",
+  "params": [
+   {
+    "name": "filename",
+    "type": "string",
+    "default": "\"default.msk\""
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "SavePalette",
+  "title": "Save Palette",
+  "params": [
+   {
+    "name": "columns",
+    "type": "integer",
+    "default": "16"
+   },
+   {
+    "name": "filename",
+    "type": "string",
+    "default": "\"\""
+   },
+   {
+    "name": "preset",
+    "type": "string",
+    "default": "\"\""
+   },
+   {
+    "name": "saveAsPreset",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   }
+  ]
+ },
+ {
+  "name": "Screenshot",
+  "title": "Screenshot",
+  "params": [
+   {
+    "name": "save",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "srgb",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "steam",
+    "type": "boolean",
+    "default": "false"
+   }
+  ]
+ },
+ {
+  "name": "Scroll",
+  "title": "Scroll \u2026",
+  "params": []
+ },
+ {
+  "name": "ScrollCenter",
+  "title": "Scroll to center of canvas",
+  "params": []
+ },
+ {
+  "name": "SelectPaletteColors",
+  "title": "Select Used Colors",
+  "params": [
+   {
+    "name": "modifier",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "SelectTile",
+  "title": "Select Tile",
+  "params": [
+   {
+    "name": "mode",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "SelectionAsGrid",
+  "title": "Selection as Grid",
+  "params": []
+ },
+ {
+  "name": "SetColorSelector",
+  "title": "Set Color Selector",
+  "params": [
+   {
+    "name": "type",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "SetInkType",
+  "title": "Set Ink Type: \u2026",
+  "params": [
+   {
+    "name": "type",
+    "type": "app::tools::InkType",
+    "default": "app::tools::InkType::DEFAULT"
+   }
+  ]
+ },
+ {
+  "name": "SetLoopSection",
+  "title": "Set Loop Section",
+  "params": [
+   {
+    "name": "action",
+    "type": "string"
+   },
+   {
+    "name": "begin",
+    "type": "string"
+   },
+   {
+    "name": "end",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "SetPalette",
+  "title": "Set Palette",
+  "params": []
+ },
+ {
+  "name": "SetPaletteEntrySize",
+  "title": "Set Palette Entry Size",
+  "params": [
+   {
+    "name": "size",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "SetPlaybackSpeed",
+  "title": "Playback Speed \u2026x",
+  "params": [
+   {
+    "name": "multiplier",
+    "type": "number",
+    "default": "1.0"
+   }
+  ]
+ },
+ {
+  "name": "SetSameInk",
+  "title": "Same Ink in All Tools",
+  "params": []
+ },
+ {
+  "name": "ShowAutoGuides",
+  "title": "Show Auto Guides",
+  "params": []
+ },
+ {
+  "name": "ShowBrushPreview",
+  "title": "Show Brush Preview",
+  "params": []
+ },
+ {
+  "name": "ShowBrushPreviewInPreview",
+  "title": "Show Brush Preview in Preview",
+  "params": []
+ },
+ {
+  "name": "ShowExtras",
+  "title": "Show Extras",
+  "params": []
+ },
+ {
+  "name": "ShowGrid",
+  "title": "Show Grid",
+  "params": []
+ },
+ {
+  "name": "ShowLayerEdges",
+  "title": "Show Layer Edges",
+  "params": []
+ },
+ {
+  "name": "ShowMenu",
+  "title": "Show Menu: \u2026",
+  "params": [
+   {
+    "name": "menu",
+    "type": "string",
+    "default": "\"\""
+   }
+  ]
+ },
+ {
+  "name": "ShowOnionSkin",
+  "title": "Show Onion Skin",
+  "params": []
+ },
+ {
+  "name": "ShowPixelGrid",
+  "title": "Show Pixel Grid",
+  "params": []
+ },
+ {
+  "name": "ShowSelectionEdges",
+  "title": "Show Selection Edges",
+  "params": []
+ },
+ {
+  "name": "ShowSlices",
+  "title": "Show Slices",
+  "params": []
+ },
+ {
+  "name": "ShowTileNumbers",
+  "title": "Show Tile Numbers",
+  "params": []
+ },
+ {
+  "name": "SliceProperties",
+  "title": "Slice Properties",
+  "params": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "name",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "SnapToGrid",
+  "title": "Snap to Grid",
+  "params": []
+ },
+ {
+  "name": "SoloLayer",
+  "title": "Solo Layer",
+  "params": [
+   {
+    "name": "layerId",
+    "type": "integer",
+    "default": "0"
+   }
+  ]
+ },
+ {
+  "name": "SpriteProperties",
+  "title": "Sprite Properties",
+  "params": []
+ },
+ {
+  "name": "SpriteSize",
+  "title": "Sprite Size",
+  "params": [
+   {
+    "name": "height",
+    "type": "integer",
+    "default": "0"
+   },
+   {
+    "name": "lockRatio",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "method",
+    "type": "ResizeMethod",
+    "default": "ResizeMethod::RESIZE_METHOD_NEAREST_NEIGHBOR",
+    "values": [
+     "bilinear",
+     "rotsprite"
+    ]
+   },
+   {
+    "name": "scale",
+    "type": "number",
+    "default": "1.0"
+   },
+   {
+    "name": "scaleX",
+    "type": "number",
+    "default": "1.0"
+   },
+   {
+    "name": "scaleY",
+    "type": "number",
+    "default": "1.0"
+   },
+   {
+    "name": "ui",
+    "type": "boolean",
+    "default": "true"
+   },
+   {
+    "name": "width",
+    "type": "integer",
+    "default": "0"
+   }
+  ]
+ },
+ {
+  "name": "Stroke",
+  "title": "Stroke Selection Borders with Foreground Color",
+  "params": []
+ },
+ {
+  "name": "SwapCheckerboardColors",
+  "title": "Swap Checkerboard Background Colors",
+  "params": []
+ },
+ {
+  "name": "SwitchColors",
+  "title": "Switch Colors",
+  "params": []
+ },
+ {
+  "name": "SymmetryMode",
+  "title": "Symmetry Mode",
+  "params": [
+   {
+    "name": "orientation",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "TiledMode",
+  "title": "Tiled Mode: {}",
+  "params": [
+   {
+    "name": "axis",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "TilesetMode",
+  "title": "Tileset Mode: {}",
+  "params": [
+   {
+    "name": "mode",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "Timeline",
+  "title": "Switch Timeline",
+  "params": []
+ },
+ {
+  "name": "ToggleOtherLayersOpacity",
+  "title": "Toggle Other Layers Opacity",
+  "params": [
+   {
+    "name": "checkedIfZero",
+    "type": "boolean",
+    "default": "false"
+   },
+   {
+    "name": "opacity",
+    "type": "integer",
+    "default": "255"
+   },
+   {
+    "name": "preview",
+    "type": "boolean",
+    "default": "false"
+   }
+  ]
+ },
+ {
+  "name": "TogglePlayAll",
+  "title": "Play All Frames (Ignore Tags)",
+  "params": []
+ },
+ {
+  "name": "TogglePlayOnce",
+  "title": "Play Once",
+  "params": []
+ },
+ {
+  "name": "TogglePlaySubtags",
+  "title": "Play Subtags & Repetitions",
+  "params": []
+ },
+ {
+  "name": "TogglePreview",
+  "title": "Toggle Preview",
+  "params": []
+ },
+ {
+  "name": "ToggleRewindOnStop",
+  "title": "Rewind on Stop",
+  "params": []
+ },
+ {
+  "name": "ToggleTilesMode",
+  "title": "Toggle Tiles Mode",
+  "params": []
+ },
+ {
+  "name": "ToggleTimelineThumbnails",
+  "title": "Toggle Timeline Thumbnails",
+  "params": []
+ },
+ {
+  "name": "ToggleWorkspaceLayout",
+  "title": "Toggle Workspace Layout",
+  "params": []
+ },
+ {
+  "name": "Undo",
+  "title": "Undo",
+  "params": []
+ },
+ {
+  "name": "UndoHistory",
+  "title": "Undo History",
+  "params": []
+ },
+ {
+  "name": "UnlinkCel",
+  "title": "Unlink Cel",
+  "params": []
+ },
+ {
+  "name": "WidgetZoo",
+  "title": "Widget Zoo",
+  "params": []
+ },
+ {
+  "name": "Zoom",
+  "title": "Zoom",
+  "params": [
+   {
+    "name": "action",
+    "type": "string"
+   },
+   {
+    "name": "focus",
+    "type": "string"
+   },
+   {
+    "name": "percentage",
+    "type": "string"
+   }
+  ]
+ },
+ {
+  "name": "Debugger",
+  "title": "Debugger",
+  "params": []
+ },
+ {
+  "name": "DeveloperConsole",
+  "title": "Developer Console",
+  "params": []
+ },
+ {
+  "name": "OpenScriptFolder",
+  "title": "Open Script Folder",
+  "params": []
+ },
+ {
+  "name": "RunScript",
+  "title": "Run Script",
+  "params": [
+   {
+    "name": "filename",
+    "type": "string"
+   }
+  ]
+ }
+]

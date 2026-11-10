@@ -374,6 +374,202 @@ handlers.execute_lua = function(params)
   return executeLua(params)
 end
 
+-- "#rrggbb" or "#rrggbbaa" -> Color. (Color("#...") is not supported.)
+local function hexToColor(hex)
+  local h = tostring(hex):gsub("^#", "")
+  if not h:match("^%x+$") or (#h ~= 6 and #h ~= 8) then
+    error("Invalid color: " .. tostring(hex) .. " (use #rrggbb or #rrggbbaa)")
+  end
+  local n = function(i) return tonumber(h:sub(i, i + 1), 16) end
+  return Color(n(1), n(3), n(5), #h == 8 and n(7) or 255)
+end
+
+-- JSON values from the bridge -> Aseprite types for command params.
+local function toLuaParam(v)
+  if type(v) ~= "table" and type(v) ~= "userdata" then return v end
+  if v.__color then return hexToColor(v.__color) end
+  if v.x ~= nil and v.width ~= nil then return Rectangle(v.x, v.y, v.width, v.height) end
+  if v.width ~= nil and v.height ~= nil then return Size(v.width, v.height) end
+  if v.x ~= nil and v.y ~= nil then return Point(v.x, v.y) end
+  return v
+end
+
+handlers.run_command = function(params)
+  local name = params.name
+  if type(name) ~= "string" then error("params.name must be a string") end
+  local ok, cmd = pcall(function() return app.command[name] end)
+  if not ok then error("Unknown command: " .. name) end
+
+  local args = {}
+  for k, v in pairs(params.params or {}) do args[k] = toLuaParam(v) end
+  -- Never block the agent on a modal dialog unless it asks for one.
+  if args.ui == nil then args.ui = false end
+
+  local executed = cmd(args)
+  app.refresh()
+  return {
+    executed = executed,
+    note = (not executed) and "Command did not run (not enabled in the current context, or cancelled)" or nil,
+  }
+end
+
+local RANGE_TYPES = {
+  [RangeType.EMPTY] = "empty",
+  [RangeType.LAYERS] = "layers",
+  [RangeType.FRAMES] = "frames",
+  [RangeType.CELS] = "cels",
+}
+
+local BRUSH_TYPES = {
+  [BrushType.CIRCLE] = "circle",
+  [BrushType.SQUARE] = "square",
+  [BrushType.LINE] = "line",
+  [BrushType.IMAGE] = "image",
+}
+
+handlers.get_context = function()
+  local ctx = {
+    tool = app.tool and app.tool.id or nil,
+    fgColor = colorToHex(app.fgColor),
+    bgColor = colorToHex(app.bgColor),
+  }
+  local brush = app.brush
+  if brush then
+    ctx.brush = { size = brush.size, type = BRUSH_TYPES[brush.type] or tostring(brush.type), angle = brush.angle }
+  end
+
+  local sprite = app.sprite
+  if not sprite then
+    ctx.sprite = nil
+    return ctx
+  end
+  ctx.sprite = describeSprite(sprite, false)
+
+  local layer = app.layer
+  if layer then
+    ctx.layer = {
+      name = layer.name,
+      path = layerPath(layer),
+      group = layer.isGroup,
+      visible = layer.isVisible,
+      editable = layer.isEditable,
+      opacity = (not layer.isGroup) and layer.opacity or nil,
+    }
+  end
+  ctx.frame = app.frame and app.frame.frameNumber or nil
+  if app.tag then ctx.tag = app.tag.name end
+
+  local cel = app.cel
+  if cel then
+    local b = cel.bounds
+    ctx.cel = {
+      layer = layerPath(cel.layer),
+      frame = cel.frameNumber,
+      bounds = { x = b.x, y = b.y, width = b.width, height = b.height },
+      opacity = cel.opacity,
+    }
+  end
+
+  local range = app.range
+  if range and not range.isEmpty then
+    local layers, frames = {}, {}
+    for _, l in ipairs(range.layers) do layers[#layers + 1] = layerPath(l) end
+    for _, f in ipairs(range.frames) do frames[#frames + 1] = f.frameNumber end
+    ctx.timelineRange = {
+      type = RANGE_TYPES[range.type] or tostring(range.type),
+      layers = layers,
+      frames = frames,
+    }
+  end
+
+  local sel = sprite.selection
+  if sel and not sel.isEmpty then
+    local b = sel.bounds
+    ctx.selection = { x = b.x, y = b.y, width = b.width, height = b.height }
+  end
+
+  local editor = app.editor
+  if editor then ctx.zoom = editor.zoom end
+  return ctx
+end
+
+local MAX_READ_PIXELS = 128 * 128
+local KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+handlers.read_pixels = function(params)
+  local sprite = app.sprite
+  if not sprite then error("No active sprite") end
+
+  local x0 = params.x or 0
+  local y0 = params.y or 0
+  local w = params.width or (sprite.width - x0)
+  local h = params.height or (sprite.height - y0)
+  if w <= 0 or h <= 0 then error("Empty region") end
+  if w * h > MAX_READ_PIXELS then
+    error(string.format("Region %dx%d is too large; read at most %d pixels per call", w, h, MAX_READ_PIXELS))
+  end
+
+  local frameNumber = params.frame or (app.frame and app.frame.frameNumber) or 1
+  local header, bytes = snapshot{ frame = frameNumber, layer = params.layer }
+  local sw = header.width
+
+  local palette = sprite.palettes[1]
+  local indexed = sprite.colorMode == ColorMode.INDEXED
+  local paletteIndex = {}
+  if indexed then
+    for i = #palette - 1, 0, -1 do paletteIndex[colorToHex(palette:getColor(i))] = i end
+  end
+
+  -- Indexed sprites use palette indices as keys; RGB sprites get short keys.
+  local keys, legend, nextKey = {}, {}, 1
+  local rows = {}
+  for y = y0, y0 + h - 1 do
+    local row = {}
+    for x = x0, x0 + w - 1 do
+      local token
+      if x < 0 or y < 0 or x >= sprite.width or y >= sprite.height then
+        token = "-"
+      else
+        local i = (y * sw + x) * 4
+        local r, g, b, a = bytes:byte(i + 1, i + 4)
+        if a == 0 then
+          token = "."
+        else
+          local hex = a == 255 and string.format("#%02x%02x%02x", r, g, b)
+            or string.format("#%02x%02x%02x%02x", r, g, b, a)
+          if indexed and paletteIndex[hex] then
+            token = tostring(paletteIndex[hex])
+            legend[token] = hex
+          else
+            token = keys[hex]
+            if not token then
+              if nextKey <= #KEY_CHARS then
+                token = KEY_CHARS:sub(nextKey, nextKey)
+                if indexed then token = "c" .. token end
+              else
+                token = hex
+              end
+              nextKey = nextKey + 1
+              keys[hex] = token
+              legend[token] = hex
+            end
+          end
+        end
+      end
+      row[#row + 1] = token
+    end
+    rows[#rows + 1] = table.concat(row, " ")
+  end
+
+  return {
+    x = x0, y = y0, width = w, height = h,
+    frame = frameNumber, layer = params.layer,
+    keys = indexed and "palette-index" or "color-key",
+    legend = legend,
+    rows = rows,
+  }
+end
+
 handlers.undo = function(params)
   local n = params.steps or 1
   for _ = 1, n do app.undo() end
@@ -441,14 +637,15 @@ end
 
 local connect
 
--- When the bridge restarts it picks a new port and token, so poll the
+-- Bridges pick a new port and token each time they start, so poll the
 -- session file and reconnect when it changes.
 local function startReconnectTimer()
   if reconnectTimer then return end
   reconnectTimer = Timer{
     interval = 2.0,
     ontick = function()
-      if connected then return end
+      -- The newest bridge owns the session file. Follow it even while
+      -- connected, so a new agent session takes over Aseprite.
       local s = readSession()
       if s and (not session or s.port ~= session.port or s.token ~= session.token) then
         connect(true)

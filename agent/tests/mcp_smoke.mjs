@@ -80,5 +80,29 @@ if (snap.isError || !img) {
 const bad = await call("execute_lua", { code: "app.sprite:newLayer(); error('deliberate')" });
 console.log(bad.isError ? "error path OK:" : "FAIL error path:", textOf(bad).split("\n")[0]);
 
+let failed = 0;
+const expect = (label, r, pred) => {
+  const ok = !r.isError && pred(textOf(r));
+  if (!ok) failed++;
+  console.log(`${ok ? "OK  " : "FAIL"} ${label}: ${textOf(r).split("\n").slice(0, 3).join(" | ").slice(0, 160)}`);
+};
+
+expect("get_context", await call("get_context"), (t) => JSON.parse(t).sprite?.width === 32);
+expect("read_pixels", await call("read_pixels", { x: 14, y: 14, width: 4, height: 2 }), (t) => t.includes("Legend:") && t.includes("#dc3c3c"));
+expect("list_commands", await call("list_commands", { filter: "size" }), (t) => t.includes("SpriteSize") && t.includes("CanvasSize"));
+expect("run_command CanvasSize", await call("run_command", { name: "CanvasSize", params: { right: 8 } }), (t) => t.includes("ran"));
+expect("state after CanvasSize", await call("get_state"), (t) => JSON.parse(t).activeSprite.width === 40);
+expect("undo", await call("undo", {}), () => true);
+expect("state after undo", await call("get_state"), (t) => JSON.parse(t).activeSprite.width === 32);
+expect("run_command color", await call("run_command", { name: "ReplaceColor", params: { from: "#dc3c3c", to: "#3c3cdc", tolerance: 0 } }), (t) => t.includes("ran"));
+expect("read_pixels after color", await call("read_pixels", { x: 15, y: 15, width: 1, height: 1 }), (t) => t.includes("#3c3cdc"));
+expect("unknown command", { content: [{ type: "text", text: "x" }] }, () => true);
+const unk = await call("run_command", { name: "SpriteSiz" });
+if (!unk.isError || !textOf(unk).includes("SpriteSize")) { failed++; console.log("FAIL unknown command suggestion"); } else console.log("OK   unknown command suggestion");
+expect("read_guide list", await call("read_guide", {}), (t) => t.includes("basics") && t.includes("recipes"));
+expect("read_guide basics", await call("read_guide", { topic: "basics" }), (t) => t.includes("Object model"));
+await call("undo", {});
+
+console.log(failed ? `${failed} FAILED` : "ALL SMOKE CHECKS PASSED");
 bridge.kill();
-process.exit(0);
+process.exit(failed ? 1 : 0);
