@@ -1,6 +1,7 @@
 // Animation helpers (#42) and clean pixel-art rotation (shared with #43):
 // rigid transforms of a part along an arc, squash and stretch, and smears,
 // all without blending (no new colors).
+import { nearest, type RGBA } from "./color.js";
 import type { Rgba } from "./pixel_grid.js";
 
 /** RGBA packed as one unsigned number (0 outside the image). */
@@ -165,4 +166,54 @@ export function smear(from: Rgba, to: Rgba, steps = 6): Rgba {
     for (let p = 0; p < w * h * 4; p += 4) if (moved.data[p + 3] >= 128) out.set(moved.data.subarray(p, p + 4), p);
   }
   return { width: w, height: h, data: out };
+}
+
+/**
+ * The drawing moved by a fraction of a pixel (#65): each pixel is sampled
+ * between its neighbors (bilinear, alpha-weighted), then snapped to the
+ * nearest of `colors`, so edges shift brightness instead of jumping a
+ * whole pixel; that reads as sub-pixel motion in small sprites. The
+ * silhouette moves where coverage crosses half.
+ */
+export function subpixelShift(img: Rgba, fx: number, fy: number, colors: RGBA[]): Rgba {
+  const { width: w, height: h, data } = img;
+  const out = new Uint8Array(data.length);
+  const px = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? -1 : (y * w + x) * 4);
+  const memo = new Map<number, RGBA>();
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const sx = x - fx, sy = y - fy;
+      const x0 = Math.floor(sx), y0 = Math.floor(sy), tx = sx - x0, ty = sy - y0;
+      let r = 0, g = 0, b = 0, a = 0;
+      for (const [dx, dy, wt] of [[0, 0, (1 - tx) * (1 - ty)], [1, 0, tx * (1 - ty)], [0, 1, (1 - tx) * ty], [1, 1, tx * ty]] as const) {
+        const i = px(x0 + dx, y0 + dy);
+        if (i < 0 || wt === 0) continue;
+        const al = (data[i + 3] / 255) * wt;
+        r += data[i] * al;
+        g += data[i + 1] * al;
+        b += data[i + 2] * al;
+        a += al;
+      }
+      if (a < 0.5) continue;
+      const key = (Math.round(r / a) << 16) | (Math.round(g / a) << 8) | Math.round(b / a);
+      let c = memo.get(key);
+      if (!c) {
+        c = nearest({ r: Math.round(r / a), g: Math.round(g / a), b: Math.round(b / a), a: 255 }, colors).color;
+        memo.set(key, c);
+      }
+      out.set([c.r, c.g, c.b, 255], (y * w + x) * 4);
+    }
+  }
+  return { width: w, height: h, data: out };
+}
+
+/** The opaque colors of an image. */
+export function imageColors(img: Rgba): RGBA[] {
+  const seen = new Map<number, RGBA>();
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (img.data[i + 3] < 128) continue;
+    const k = (img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2];
+    if (!seen.has(k)) seen.set(k, { r: img.data[i], g: img.data[i + 1], b: img.data[i + 2], a: 255 });
+  }
+  return [...seen.values()];
 }

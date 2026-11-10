@@ -2,7 +2,7 @@
 // arc, clean rotation, squash and stretch, smear frames. Each writes a
 // layer's cels through the document; no new colors are made.
 import * as z from "zod/v4";
-import { along, smear, squashStretch, transform, type Easing } from "./animation.js";
+import { along, ease, imageColors, smear, squashStretch, subpixelShift, transform, type Easing } from "./animation.js";
 import { documentOf } from "./document.js";
 import { failure, text, type Tool } from "./tool.js";
 
@@ -107,6 +107,40 @@ export const ANIMATION_TOOLS: Tool[] = [
       const b = await doc.pixels(input.layer, input.to_frame);
       await doc.putImage(smear(a, b, input.steps), { layer: input.layer, frame: input.frame, label: "Smear" });
       return { content: [text(`Frame ${input.frame} of ${input.layer} is now a smear from frame ${input.from_frame} to ${input.to_frame}.`)] };
+    },
+  },
+  {
+    name: "subpixel_move",
+    title: "Sub-pixel motion",
+    description:
+      "Move a layer's drawing by less than a pixel per frame without it jumping: each frame from from_frame+1 to " +
+      "to_frame shifts it a fraction further toward (dx, dy) (e.g. dx 1 over 4 frames = quarter-pixel steps), with " +
+      "edge pixels changing shade (colors from the sprite palette and the drawing) instead of moving. For small " +
+      "sprites: breathing, bobbing, a slow drift, an eye or highlight sliding. Frames must exist. Overwrites the layer's cels after from_frame.",
+    input: z.object({
+      layer: z.string(),
+      from_frame: z.number().int().min(1),
+      to_frame: z.number().int().min(1),
+      dx: z.number().min(-4).max(4).optional().describe("Total pixels right at to_frame (fractions welcome)."),
+      dy: z.number().min(-4).max(4).optional().describe("Total pixels down at to_frame."),
+      easing: z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]).optional().describe("Default linear."),
+    }),
+    kind: "edit",
+    label: (a) => (a.layer ? `Sub-pixel move ${a.layer}` : "Sub-pixel move"),
+    async run(input, aseprite) {
+      if (input.to_frame <= input.from_frame) return failure("to_frame must come after from_frame.");
+      if (!input.dx && !input.dy) return failure("Give dx or dy.");
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
+      if (input.to_frame > info.durations.length) return failure("to_frame is past the last frame; add frames first.");
+      const base = await doc.pixels(input.layer, input.from_frame);
+      const colors = [...imageColors(base), ...info.palette];
+      const n = input.to_frame - input.from_frame;
+      for (let f = input.from_frame + 1; f <= input.to_frame; f++) {
+        const t = ease((f - input.from_frame) / n, (input.easing ?? "linear") as Easing);
+        await doc.putImage(subpixelShift(base, (input.dx ?? 0) * t, (input.dy ?? 0) * t, colors), { layer: input.layer, frame: f, label: "Sub-pixel move" });
+      }
+      return { content: [text(`Moved ${input.layer} by (${input.dx ?? 0}, ${input.dy ?? 0}) px over frames ${input.from_frame + 1}-${input.to_frame} in sub-pixel steps of ${(Math.hypot(input.dx ?? 0, input.dy ?? 0) / n).toFixed(2)} px.`)] };
     },
   },
 ];

@@ -77,3 +77,31 @@ test("transform_layer writes frames after from_frame", async () => {
   const bad = await runTool(findTool("transform_layer"), { layer: "Sword", from_frame: 1, to_frame: 9, move: { dx: 1 } }, fake);
   assert.equal(bad.isError, true);
 });
+
+test("sub-pixel shift: edges change shade, the drawing doesn't jump", async () => {
+  const { subpixelShift, imageColors } = await import("../dist/animation.js");
+  const W = 8, H = 3, d = new Uint8Array(W * H * 4);
+  // A dark background row with a bright 2 px block at x 2-3.
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) d.set(x === 2 || x === 3 ? [240, 220, 120, 255] : [30, 30, 60, 255], (y * W + x) * 4);
+  const ramp = [{ r: 30, g: 30, b: 60, a: 255 }, { r: 135, g: 125, b: 90, a: 255 }, { r: 240, g: 220, b: 120, a: 255 }];
+  const half = subpixelShift({ width: W, height: H, data: d }, 0.5, 0, ramp);
+  const row = (img) => [...Array(W)].map((_, x) => img.data[x * 4]);
+  // Half a pixel right: x 2 and 4 take the middle shade, x 3 stays bright.
+  assert.deepEqual(row(half), [30, 30, 135, 240, 135, 30, 30, 30]);
+  const whole = subpixelShift({ width: W, height: H, data: d }, 1, 0, ramp);
+  assert.deepEqual(row(whole), [0, 30, 30, 240, 240, 30, 30, 30], "nothing moves into column 0");
+  assert.equal(imageColors({ width: W, height: H, data: d }).length, 2);
+});
+
+test("subpixel_move writes the in-between frames", async () => {
+  const { fakeDocument } = await import("./helpers/fake_document.mjs");
+  const { findTool, runTool } = await import("../dist/tools.js");
+  const W = 8, d = new Uint8Array(W * W * 4);
+  for (let y = 2; y < 6; y++) for (let x = 2; x < 6; x++) d.set([240, 220, 120, 255], (y * W + x) * 4);
+  const fake = fakeDocument({ width: W, height: W, frames: 3, layers: [{ name: "Blob", frames: [d] }], palette: ["#78704c", "#f0dc78"] });
+  const r = await runTool(findTool("subpixel_move"), { layer: "Blob", from_frame: 1, to_frame: 3, dy: 1 }, fake);
+  assert.ok(!r.isError, r.content[0].text);
+  assert.match(r.content[0].text, /steps of 0\.50 px/);
+  assert.ok(fake.cel("Blob", 2) && fake.cel("Blob", 3));
+  assert.equal(fake.cel("Blob", 3)[(6 * W + 3) * 4 + 3], 255, "a whole pixel down by frame 3");
+});
