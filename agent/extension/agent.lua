@@ -49,6 +49,7 @@ function init(plugin)
     request = connection.request,
     isConnected = connection.isConnected,
     contextString = handlers.contextString,
+    stateBlock = handlers.stateBlock,
     ensureBridge = connection.ensureBridge,
     preferences = plugin.preferences,
   }

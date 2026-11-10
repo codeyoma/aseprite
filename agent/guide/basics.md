@@ -11,6 +11,10 @@ Read this before editing. Every rule here was checked against Aseprite 1.3.18.
 
 Each `execute_lua` call is one undo step. If the code raises an error, everything it did is rolled back, so a failed attempt leaves no partial changes.
 
+## The state block
+
+Chat messages start with an `<aseprite-state>` block: sprite size and color mode, palette, layers from top to bottom with ids such as `L12`, tags, the active layer, frame and cel, and the timeline and pixel selection. Ids stay the same for the whole session. Inside `execute_lua`, `layerById("L12")` returns that layer (it also accepts a layer name).
+
 ## Object model
 
 | Object | Meaning | Access |

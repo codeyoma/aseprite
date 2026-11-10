@@ -3,7 +3,7 @@
 -- events back; this file draws the conversation and sends prompts.
 --
 -- Loaded by agent.lua: `local Panel = dofile(path)(deps)` where deps has
---   request(method, params, callback), isConnected(), contextString(),
+--   request(method, params, callback), isConnected(), contextString(), stateBlock(),
 --   ensureBridge(callback), preferences, Conversation (conversation.lua).
 --
 -- The conversation itself (entries, timings, tool status, conversation ids)
@@ -428,7 +428,8 @@ return function(deps)
     if prompt:match("^%s*$") then return end
     local provider = dlg.data.provider or providers[1]
     deps.preferences.provider = provider
-    local context = deps.contextString()
+    -- The document's state goes with every message (#18).
+    local state = deps.stateBlock()
 
     conv:send(prompt, provider)
     dlg:modify{ id = "prompt", text = "" }
@@ -446,7 +447,7 @@ return function(deps)
     deps.ensureBridge(function(ok, err)
       if not ok then return fail(err or "Could not reach the bridge") end
       deps.request("chat.send", {
-        prompt = prompt, context = context, provider = provider, sessionId = conv:conversationId(provider) or "",
+        prompt = prompt, state = state, provider = provider, sessionId = conv:conversationId(provider) or "",
       }, function(_, error)
         if error then
           fail(error.message or tostring(error))

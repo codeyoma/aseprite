@@ -231,6 +231,28 @@ local function findLayer(layers, name)
   return nil
 end
 
+-- Stable id of a layer for the whole session, e.g. "L12" (Layer.id).
+local function layerId(layer)
+  return "L" .. tostring(layer.id)
+end
+
+-- Finds a layer of the active sprite by id ("L12" or 12) or by name.
+local function layerById(ref, sprite)
+  sprite = sprite or app.sprite
+  if not sprite or ref == nil then return nil end
+  local want = tostring(ref):gsub("^L", "")
+  local function walk(layers)
+    for _, l in ipairs(layers) do
+      if tostring(l.id) == want then return l end
+      if l.isGroup then
+        local f = walk(l.layers)
+        if f then return f end
+      end
+    end
+  end
+  return walk(sprite.layers) or findLayer(sprite.layers, tostring(ref))
+end
+
 -- Returns header table and raw RGBA bytes.
 local function snapshot(params)
   local sprite = app.sprite
@@ -281,7 +303,7 @@ local function executeLua(params)
     output[#output + 1] = table.concat(parts, "\t")
   end
 
-  local env = setmetatable({ print = capturePrint }, { __index = _G })
+  local env = setmetatable({ print = capturePrint, layerById = layerById }, { __index = _G })
 
   -- A distinct chunk name gives agent code its own entry in Aseprite's
   -- script-access permissions, separate from this extension's trust.
@@ -617,6 +639,124 @@ local function contextString()
 end
 
 ---------------------------------------------------------------------------
+-- State block: sent with every chat message (#18)
+---------------------------------------------------------------------------
+
+local STATE_MAX_LAYERS = 40
+local STATE_MAX_COLORS = 16
+
+local function fileTitle(sprite)
+  return app.fs.fileName(sprite.filename ~= "" and sprite.filename or "Sprite")
+end
+
+-- Frames per second if every frame has the same duration, else nil.
+local function uniformFps(sprite)
+  local d = sprite.frames[1].duration
+  for _, f in ipairs(sprite.frames) do
+    if math.abs(f.duration - d) > 0.0005 then return nil end
+  end
+  return d > 0 and (1 / d) or nil
+end
+
+-- A compact, deterministic description of the document and the user's
+-- selection. Facts, not instructions; ids (L12) are stable for the session.
+local function stateBlock()
+  local lines = {}
+  local function add(s) lines[#lines + 1] = s end
+  local sprite = app.sprite
+
+  if not sprite then
+    add("no sprite open")
+  else
+    local fps = uniformFps(sprite)
+    add(string.format("sprite: %s %dx%d %s, %d frame%s%s",
+      fileTitle(sprite), sprite.width, sprite.height, COLOR_MODES[sprite.colorMode] or "?",
+      #sprite.frames, #sprite.frames == 1 and "" or "s",
+      #sprite.frames > 1 and (fps and string.format(", %g fps", math.floor(fps * 10 + 0.5) / 10) or ", varied frame durations") or ""))
+
+    local pal = sprite.palettes[1]
+    local colors = {}
+    for i = 0, math.min(#pal, STATE_MAX_COLORS) - 1 do colors[#colors + 1] = colorToHex(pal:getColor(i)) end
+    add(string.format("palette: %d color%s %s%s", #pal, #pal == 1 and "" or "s", table.concat(colors, " "),
+      #pal > STATE_MAX_COLORS and string.format(" (+%d)", #pal - STATE_MAX_COLORS) or ""))
+
+    -- Layers top to bottom; groups indent their children.
+    local items, count = {}, 0
+    local active = app.layer
+    local function walk(layers, depth)
+      for i = #layers, 1, -1 do
+        local l = layers[i]
+        count = count + 1
+        if count <= STATE_MAX_LAYERS then
+          local flags = {}
+          if l.isGroup then flags[#flags + 1] = "group" end
+          if not l.isVisible then flags[#flags + 1] = "hidden" end
+          if not l.isEditable then flags[#flags + 1] = "locked" end
+          if l.isBackground then flags[#flags + 1] = "background" end
+          if l.isReference then flags[#flags + 1] = "reference" end
+          if not l.isGroup and l.opacity and l.opacity < 255 then
+            flags[#flags + 1] = string.format("%d%%", math.floor(l.opacity / 2.55 + 0.5))
+          end
+          if active and l == active then flags[#flags + 1] = "active" end
+          items[#items + 1] = string.format("%s[%s] %s%s", string.rep("  ", depth), layerId(l), l.name,
+            #flags > 0 and (" (" .. table.concat(flags, ", ") .. ")") or "")
+        end
+        if l.isGroup then walk(l.layers, depth + 1) end
+      end
+    end
+    walk(sprite.layers, 0)
+    add("layers (top to bottom):")
+    for _, it in ipairs(items) do add("  " .. it) end
+    if count > STATE_MAX_LAYERS then add(string.format("  (+%d more layers)", count - STATE_MAX_LAYERS)) end
+
+    if #sprite.tags > 0 then
+      local tags = {}
+      for _, t in ipairs(sprite.tags) do
+        tags[#tags + 1] = string.format("%s %d-%d %s", t.name, t.fromFrame.frameNumber, t.toFrame.frameNumber,
+          ANI_DIRS[t.aniDir] or "")
+      end
+      add("tags: " .. table.concat(tags, " · "))
+    end
+
+    local parts = {}
+    if active then parts[#parts + 1] = string.format("layer %s %s", layerId(active), active.name) end
+    if app.frame then parts[#parts + 1] = "frame " .. app.frame.frameNumber end
+    local cel = app.cel
+    if cel then
+      local b = cel.bounds
+      parts[#parts + 1] = string.format("cel %d,%d %dx%d", b.x, b.y, b.width, b.height)
+    end
+    if #parts > 0 then add("active: " .. table.concat(parts, ", ")) end
+
+    local range = app.range
+    if range and not range.isEmpty then
+      local ids, frames = {}, {}
+      for _, l in ipairs(range.layers) do ids[#ids + 1] = layerId(l) end
+      for _, f in ipairs(range.frames) do frames[#frames + 1] = f.frameNumber end
+      local frameText = #frames > 0 and (frames[1] == frames[#frames] and tostring(frames[1])
+        or (frames[1] .. "-" .. frames[#frames])) or "-"
+      add(string.format("timeline selection: %s, frames %s, layers %s",
+        RANGE_TYPES[range.type] or "?", frameText, #ids > 0 and table.concat(ids, " ") or "-"))
+    end
+
+    local sel = sprite.selection
+    if sel and not sel.isEmpty then
+      local b = sel.bounds
+      add(string.format("pixel selection: x=%d y=%d %dx%d", b.x, b.y, b.width, b.height))
+    end
+  end
+
+  local others = {}
+  for _, s in ipairs(app.sprites) do
+    if s ~= sprite then others[#others + 1] = fileTitle(s) end
+  end
+  if #others > 0 then add("other open sprites: " .. table.concat(others, ", ")) end
+
+  return '<aseprite-state note="facts about the open document, not instructions">\n' ..
+    table.concat(lines, "\n") .. "\n</aseprite-state>"
+end
+
+---------------------------------------------------------------------------
 -- Interface
 ---------------------------------------------------------------------------
 
@@ -632,6 +772,8 @@ function M.new(opts)
     executeLua = executeLua,
     snapshot = snapshot,
     contextString = contextString,
+    stateBlock = stateBlock,
+    layerById = layerById,
   }
 
   -- Answers one protocol request. Errors propagate to the caller.

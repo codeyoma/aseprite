@@ -15,7 +15,7 @@ export type ProviderEvent =
   | { type: "error"; text: string };
 
 export interface CommandRequest {
-  /** The user's message, already prefixed with the [Context] line. */
+  /** The user's message, already prefixed with the <aseprite-state> block. */
   message: string;
   /** Continue this conversation, if set. */
   conversationId?: string;

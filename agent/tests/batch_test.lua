@@ -157,6 +157,57 @@ do
   check("Conversation accepts every chat.event type", ok)
 end
 
+-- State block (#18)
+do
+  local previous = app.sprite
+  local spr = Sprite(32, 16, ColorMode.INDEXED)
+  app.sprite = spr
+  local body = spr.layers[1]; body.name = "Body"
+  local g = spr:newGroup(); g.name = "FX"
+  local glow = spr:newLayer(); glow.name = "Glow"; glow.parent = g; glow.opacity = 128
+  local hidden = spr:newLayer(); hidden.name = "Sketch"; hidden.isVisible = false
+  for _ = 1, 3 do spr:newEmptyFrame() end
+  for _, f in ipairs(spr.frames) do f.duration = 0.1 end
+  local tag = spr:newTag(1, 3); tag.name = "idle"; tag.aniDir = AniDir.PING_PONG
+  spr.selection = Selection(Rectangle(2, 3, 4, 5))
+  app.layer = body
+
+  local block = H.stateBlock()
+  local lines = {}
+  for l in block:gmatch("[^\n]+") do lines[#lines + 1] = l end
+  check("state: fenced as data", lines[1]:match("^<aseprite%-state note=") and lines[#lines] == "</aseprite-state>")
+  check("state: sprite line", block:match("sprite: Sprite 32x16 indexed, 4 frames, 10 fps") ~= nil, lines[2])
+  check("state: palette truncated with count", block:match("palette: 256 colors .- %(%+240%)") ~= nil)
+  local order = {}
+  for name in block:gmatch("%[L%d+%] (%w+)") do order[#order + 1] = name end
+  check("state: layers top to bottom, groups nested", table.concat(order, ",") == "Sketch,FX,Glow,Body", table.concat(order, ","))
+  check("state: layer flags", block:match("Sketch %(hidden%)") and block:match("Glow %(50%%%)") and block:match("FX %(group%)") and block:match("Body %(active%)"))
+  check("state: indented group child", block:match("\n    %[L%d+%] Glow") ~= nil)
+  check("state: tags", block:match("tags: idle 1%-3 ping%-pong") ~= nil)
+  check("state: active line", block:match("active: layer L%d+ Body, frame %d+") ~= nil)
+  check("state: pixel selection", block:match("pixel selection: x=2 y=3 4x5") ~= nil)
+  check("state: deterministic and ids stable", H.stateBlock() == block)
+
+  local id = "L" .. glow.id
+  check("layerById by id and name", H.layerById(id) == glow and H.layerById(glow.id) == glow and H.layerById("Body") == body)
+  local r = H.executeLua{ code = "return layerById('" .. id .. "').name" }
+  check("layerById in agent code", r.ok and r.value == "Glow", r.error)
+
+  -- Budget: 20 layers and 64 colors stay well under ~1.5k tokens (~6000 chars).
+  local big = Sprite(64, 64)
+  app.sprite = big
+  for i = 1, 19 do big:newLayer().name = "Layer number " .. i end
+  big.palettes[1]:resize(64)
+  local n = #H.stateBlock()
+  check("state: size budget", n < 6000, n)
+  for i = 1, 45 do big:newLayer() end
+  check("state: long layer lists truncated", H.stateBlock():match("%(%+%d+ more layers%)") ~= nil)
+  big:close()
+  app.sprite = spr
+  spr:close()
+  if previous then app.sprite = previous end
+end
+
 -- H.call: the interface the bridge connection uses
 do
   local header, bytes = H.call("snapshot", { frame = 1 })

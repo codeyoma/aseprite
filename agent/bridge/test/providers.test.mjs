@@ -112,3 +112,12 @@ test("chat-event fixtures for the panel are current", () => {
     assert.equal(readFileSync(file, "utf8"), json, `${id}: run UPDATE_FIXTURES=1 npm test`);
   }
 });
+
+import { composeMessage } from "../dist/chat.js";
+
+test("the state block goes first in every message", () => {
+  const state = '<aseprite-state note="x">\nsprite: a 8x8 rgb, 1 frame\n</aseprite-state>';
+  assert.equal(composeMessage("add a layer", state), `${state}\n\nadd a layer`);
+  assert.equal(composeMessage("add a layer", ""), "add a layer");
+  assert.equal(composeMessage("add a layer", undefined), "add a layer");
+});
