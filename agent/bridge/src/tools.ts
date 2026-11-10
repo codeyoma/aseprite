@@ -127,6 +127,24 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "propose_variations",
+    title: "Show variations",
+    description:
+      "Show the user the variations you built for a task so they can keep one. Build each candidate first in " +
+      "execute_lua with variationLayer(task, i) (i = 1..n), which returns a layer \"AI: <task> v<i>\" in a group " +
+      "\"AI variations: <task>\". The panel shows thumbnails; the user keeps one or discards them all. Don't pick for them.",
+    input: z.object({ task: z.string().min(1).describe("The task name you passed to variationLayer.") }),
+    kind: "read",
+    label: (a) => (a.task ? `Show variations of ${a.task}` : "Show variations"),
+    async run({ task }, aseprite) {
+      const { result } = await aseprite.request("propose_variations", { task });
+      const how = result.shown
+        ? "The user sees them in the chat panel and will keep one or discard them."
+        : "The chat panel is not open, so the user picks one by hand: keep one layer, delete the group.";
+      return { content: [text(`Showing ${result.count} variations of "${task}": ${(result.layers as string[]).join(", ")}. ${how}`)] };
+    },
+  },
+  {
     name: "diff_visual",
     title: "Visual diff",
     description:

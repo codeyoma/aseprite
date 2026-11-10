@@ -49,3 +49,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Attachment**: an image the user sends with a chat message so the agent can see it: the selection, the active layer or frame rendered to a PNG (upscaled to at most 512 px, `agent/extension/attachments.lua`), or an image file. The bridge sends attachments as ACP image blocks (`agent/bridge/src/attachments.ts`).
 
 **Chat Mode**: how much the agent may do in a turn (#24). **Agent** uses every tool; **Ask** and **Plan** connect the agent to the bridge's read-only MCP endpoint (`/mcp/ask`, read tools only), and Plan asks for a numbered plan that **Apply plan** carries out in Agent mode. Switching between Agent and the read-only modes restarts the ACP agent and loads the same session with the other endpoint.
+
+**AI layer**: a layer named `AI: <task>` that holds content the agent generated, created above the source layer with `aiLayer(task, prompt)`; the request is stored in `layer.properties("aseprite-agent").prompt`.
+
+**Variations**: candidate results for one task, built by the agent as layers `AI: <task> v<i>` in a group `AI variations: <task>` (`variationLayer(task, i)`) and shown with the `propose_variations` tool. The user keeps one (it becomes the AI layer) or discards them; each is one undo step (`agent/extension/variations.lua`).

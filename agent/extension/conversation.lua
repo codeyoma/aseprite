@@ -15,6 +15,7 @@
 --   { kind = "worked", secs, check = nil|{ errors, warnings }, applyPlan = nil|true, planApplied = nil|true }
 --     (check: the turn's last check, if any; applyPlan: a Plan-mode reply that can be carried out)
 --   { kind = "plan", items = { { content, status = "pending"|"in_progress"|"completed" }, ... } }
+--   { kind = "variations", task, items = { { name, image }, ... }, prompt, resolved = nil|"Kept v2"|"Discarded" }
 
 local PROVIDER_NAMES = { claude = "Claude", codex = "Codex" }
 local MODE_NAMES = { ask = "Ask", plan = "Plan" }   -- Agent mode is not labeled
@@ -156,6 +157,16 @@ function Conversation:apply(ev)
     return { turnEnded = true }
   end
   return { turnEnded = false }
+end
+
+-- Variations the agent built for a task (#25), with the user's request that
+-- led to them (stored on the layer the user keeps).
+function Conversation:addVariations(task, items)
+  local prompt
+  for i = #self.list, 1, -1 do
+    if self.list[i].kind == "user" then prompt = self.list[i].text; break end
+  end
+  return push(self, { kind = "variations", task = task, items = items, prompt = prompt })
 end
 
 -- Records the user's answer to a permission request.

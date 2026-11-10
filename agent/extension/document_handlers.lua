@@ -11,6 +11,7 @@
 
 local chunkDir = "."     -- set by new(): agent code gets its own chunk name here
 local PROTOCOL = nil     -- set by new()
+local variations         -- variations.lua, loaded by new()
 
 ---------------------------------------------------------------------------
 -- Utilities
@@ -303,7 +304,11 @@ local function executeLua(params)
     output[#output + 1] = table.concat(parts, "\t")
   end
 
-  local env = setmetatable({ print = capturePrint, layerById = layerById }, { __index = _G })
+  local env = setmetatable({
+    print = capturePrint, layerById = layerById,
+    -- AI layers and variations (#25), see variations.lua.
+    aiLayer = variations and variations.aiLayer, variationLayer = variations and variations.variationLayer,
+  }, { __index = _G })
 
   -- A distinct chunk name gives agent code its own entry in Aseprite's
   -- script-access permissions, separate from this extension's trust.
@@ -396,6 +401,36 @@ end
 
 -- Before/after of edit steps (step_capture.lua), set by M.new.
 local capture
+-- AI layers and variations (variations.lua), and who shows them; set by M.new.
+local onVariations
+
+-- Shows the variations of a task to the user (the chat panel's thumbnails).
+handlers.propose_variations = function(params)
+  local task = params.task
+  if type(task) ~= "string" or task == "" then error("params.task is required") end
+  local list = variations.candidates(task)
+  if not list or #list == 0 then
+    error("No variations for '" .. task .. "'. Build them with variationLayer('" .. task .. "', i) first.")
+  end
+  local items, names = {}, {}
+  local area
+  for i, l in ipairs(list) do
+    local img = variations.render(l, toRgbImage)
+    items[i] = { name = l.name, image = img }
+    names[i] = l.name
+    local b = img:shrinkBounds()
+    if not b.isEmpty then area = area and area:union(b) or b end
+  end
+  -- Thumbnails show the area the candidates cover (plus a margin), so small
+  -- drawings stay readable.
+  if area then
+    local s = app.sprite
+    area = Rectangle(area.x - 2, area.y - 2, area.width + 4, area.height + 4):intersect(Rectangle(0, 0, s.width, s.height))
+    for _, it in ipairs(items) do it.image = Image(it.image, area) end
+  end
+  if onVariations then onVariations{ task = task, items = items } end
+  return { task = task, count = #list, layers = names, shown = onVariations ~= nil }
+end
 
 handlers.diff_visual = function(params)
   if not capture then error("Step capture is not enabled") end
@@ -1133,6 +1168,8 @@ local M = {}
 function M.new(opts)
   chunkDir = assert(opts and opts.chunkDir, "chunkDir required")
   capture = opts.capture
+  variations = dofile(app.fs.joinPath(chunkDir, "variations.lua"))
+  onVariations = opts.onVariations
   PROTOCOL = assert(opts.protocol, "protocol required")
 
   local H = {
@@ -1145,6 +1182,7 @@ function M.new(opts)
     layerById = layerById,
     check = check,
     Uri = Uri,
+    variations = function() return variations end,
   }
 
   -- Answers one protocol request. Errors propagate to the caller.

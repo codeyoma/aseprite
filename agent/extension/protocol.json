@@ -1,6 +1,6 @@
 {
   "description": "Wire protocol between the aseprite-agent bridge and the Aseprite extension (JSON-RPC 2.0 over WebSocket). This file is the single definition: the extension ships it, the bridge copies it, and contract tests check both sides against it. Bump version on any incompatible change.",
-  "version": 5,
+  "version": 6,
   "handshake": {
     "hello": "extension -> bridge, first message: { token, protocol, asepriteVersion }",
     "welcome": "bridge -> extension: the connection is accepted",
@@ -21,7 +21,8 @@
     "check": {},
     "diff_visual": {
       "binary": true
-    }
+    },
+    "propose_variations": {}
   },
   "binaryResults": "A request marked binary answers with a result containing binary: true, followed by exactly one binary WebSocket frame with the data.",
   "bridgeMethods": [

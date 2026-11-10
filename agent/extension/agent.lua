@@ -20,7 +20,8 @@ function init(plugin)
   local protocol = loadProtocol(plugin.path)
 
   local capture = load("step_capture.lua").new{ limit = 50 }
-  local handlers = load("document_handlers.lua").new{ chunkDir = plugin.path, protocol = protocol, capture = capture }
+  local handlers = load("document_handlers.lua").new{ chunkDir = plugin.path, protocol = protocol, capture = capture,
+    onVariations = function(info) if Panel then Panel.showVariations(info) end end }
 
   connection = load("bridge_connection.lua").new{
     protocol = protocol,
@@ -55,6 +56,7 @@ function init(plugin)
     resolveUri = handlers.Uri.resolve,
     selectUri = handlers.Uri.select,
     TurnHistory = load("turn_history.lua"),
+    variations = handlers.variations,
     attachments = load("attachments.lua").new{
       dir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "attachments"),
       snapshot = handlers.snapshot, Uri = handlers.Uri,
@@ -71,6 +73,9 @@ function init(plugin)
   -- Scripting API for other scripts: AsepriteAgent.chat("make it blue")
   AsepriteAgent = {
     chat = function(prompt, provider, mode) Panel.submit(prompt, provider, mode) end,
+    -- Keeps variation i of the newest variations, or discards them (nil) (#25).
+    pickVariation = function(i) return Panel.resolveVariations(i) end,
+    discardVariations = function() return Panel.resolveVariations(nil) end,
     -- Carries out the last Plan-mode reply (#24).
     applyPlan = function()
       local list = Panel.entries()

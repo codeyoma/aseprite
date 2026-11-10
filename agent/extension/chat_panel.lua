@@ -405,6 +405,54 @@ return function(deps)
           end
         end, nil, u * 3)
 
+      elseif k == "variations" then
+        -- Thumbnails to keep one variation, or Discard (#25).
+        local gap = u * 2
+        local n = math.max(1, #e.items)
+        local box = math.min(math.floor((textW - gap * (n - 1)) / math.min(n, 4)), u * 32)
+        addRow(lh, function(y)
+          gc.color = C.dim
+          gc:fillText("Variations of " .. e.task .. (e.resolved and (": " .. e.resolved) or ""), pad, y)
+          if not e.resolved then
+            local label = "Discard"
+            local bw = gc:measureText(label).width + u * 4
+            local x = w - pad - bw
+            gc.color = C.rule
+            gc:beginPath()
+            gc:roundedRect(Rectangle(x, y - u // 2, bw, lh + u), u * 2, u * 2)
+            gc:fill()
+            gc.color = C.text
+            gc:fillText(label, x + u * 2, y)
+            hitButtons[#hitButtons + 1] = { x0 = x, y0 = y - u // 2, x1 = x + bw, y1 = y + lh + u // 2,
+              action = "discard_variations", entry = e }
+          end
+        end, nil, u * 2)
+        if not e.resolved then
+          local perRow = math.min(n, 4)
+          for row = 0, math.ceil(n / perRow) - 1 do
+            addRow(box + lh + u, function(y)
+              for col = 1, perRow do
+                local i = row * perRow + col
+                local it = e.items[i]
+                if it then
+                  local tx = pad + (col - 1) * (box + gap)
+                  local iw, ih = it.image.width, it.image.height
+                  local s = box / math.max(iw, ih)
+                  if s >= 1 then s = math.floor(s) end
+                  local dw, dh = math.max(1, math.floor(iw * s)), math.max(1, math.floor(ih * s))
+                  gc.color = C.rule
+                  gc:fillRect(Rectangle(tx, y, box, box))
+                  gc:drawImage(it.image, Rectangle(0, 0, iw, ih), Rectangle(tx + (box - dw) // 2, y + (box - dh) // 2, dw, dh))
+                  gc.color = C.faint
+                  gc:fillText("Keep v" .. i, tx, y + box + u)
+                  hitButtons[#hitButtons + 1] = { x0 = tx, y0 = y, x1 = tx + box, y1 = y + box + lh,
+                    action = "pick_variation", entry = e, index = i }
+                end
+              end
+            end, nil, u * 2)
+          end
+        end
+
       elseif k == "worked" then
         addRow(lh + u * 2, function(y)
           gc.color = C.dim
@@ -662,13 +710,15 @@ return function(deps)
     if typedAt then openPicker() end
   end
 
-  local function send()
+  -- providerOverride / modeOverride come from Panel.submit (scripts, Apply
+  -- plan): the provider list may not be loaded yet right after opening.
+  local function send(providerOverride, modeOverride)
     if conv:isBusy() or not dlg then return end
     local prompt = dlg.data.prompt or ""
     if prompt:match("^%s*$") then return end
-    local provider = dlg.data.provider or providers[1]
-    local mode = (dlg.data.mode or "Agent"):lower()
-    deps.preferences.mode = dlg.data.mode
+    local provider = providerOverride or dlg.data.provider or providers[1]
+    local mode = modeOverride or (dlg.data.mode or "Agent"):lower()
+    deps.preferences.mode = mode:sub(1, 1):upper() .. mode:sub(2)
     deps.preferences.provider = provider
     -- The document's state goes with every message (#18), after what changed
     -- since the agent's last reply (#19), if anything.
@@ -735,7 +785,7 @@ return function(deps)
     dlg:modify{ id = "prompt", text = prompt }
     if provider then dlg:modify{ id = "provider", option = provider } end
     if mode then dlg:modify{ id = "mode", option = mode:sub(1, 1):upper() .. mode:sub(2) } end
-    send()
+    send(provider, mode)
   end
 
   function Panel.isBusy() return conv:isBusy() end
@@ -751,7 +801,23 @@ return function(deps)
   end
 
   -- Revert or restore a reply (#22). Reverting over later edits asks first.
-  function Panel.turnAction(turn, action, entry)
+  function Panel.turnAction(turn, action, entry, index)
+    if action == "pick_variation" or action == "discard_variations" then
+      if not entry or entry.resolved then return false end
+      local V = deps.variations()
+      local ok, why
+      if action == "pick_variation" then
+        ok, why = V.pick(entry.task, index, entry.prompt)
+        if ok then entry.resolved = "Kept v" .. index end
+      else
+        ok, why = V.discard(entry.task)
+        if ok then entry.resolved = "Discarded" end
+      end
+      if not ok and why then app.tip(why) end
+      refreshContext()
+      if dlg then dlg:repaint() end
+      return ok and true or false
+    end
     if action == "apply_plan" then
       if conv:isBusy() or (entry and entry.planApplied) then return false end
       if entry then entry.planApplied = true end
@@ -800,6 +866,24 @@ return function(deps)
   function Panel.lastTurn() return lastTurn end
 
   -- Entries as plain records (for tests and other scripts).
+  -- Variations from the agent's propose_variations tool (#25).
+  function Panel.showVariations(info)
+    Panel.open()
+    conv:addVariations(info.task, info.items)
+    changed()
+  end
+
+  -- Keeps variation `index` (or discards all when index is nil) of the newest variations entry.
+  function Panel.resolveVariations(index)
+    local list = conv:entries()
+    for i = #list, 1, -1 do
+      if list[i].kind == "variations" and not list[i].resolved then
+        return Panel.turnAction(nil, index and "pick_variation" or "discard_variations", list[i], index)
+      end
+    end
+    return false
+  end
+
   function Panel.applyLastPlan()
     local list = conv:entries()
     for i = #list, 1, -1 do
@@ -812,7 +896,8 @@ return function(deps)
     local out = {}
     for _, e in ipairs(conv:entries()) do
       out[#out + 1] = { kind = e.kind, text = e.text, status = e.status, secs = e.secs,
-        changed = e.capture and e.capture.changed or nil, applyPlan = e.applyPlan, planApplied = e.planApplied }
+        changed = e.capture and e.capture.changed or nil, applyPlan = e.applyPlan, planApplied = e.planApplied,
+        task = e.task, resolved = e.resolved, count = e.items and #e.items or nil }
     end
     return out
   end
@@ -856,7 +941,7 @@ return function(deps)
       onmousedown = function(ev)
         for _, b in ipairs(hitButtons) do
           if ev.x >= b.x0 and ev.x <= b.x1 and ev.y >= b.y0 and ev.y <= b.y1 then
-            Panel.turnAction(b.turn, b.action, b.entry)
+            Panel.turnAction(b.turn, b.action, b.entry, b.index)
             return
           end
         end
@@ -908,7 +993,7 @@ return function(deps)
     dlg:combobox{ id = "mode", options = { "Agent", "Ask", "Plan" }, option = deps.preferences.mode or "Agent" }
     dlg:button{ id = "attach", text = "+", onclick = openAttachMenu }
     dlg:button{ id = "mention", text = "@", onclick = openPicker }
-    dlg:button{ id = "send", text = "&Send", onclick = send }
+    dlg:button{ id = "send", text = "&Send", onclick = function() send() end }
     dlg:button{ id = "stop", text = "S&top", enabled = false, onclick = function()
       deps.request("chat.stop", {}, function() end)
     end }

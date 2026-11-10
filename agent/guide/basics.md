@@ -15,6 +15,22 @@ Each `execute_lua` call is one undo step. If the code raises an error, everythin
 
 Chat messages start with an `<aseprite-state>` block: sprite size and color mode, palette, layers from top to bottom with ids such as `L12`, tags, the active layer, frame and cel, and the timeline and pixel selection. Ids stay the same for the whole session. Inside `execute_lua`, `layerById("L12")` returns that layer (it also accepts a layer name).
 
+## Where new content goes
+
+Put content you generate or redraw on a new layer, so the user's pixels stay untouched: `aiLayer(task, prompt)` (in `execute_lua`) creates a layer named `AI: <task>` above the active layer, stores the user's request on it and makes it active. Edit the user's own layers in place only when they ask for that ("recolor this layer", "fix these pixels").
+
+```lua
+local l = aiLayer("Shadow", "add a drop shadow under the hero")
+app.useTool{ tool = "pencil", color = Color(0, 0, 0), points = { Point(4, 12), Point(9, 12) } }  -- draws on l
+```
+
+When the user asks for variations or options ("give me 3 swords"), build each candidate with `variationLayer(task, i)`, which returns a layer `AI: <task> v<i>` inside a group `AI variations: <task>` (only the newest one is visible). Then call `propose_variations(task)`: the user sees thumbnails in the chat panel and keeps one or discards them all. Don't pick for them.
+
+```lua
+local l = variationLayer("sword", 2)  -- candidate 2
+app.sprite:newCel(l, app.frame, img, Point(0, 0))
+```
+
 ## Mentions and links
 
 Users can mention objects; you receive them as `Body (aseprite://layer/L12)`. The scheme:

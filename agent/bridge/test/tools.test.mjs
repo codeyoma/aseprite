@@ -27,7 +27,8 @@ test("every tool is fully defined", () => {
     assert.ok(t.title && t.description, `${t.name}: title and description`);
     assert.ok(t.kind === "edit" || t.kind === "read", `${t.name}: kind`);
     assert.ok(t.label({}).length > 0, `${t.name}: label`);
-    assert.ok(t.input.safeParse({}).success || t.name === "execute_lua" || t.name === "run_command", `${t.name}: optional input`);
+    const required = new Set(["execute_lua", "run_command", "propose_variations"]);
+    assert.ok(t.input.safeParse({}).success || required.has(t.name), `${t.name}: optional input`);
   }
 });
 
@@ -163,4 +164,12 @@ test("diff_visual: returns the diff PNG, bounds and count", async () => {
   const saved = fakeAseprite();
   assert.equal(textOf(await runTool(findTool("diff_visual"), { save: "start" }, saved)), 'Saved checkpoint "start".');
   assert.deepEqual(saved.calls[0], { method: "diff_visual", params: { save: "start", checkpoint: undefined } });
+});
+
+test("propose_variations: names the candidates and how the user picks", async () => {
+  const fake = fakeAseprite({ propose_variations: { result: { task: "sword", count: 2, layers: ["AI: sword v1", "AI: sword v2"], shown: true } } });
+  const res = await runTool(findTool("propose_variations"), { task: "sword" }, fake);
+  assert.equal(textOf(res), 'Showing 2 variations of "sword": AI: sword v1, AI: sword v2. The user sees them in the chat panel and will keep one or discard them.');
+  assert.deepEqual(fake.calls[0], { method: "propose_variations", params: { task: "sword" } });
+  assert.equal(toolKind("propose_variations"), "read");
 });
