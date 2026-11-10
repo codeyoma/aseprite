@@ -1464,6 +1464,37 @@ handlers.create_sprite = function(params)
   return { width = w, height = h, title = app.fs.fileTitle(sprite.filename) }
 end
 
+-- A new animated RGB sprite: frames of RGBA bytes (base64) with durations
+-- (ms) and tags (1-based frames), e.g. from import_sheet.
+handlers.create_animation = function(params)
+  local w, h = params.width, params.height
+  local frames = params.frames or {}
+  if #frames == 0 then error("No frames") end
+  local sprite = Sprite(w, h, ColorMode.RGB)
+  for i, f in ipairs(frames) do
+    if i > 1 then sprite:newEmptyFrame() end
+    local bytes = base64Decode(f.rgba or "")
+    if #bytes ~= w * h * 4 then error(string.format("Frame %d: expected %d bytes, got %d", i, w * h * 4, #bytes)) end
+    local img = Image(w, h, ColorMode.RGB)
+    img.bytes = bytes
+    sprite:newCel(sprite.layers[1], i, img, Point(0, 0))
+    sprite.frames[i].duration = (f.duration or 100) / 1000
+  end
+  local dirs = { forward = AniDir.FORWARD, reverse = AniDir.REVERSE, pingpong = AniDir.PING_PONG,
+                 ["ping-pong"] = AniDir.PING_PONG }
+  for _, t in ipairs(params.tags or {}) do
+    if t.from >= 1 and t.to <= #sprite.frames and t.from <= t.to then
+      local tag = sprite:newTag(t.from, t.to)
+      tag.name = t.name
+      if t.direction and dirs[t.direction] then tag.aniDir = dirs[t.direction] end
+    end
+  end
+  if params.title then sprite.filename = params.title end
+  app.frame = sprite.frames[1]
+  app.refresh()
+  return { frames = #sprite.frames, tags = #sprite.tags, title = app.fs.fileTitle(sprite.filename) }
+end
+
 -- A swatch strip of colors on a new layer "AI: <name>" (one undo step).
 handlers.draw_swatches = function(params)
   local sprite = app.sprite

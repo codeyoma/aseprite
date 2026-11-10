@@ -75,3 +75,5 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Tone**: a source's pixel-weighted OKLab statistics (lightness, saturation, contrast, warmth) used to compare and match sprites; the color math lives in `agent/bridge/src/color.ts`, and the extension only reads colors (`collect_colors`) and applies color maps (`apply_color_map`).
 
 **Pixel snap**: rebuilding upscaled or AI-generated "pixel art" at its native size (#37). The grid is the cell size and offset whose boundaries carry the most color change against chance (fractional cells allowed, small noisy changes ignored); each cell takes its dominant color (`agent/bridge/src/pixel_grid.ts`).
+
+**Sheet import**: slicing a sprite sheet image into a new animated sprite (#41): by a grid (cell size from the gutters between sprites, margin keeping boundaries in gutters), by the sprites on it (8-connected shapes on a transparent or key-color background, nearby specks merged, reading order), or by an atlas JSON; frames are aligned bottom-center by default (`agent/bridge/src/sheet.ts`).
