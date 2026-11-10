@@ -861,8 +861,13 @@
     "input": [
       "background",
       "frame",
+      "frames",
+      "ghosts",
       "layer",
-      "scale"
+      "reference",
+      "scale",
+      "tag",
+      "view"
     ]
   },
   {

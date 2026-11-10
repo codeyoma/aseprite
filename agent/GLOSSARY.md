@@ -49,6 +49,8 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Script Panel**: a script dialog docked in the main window (`Dialog{ dockable = true }`), implemented by `ScriptPanel` in this fork.
 
+**Review views**: ways of looking at more than one frame in a single image, offered by `snapshot`'s `view` (`agent/bridge/src/views.ts`), because a vision model sees only the first frame of a GIF. The **filmstrip** lays out a tag's or a range's frames in rows with their frame numbers; the **onion skin** draws a frame solid over its neighbors, earlier ones tinted red and later ones blue (wrapping around a tag); **compare** puts a reference layer (REF) beside the art without it (ART). The bridge builds them from plain per-frame and per-layer snapshots through the Document module, so they change nothing and need no extra wire request. The animate skill looks at the filmstrip before it reports.
+
 **Step Capture**: before and after images of the active frame for every write request (the operation policy's writes), with a diff (changed pixels in red over a faded frame), kept in memory in a ring buffer of 50 (`agent/extension/step_capture.lua`); a reply step claims every capture since the last one. The Chat Panel attaches each capture to its edit step as thumbnails; the `diff_visual` tool compares the canvas with the last step or a named checkpoint.
 
 **Attachment**: an image the user sends with a chat message so the agent can see it: the selection, the active layer or frame rendered to a PNG (upscaled to at most 512 px, `agent/extension/attachments.lua`), or an image file. The bridge sends attachments as ACP image blocks (`agent/bridge/src/attachments.ts`).

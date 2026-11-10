@@ -136,7 +136,7 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `execute_lua` | Runs Lua in Aseprite as one undo step; rolls back on error |
 | `run_command` | Runs any of Aseprite's built-in commands with parameters (dialogs skipped by default) |
 | `list_commands` | Finds commands and their parameters, generated from this fork's source |
-| `snapshot` | PNG of the sprite or a layer, upscaled so pixels are visible |
+| `snapshot` | PNG of the sprite or a layer, upscaled so pixels are visible; review views: `filmstrip` (a tag's or a range's frames in one numbered image), `onion` (a frame over its neighbors, earlier ones ghosted red, later ones blue) and `compare` (a reference layer beside the art) |
 | `read_pixels` | A region as a text grid with a color legend |
 | `save_command` / `run_saved_command` / `list_saved_commands` / `delete_saved_command` | Keep Lua the agent wrote as a command in **My Commands**, versioned with git |
 | `get_timeline_text` / `apply_timeline_text` | The timeline (frames, durations, tags, linked cels) as editable text, applied in one undo step or previewed as a plan |
@@ -161,7 +161,7 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `fx_overlay` / `hit_stop` | An effect timed onto a character's animation (a tag or frames from a start frame), its impact on a chosen frame, placed at a point or at a layer's centre or feet: resampled at the sprite's frame times, or retimed to the effect's fps by inserting frames whose character cels are linked (tags grow); and a hit-stop that holds the contact frame exactly `freeze_ms` longer, optionally spending part of it on a decaying sideways shake and flashing a layer white, recorded on the sprite for export. One undo step each |
 | `spawn_agents` | Splits a multi-frame job across up to 4 sub-agents running in parallel, each limited to its frames (and layers) |
 | `propose_variations` | Shows the user the candidates the agent built (`variationLayer`) as thumbnails to keep one or discard |
-| `diff_visual` | What changed on the active frame since the last edit step or a saved checkpoint: PNG with changed pixels in red, bounds and count |
+| `diff_visual` | What changed on the active frame since the last edit step or a saved checkpoint: PNG with changed pixels in red, and the changed bounds (x, y, w, h) and pixel count in text |
 | `check` | Pixel-art checks (off-palette, orphans, semi-transparent, empty cels, frame timing, outside canvas, duplicate frames, ground jitter) with fixes |
 | `list_skills` | Search the skill catalog (built-in and your own) by name, category or trigger |
 | `read_guide` | Agent guide: `basics`, `recipes`, `pixel-art` (in [guide/](guide/)), plus your own skills |

@@ -27,5 +27,6 @@ Pick the template, then write the frames and timing as timeline text (`apply_tim
 
 ## Check
 1. `check` with rules `duplicate-frame` and `ground-jitter`: no frame should repeat the one before, and feet must stay on the same row while touching the ground.
-2. `snapshot` a few frames side by side; keep the silhouette's size and proportions consistent across frames.
-3. Reply with the frame list (what each frame is) and the timing.
+2. `snapshot` with `view: "filmstrip"` and the `tag` before you report: every frame in one image, numbered. A GIF or a single snapshot shows you only one frame, so judge the motion here. Each frame should move on from the one before, the silhouette keeps its size and proportions, and the last frame leads back into the first. Fix what is off and look again.
+3. For a frame whose spacing or arc looks wrong, `snapshot` with `view: "onion"` and that `frame` (and the `tag`, so it wraps): the frame sits solid over its neighbors, the previous one ghosted red and the next blue. The frame should sit between them on a smooth path.
+4. Reply with the frame list (what each frame is) and the timing.

@@ -153,7 +153,12 @@ test("diff_visual: returns the diff PNG, bounds and count", async () => {
   assert.ok(img, "has an image");
   const png = PNG.sync.read(Buffer.from(img.data, "base64"));
   assert.equal(png.width, w * 128);
-  assert.match(textOf(res), /1 pixels changed, bounds x=0 y=0 w=1 h=1, compared with before the last edit step/);
+  assert.match(textOf(res), /1 pixels changed, compared with before the last edit step \(execute_lua\)\. Changed bounds: x=0 y=0 w=1 h=1 \(1 of its 1 pixels\)/);
+  // A larger change: the bounds and the count, as numbers the agent can act on.
+  const wide = await runTool(findTool("diff_visual"), {}, fakeAseprite({
+    diff_visual: { result: { width: w, height: h, changed: 5, against: "checkpoint a", bounds: { x: 1, y: 0, width: 3, height: 2 } }, binary },
+  }));
+  assert.match(textOf(wide), /Changed bounds: x=1 y=0 w=3 h=2 \(5 of its 6 pixels\)/);
   assert.equal(toolKind("diff_visual"), "read");
 
   const none = await runTool(findTool("diff_visual"), { checkpoint: "start" },

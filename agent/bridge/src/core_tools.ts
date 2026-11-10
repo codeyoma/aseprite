@@ -4,6 +4,8 @@ import * as z from "zod/v4";
 import { encodeSnapshot } from "./png.js";
 import { formatSubResults } from "./subagents.js";
 import { failure, text, type Content, type Tool, type ToolResult } from "./tool.js";
+import { framesSpec } from "./tool_inputs.js";
+import { snapshotView } from "./views.js";
 
 const steps = z.object({ steps: z.number().int().min(1).max(100).optional() });
 
@@ -57,17 +59,29 @@ export const CORE_TOOLS: Tool[] = [
     title: "Snapshot sprite",
     description:
       "Render the active sprite (or one layer) at a frame and return it as a PNG, upscaled with nearest-neighbor " +
-      "so individual pixels are visible. Use it to check visual results after edits.",
+      "so individual pixels are visible. Use it to check visual results after edits. To judge motion (a GIF shows " +
+      "you only its first frame), pick a view: 'filmstrip' lays out a tag's or a range's frames in one image with " +
+      "frame numbers (use it before you report an animation done); 'onion' shows a frame solid over its neighbors, " +
+      "earlier ones ghosted red and later ones blue, to check spacing and arcs; 'compare' puts a reference layer " +
+      "(REF) beside the art without it (ART).",
     input: z.object({
-      frame: z.number().int().min(1).optional().describe("1-based frame number. Default: active frame."),
-      layer: z.string().optional().describe("Render only this layer (by name). Default: all visible layers."),
+      frame: z.number().int().min(1).optional().describe("1-based frame number. Default: active frame. onion: the frame in front."),
+      layer: z.string().optional().describe("Render only this layer (by name). Default: all visible layers. compare: the art layer."),
       scale: z.number().int().min(1).max(32).optional()
-        .describe("Upscale factor. Default: largest factor that keeps the image at or under 512 px."),
+        .describe("Upscale factor. Default: largest factor that keeps the image at or under 512 px (views: about 1024 px)."),
       background: z.string().optional().describe("'checker' (default), 'transparent', or a hex color like '#202020'."),
+      view: z.enum(["filmstrip", "onion", "compare"]).optional()
+        .describe("A review view instead of one frame. Default: one frame."),
+      tag: z.string().optional().describe("filmstrip: the tag's frames. onion: neighbors wrap around the tag."),
+      frames: framesSpec.optional().describe("filmstrip: frames 3, [1,2] or '1-4' when there is no tag. Default: all."),
+      ghosts: z.number().int().min(1).max(3).optional().describe("onion: neighbors on each side. Default 1."),
+      reference: z.string().optional().describe("compare: the reference layer (name or id). Default: a layer named like 'reference'."),
     }),
     kind: "read",
-    label: () => "Look at the sprite",
-    async run({ frame, layer, scale, background }, ctx) {
+    label: (a) => ({ filmstrip: "Look at the filmstrip", onion: "Look at the onion skin", compare: "Compare with the reference" } as Record<string, string>)[a.view] ?? "Look at the sprite",
+    async run(input, ctx) {
+      if (input.view) return snapshotView(ctx, input);
+      const { frame, layer, scale, background } = input;
       const { result, binary } = await ctx.request("snapshot", { frame, layer });
       if (!binary) return failure("Aseprite sent no pixel data");
       const w = result.width as number;
@@ -249,8 +263,9 @@ export function formatDiff(result: any, binary: Buffer | undefined, scale?: numb
   const summary =
     result.changed === 0
       ? `No pixels changed (compared with ${result.against}).`
-      : `${result.changed} pixels changed${result.sizeChanged ? " (canvas size changed)" : ""}, ` +
-        `bounds x=${b?.x} y=${b?.y} w=${b?.width} h=${b?.height}, compared with ${result.against}. Red marks changed pixels.`;
+      : `${result.changed} pixels changed${result.sizeChanged ? " (canvas size changed)" : ""}, compared with ${result.against}. ` +
+        (b ? `Changed bounds: x=${b.x} y=${b.y} w=${b.width} h=${b.height} (${result.changed} of its ${b.width * b.height} pixels). ` : "") +
+        "Red marks changed pixels.";
   if (!binary || result.changed === 0) return { content: [text(summary)] };
   const s = scale ?? Math.max(1, Math.floor(512 / Math.max(w, h)));
   const png = encodeSnapshot(binary, w, h, s, "checker");

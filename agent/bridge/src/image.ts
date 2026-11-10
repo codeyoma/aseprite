@@ -1,6 +1,7 @@
 // Basic RGBA image operations shared by the bridge: the image type, a blank
 // canvas, opaque bounds and trimming, nearest-neighbor scaling, stamping one
-// image onto another, snapping to a palette, and PNG files.
+// image onto another, snapping to a palette, flattening onto a background,
+// labelled contact sheets (used by the FX preview and the review views) and PNG files.
 //
 // Alpha policy: a pixel is opaque (counts as content) when its alpha is at
 // least OPAQUE (128). bounds, trim and stamp use that rule by default; a
@@ -143,10 +144,14 @@ export function writePng(path: string, img: Rgba): void {
   writeFileSync(path, encodePng(img));
 }
 
-/** 3x5 pixel digits for labels, rows top to bottom, 3 bits each (4 = left column). */
-const DIGITS: Record<string, number[]> = {
+/**
+ * 3x5 pixel glyphs for labels, rows top to bottom, 3 bits each (4 = left column): the digits and the few letters
+ * the review views write (REF, ART).
+ */
+const GLYPHS: Record<string, number[]> = {
   "0": [7, 5, 5, 5, 7], "1": [2, 6, 2, 2, 7], "2": [7, 1, 7, 4, 7], "3": [7, 1, 3, 1, 7], "4": [5, 5, 7, 1, 1],
   "5": [7, 4, 7, 1, 7], "6": [7, 4, 7, 5, 7], "7": [7, 1, 1, 2, 2], "8": [7, 5, 7, 5, 7], "9": [7, 5, 7, 1, 7],
+  A: [2, 5, 7, 5, 5], E: [7, 4, 6, 4, 7], F: [7, 4, 6, 4, 4], R: [6, 5, 6, 5, 5], T: [7, 2, 2, 2, 2],
 };
 
 /** Normal "over" blending of one RGBA pixel onto an opaque background pixel. */
@@ -157,30 +162,69 @@ function over(out: Uint8Array, i: number, src: Uint8Array | Buffer, j: number): 
 }
 
 /**
- * Frames side by side in a grid on an opaque background, each scaled by zoom and labelled above with a number
- * (labels[i], digits only) in 3x5 pixel digits at labelScale. Shows an animation as one image.
+ * An opaque copy of the image over a background: a solid color, or a light and dark gray checker whose squares
+ * are `cell` image pixels wide (the snapshot's checker colors).
+ */
+export function flatten(img: Rgba, background: RGBA | "checker", cell = 1): Rgba {
+  const out = new Uint8Array(img.width * img.height * 4);
+  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+    const i = (y * img.width + x) * 4;
+    if (background === "checker") {
+      const v = ((Math.floor(x / cell) + Math.floor(y / cell)) & 1) === 0 ? 204 : 153;
+      out.set([v, v, v, 255], i);
+    } else out.set([background.r, background.g, background.b, 255], i);
+    over(out, i, img.data, i);
+  }
+  return { width: img.width, height: img.height, data: out };
+}
+
+export interface SheetOptions {
+  columns: number;
+  zoom: number;
+  /** Space between cells and around the sheet, in sheet pixels. Default 4. */
+  gap?: number;
+  /** Size of a label pixel. Default 2. */
+  labelScale?: number;
+}
+
+/**
+ * Where contactSheet puts things: the sheet's size, each cell's size (a label strip above the frame) and the
+ * label strip's height. cell(n) is cell n's top-left corner; its label starts there and its frame labelH below.
+ */
+export function sheetGeometry(count: number, frameW: number, frameH: number, o: SheetOptions) {
+  const zoom = Math.max(1, Math.floor(o.zoom)), labelScale = o.labelScale ?? 2, gap = o.gap ?? 4;
+  const columns = Math.max(1, Math.min(o.columns, count)), rows = Math.ceil(count / columns);
+  const labelH = 5 * labelScale + 3;
+  const cellW = Math.max(frameW * zoom, 16 * labelScale), cellH = labelH + frameH * zoom;
+  return {
+    zoom, labelScale, gap, columns, rows, labelH, cellW, cellH,
+    width: gap + columns * (cellW + gap), height: gap + rows * (cellH + gap),
+    cell: (n: number) => ({ x: gap + (n % columns) * (cellW + gap), y: gap + Math.floor(n / columns) * (cellH + gap) }),
+  };
+}
+
+/**
+ * Frames side by side in a grid on an opaque background, each scaled by zoom and labelled above with labels[i]
+ * (digits and the letters in GLYPHS) in 3x5 pixel glyphs at labelScale. Shows an animation as one image.
  */
 export function contactSheet(
   frames: Rgba[],
-  o: { labels: string[]; columns: number; zoom: number; background: RGBA; labelColor: RGBA; gap?: number; labelScale?: number },
+  o: SheetOptions & { labels: string[]; background: RGBA; labelColor: RGBA },
 ): Rgba {
   if (!frames.length) return blank(1, 1);
-  const z = Math.max(1, Math.floor(o.zoom)), ls = o.labelScale ?? 2, gap = o.gap ?? 4;
+  const g = sheetGeometry(frames.length, frames[0].width, frames[0].height, o);
+  const { zoom: z, labelScale: ls, labelH, width: W, height: H } = g;
   const fw = frames[0].width * z, fh = frames[0].height * z;
-  const labelH = 5 * ls + 3;
-  const cols = Math.max(1, Math.min(o.columns, frames.length)), rows = Math.ceil(frames.length / cols);
-  const cellW = Math.max(fw, 4 * ls * 4), cellH = labelH + fh;
-  const W = gap + cols * (cellW + gap), H = gap + rows * (cellH + gap);
   const out = new Uint8Array(W * H * 4);
   for (let i = 0; i < W * H; i++) out.set([o.background.r, o.background.g, o.background.b, 255], i * 4);
   const label = [o.labelColor.r, o.labelColor.g, o.labelColor.b, 255];
   frames.forEach((f, n) => {
-    const cx = gap + (n % cols) * (cellW + gap), cy = gap + Math.floor(n / cols) * (cellH + gap);
-    [...(o.labels[n] ?? "")].forEach((ch, k) => {
-      const g = DIGITS[ch];
-      if (!g) return;
+    const { x: cx, y: cy } = g.cell(n);
+    [...(o.labels[n] ?? "").toUpperCase()].forEach((ch, k) => {
+      const glyph = GLYPHS[ch];
+      if (!glyph) return;
       for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) {
-        if (!(g[r] & (4 >> c))) continue;
+        if (!(glyph[r] & (4 >> c))) continue;
         for (let yy = 0; yy < ls; yy++) for (let xx = 0; xx < ls; xx++) {
           const X = cx + k * 4 * ls + c * ls + xx, Y = cy + r * ls + yy;
           if (X < W && Y < H) out.set(label, (Y * W + X) * 4);

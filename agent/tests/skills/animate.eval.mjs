@@ -1,4 +1,4 @@
-// animate: in-betweens with transform_layer, then a squash on the landing frame.
+// animate: in-betweens with transform_layer, a squash on the landing frame, then the filmstrip review.
 import { bounds, fakeDocument, rect } from "./_helpers.mjs";
 
 const W = 32;
@@ -12,6 +12,7 @@ export default {
   steps: [
     { tool: "transform_layer", input: { layer: "Ball", from_frame: 1, to_frame: 5, move: { dx: 16 }, easing: "linear" } },
     { tool: "squash_stretch", input: { layer: "Ball", frame: 5, amount: -0.3 } },
+    { tool: "snapshot", input: { view: "filmstrip", frames: "1-5" } },
   ],
   check(fake, results, assert) {
     const b = [1, 2, 3, 4, 5].map((f) => bounds(fake.cel("Ball", f), W));
@@ -22,5 +23,9 @@ export default {
     // The squash makes the last frame wider and flatter around x ~ 20..25.
     assert.ok(b[4].w > 6 && b[4].h < 6, `squash: ${JSON.stringify(b[4])}`);
     assert.ok(b[4].x0 <= 20 && b[4].x1 >= 25, `squash stays at the end position: ${JSON.stringify(b[4])}`);
+    // The review: all five frames in one numbered image.
+    const strip = results[2];
+    assert.ok(strip.content.some((c) => c.type === "image"), "the filmstrip is an image");
+    assert.match(strip.content.find((c) => c.type === "text").text, /Filmstrip of frames 1-5: 5 frames of 32x32 px/);
   },
 };
