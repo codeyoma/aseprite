@@ -28,7 +28,7 @@ local function saveForRelaunch(conversation)
   for i, s in ipairs(app.sprites) do
     local backup = app.fs.joinPath(relaunchDir, string.format("%d-%s.aseprite", i, app.fs.fileTitle(s.filename)))
     s:saveCopyAs(backup)
-    sprites[#sprites + 1] = { backup = backup, filename = s.filename, modified = s.isModified }
+    sprites[#sprites + 1] = { backup = backup, filename = s.filename, modified = s.isModified, active = (s == app.sprite) or nil }
   end
   local f = assert(io.open(app.fs.joinPath(relaunchDir, "state.json"), "w"))
   f:write(json.encode{ conversation = conversation, sprites = sprites })
@@ -45,12 +45,18 @@ local function restoreAfterRelaunch()
   f:close()
   os.remove(path)
   if not ok or not data then return nil end
-  for _, s in ipairs(data.sprites or {}) do
+  -- app.sprites lists the newest first: open in reverse to keep the tab
+  -- order, then make the sprite that was active active again.
+  local list, active = data.sprites or {}, nil
+  for i = #list, 1, -1 do
+    local s = list[i]
     local sprite = app.open(s.backup)
     -- Saving goes back to the original file; unsaved work came from the copy.
     if sprite and s.filename and app.fs.isFile(s.filename) then sprite.filename = s.filename end
+    if sprite and s.active then active = sprite end
     os.remove(s.backup)
   end
+  if active then app.sprite = active end
   return data.conversation
 end
 
