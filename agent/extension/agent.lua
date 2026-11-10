@@ -142,6 +142,8 @@ function init(plugin)
     end,
     isBusy = function() return Panel.isBusy() end,
     placeholder = function() return Panel.placeholder() end,
+    -- The last sub-agent scope highlighted in the timeline (#33).
+    agentCursor = function() return handlers.agentCursor() end,
     entries = function() return Panel.entries() end,
     openPanel = function() Panel.open() end,
     closePanel = function() Panel.close() end,

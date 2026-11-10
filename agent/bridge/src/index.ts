@@ -7,6 +7,8 @@
 // Both modes connect to the Aseprite extension over WebSocket, serve MCP over
 // localhost HTTP for agents spawned by the chat panel, and run the chat.
 
+import { SubAgents } from "./subagents.js";
+import { setAgentSpawner } from "./tools.js";
 import { cleanAttachments } from "./attachments.js";
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
@@ -26,6 +28,13 @@ async function main() {
 
   const endpoint = await startHttpEndpoint(link, newToken());
   const chat = new ChatRunner(link, endpoint);
+  // spawn_agents (#33): sub-agents with the running chat's agent, shown in the panel.
+  setAgentSpawner(new SubAgents(
+    endpoint,
+    async () => (await link.request("state_block", {})).result.text as string,
+    () => chat.currentProvider(),
+    (ev) => chat.notify(ev),
+  ));
   cleanAttachments(); // rendered attachments older than a week
 
   for (const [method, handler] of Object.entries(bridgeMethods(chat, VERSION, link))) {

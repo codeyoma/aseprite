@@ -1099,7 +1099,7 @@ return function(deps)
     for _, e in ipairs(conv:entries()) do
       out[#out + 1] = { kind = e.kind, text = e.text, status = e.status, secs = e.secs,
         changed = e.capture and e.capture.changed or nil, applyPlan = e.applyPlan, planApplied = e.planApplied,
-        task = e.task, resolved = e.resolved, count = e.items and #e.items or nil }
+        task = e.task, resolved = e.resolved, count = e.items and #e.items or nil, result = e.result }
     end
     return out
   end

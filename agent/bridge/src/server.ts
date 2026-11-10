@@ -38,11 +38,13 @@ export const READ_ONLY_NOTE =
   "Do not try to change the document; describe or plan changes instead.";
 
 /** The MCP server. readOnly lists (and so allows) only the read tools (Ask and Plan modes). */
-export function createMcpServer(aseprite: AsepriteRequester, opts: { readOnly?: boolean } = {}): McpServer {
+export function createMcpServer(aseprite: AsepriteRequester, opts: { readOnly?: boolean; subAgent?: boolean } = {}): McpServer {
   const instructions = opts.readOnly ? `${INSTRUCTIONS}\n\n${READ_ONLY_NOTE}` : INSTRUCTIONS;
   const server = new McpServer({ name: "aseprite-agent", version: VERSION }, { instructions });
   for (const tool of TOOLS) {
     if (opts.readOnly && tool.kind !== "read") continue;
+    // Sub-agents don't start more sub-agents.
+    if (opts.subAgent && tool.name === "spawn_agents") continue;
     server.registerTool(
       tool.name,
       { title: tool.title, description: tool.description, inputSchema: tool.input },

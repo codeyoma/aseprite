@@ -1,5 +1,6 @@
 // Streamable HTTP MCP endpoint on localhost, used by agent CLIs that the
 // chat panel spawns, so they share this bridge's Aseprite connection.
+import { scopeFor } from "./subagents.js";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
@@ -25,9 +26,13 @@ export async function startHttpEndpoint(link: AsepriteLink, token: string): Prom
 
   const server = createServer(async (req, res) => {
     if (!validateHost(req, res) || !validateOrigin(req, res)) return;
-    // /mcp serves every tool; /mcp/ask only the read tools (Ask and Plan modes).
+    // /mcp serves every tool; /mcp/ask only the read tools (Ask and Plan
+    // modes); /mcp/scope/<id> a sub-agent's tools, with its scope on every
+    // request (#33).
     const path = (req.url ?? "").split("?")[0];
-    if (path !== "/mcp" && path !== "/mcp/ask") {
+    const scopeId = /^\/mcp\/scope\/([0-9a-f]+)$/.exec(path)?.[1];
+    const scope = scopeId ? scopeFor(scopeId) : undefined;
+    if (path !== "/mcp" && path !== "/mcp/ask" && !scope) {
       res.writeHead(404).end();
       return;
     }
@@ -36,7 +41,11 @@ export async function startHttpEndpoint(link: AsepriteLink, token: string): Prom
       return;
     }
     // Stateless: one MCP server and transport per request.
-    const mcp = createMcpServer(link, { readOnly: path === "/mcp/ask" });
+    const requester = scope
+      ? { request: (method: string, params: Record<string, unknown> = {}, timeoutMs?: number) =>
+          link.request(method, { ...params, scope }, timeoutMs) }
+      : link;
+    const mcp = createMcpServer(requester as AsepriteLink, { readOnly: path === "/mcp/ask", subAgent: !!scope });
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {
       void transport.close();

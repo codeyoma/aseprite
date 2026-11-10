@@ -2,6 +2,7 @@
 // registration, the chat panel's step labels and the edit/read kind all
 // come from here. A tool without `run` forwards its input to the Aseprite
 // request method of the same name and returns the result as JSON.
+import { formatSubResults, type SubAgents } from "./subagents.js";
 import { COMMAND_NAME, commandsDir, SavedCommands, type SavedCommand } from "./saved_commands.js";
 import * as z from "zod/v4";
 import type { Reply } from "./aseprite.js";
@@ -228,6 +229,39 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "spawn_agents",
+    title: "Run sub-agents in parallel",
+    description:
+      "Split a multi-frame job into sub-tasks and run them in parallel, one sub-agent each (up to 4 at once). " +
+      "Write the shared instruction once in `instruction` (sub-agents don't see this conversation) and give each " +
+      "task its frames, plus a short `prompt` only for what differs. Sub-agents get the document state and can only " +
+      "edit their scope; edits outside it are refused. Use it for jobs like shading or redrawing many frames; do " +
+      "setup that touches everything (new layers, palette, frame count) yourself first. Returns each sub-agent's summary.",
+    input: z.object({
+      instruction: z.string().optional().describe("What every sub-agent should do, self-contained."),
+      tasks: z.array(z.object({
+        prompt: z.string().optional().describe("What differs for this sub-task (or the whole task if there is no instruction)."),
+        frames: z.union([z.string(), z.number().int(), z.array(z.number().int())]).describe("Its frames: 3, [1,2] or '1-2'."),
+        layers: z.array(z.string()).optional().describe("Only these layers (ids like 'L3' or names). Default: all layers."),
+        label: z.string().optional().describe("Short name shown in the panel, e.g. 'frames 1-2'."),
+      })).min(1).max(16),
+      parallel: z.number().int().min(1).max(4).optional().describe("How many run at once. Default 4."),
+    }),
+    kind: "edit",
+    label: (a) => (a.tasks ? `Run ${a.tasks.length} sub-agents` : "Run sub-agents"),
+    async run({ instruction, tasks, parallel }) {
+      if (!spawner) return failure("Sub-agents are not available in this bridge.");
+      if (!instruction && tasks.some((t: { prompt?: string }) => !t.prompt)) {
+        return failure("Give an instruction, or a prompt for every task.");
+      }
+      const started = Date.now();
+      const full = tasks.map((t: { prompt?: string }) => ({ ...t, prompt: [instruction, t.prompt].filter(Boolean).join("\n\n") }));
+      const results = await spawner.run(full, parallel ?? 4);
+      const res = { content: [text(formatSubResults(results, Math.round((Date.now() - started) / 1000)))] };
+      return results.every((r) => !r.ok) ? { ...res, isError: true } : res;
+    },
+  },
+  {
     name: "propose_variations",
     title: "Show variations",
     description:
@@ -406,6 +440,12 @@ export const TOOLS: Tool[] = [
 ];
 
 /** Readable check report: a summary line, then one line per finding. */
+// The bridge's sub-agent runner (#33), set by index.ts.
+let spawner: SubAgents | undefined;
+export function setAgentSpawner(s: SubAgents | undefined): void {
+  spawner = s;
+}
+
 function savedCommands(): SavedCommands {
   return new SavedCommands();
 }

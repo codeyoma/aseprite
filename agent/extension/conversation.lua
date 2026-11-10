@@ -99,6 +99,19 @@ end
 -- so the caller can update its controls.
 function Conversation:apply(ev)
   local t = ev.type
+  -- Sub-agents (#33): their steps carry a scope label; their replies are
+  -- notes under the lead agent's turn, not replies of their own.
+  if ev.agent then
+    if t == "text" then
+      push(self, { kind = "status", text = "[" .. ev.agent .. "] " .. (ev.text or "") })
+      return { turnEnded = false }
+    elseif t == "tool" then
+      ev = { type = "tool", id = ev.id, tool = "[" .. ev.agent .. "] " .. (ev.tool or "tool"), name = ev.name, kind = ev.kind,
+             detail = ev.detail }
+    elseif t == "thinking" then
+      return { turnEnded = false }
+    end
+  end
   if t == "session" then
     if ev.provider then self.ids[ev.provider] = ev.sessionId end
   elseif t == "text" then

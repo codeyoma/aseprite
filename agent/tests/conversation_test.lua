@@ -168,6 +168,20 @@ do
     and type(d:entries()[3]) == "table")
 end
 
+-- Sub-agents (#33): labeled steps and notes inside the lead's turn.
+do
+  local c = Conversation.new{ clock = clock }
+  c:send("shade all frames", "claude")
+  c:apply{ type = "tool", id = "lead1", tool = "Run 2 sub-agents", name = "spawn_agents", kind = "edit" }
+  c:apply{ type = "tool", id = "s1", tool = "Shade frame 1", name = "execute_lua", kind = "edit", agent = "frames 1-2" }
+  c:apply{ type = "tool_result", id = "s1", ok = true, agent = "frames 1-2" }
+  c:apply{ type = "text", text = "Shaded frames 1-2.", agent = "frames 1-2" }
+  local list = c:entries()
+  check("sub-agent step labeled", list[#list - 1].text == "[frames 1-2] Shade frame 1" and list[#list - 1].status == "ok")
+  check("sub-agent reply is a note", list[#list].kind == "status" and list[#list].text == "[frames 1-2] Shaded frames 1-2.")
+  check("lead turn still running", c:isBusy())
+end
+
 -- Mentions and links (#20)
 do
   local m = { Body = "aseprite://layer/L2", walk = "aseprite://tag/walk" }

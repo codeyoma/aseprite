@@ -36,6 +36,8 @@ export interface ChatEvent {
   /** Tool input or result, shortened, for the panel's expandable rows. */
   detail?: string;
   ok?: boolean;
+  /** Steps of a sub-agent (#33): its scope label. */
+  agent?: string;
   provider?: string; // "claude", "codex", or "claude:dev" for Developer mode conversations
   sessionId?: string;
   /** "plan": the agent's plan as a checklist (ACP). */
@@ -141,6 +143,12 @@ export class ChatRunner {
     const out = {} as Record<ProviderId, boolean>;
     for (const p of Object.values(PROVIDERS)) out[p.id] = which(p.executable) !== undefined;
     return out;
+  }
+
+  /** The provider of the running turn (sub-agents use the same agent), else Claude. */
+  currentProvider(): AgentProvider {
+    const id = this.acpTurn?.key.split(":")[0];
+    return id === "codex" ? PROVIDERS.codex : PROVIDERS.claude;
   }
 
   /** Sends a chat event to the panel outside a turn (build progress). */

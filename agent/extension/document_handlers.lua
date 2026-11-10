@@ -13,6 +13,8 @@ local chunkDir = "."     -- set by new(): agent code gets its own chunk name her
 local PROTOCOL = nil     -- set by new()
 local variations         -- variations.lua, loaded by new()
 local timelineText       -- timeline_text.lua, loaded by new()
+local scopeGuard         -- scope_guard.lua, loaded by new()
+
 
 ---------------------------------------------------------------------------
 -- Utilities
@@ -399,6 +401,46 @@ local handlers = {}
 
 handlers.ping = function()
   return { pong = true, asepriteVersion = tostring(app.version), protocol = PROTOCOL.version }
+end
+
+-- Edits a scoped sub-agent may make (#33); undo and redo could undo another
+-- agent's work, so they are refused.
+local SCOPED_EDITS = { execute_lua = true, run_command = true, apply_timeline_text = true }
+local agentCursor   -- the last scope shown in the timeline (tests read it)
+
+-- Runs a scoped sub-agent's request: refuses undo/redo, undoes the step if
+-- it changed anything outside the scope, and highlights the scope in the
+-- timeline (the agent cursor).
+local function callScoped(method, params, run)
+  if method == "undo" or method == "redo" then
+    error("Sub-agents can't use " .. method .. ": it could undo another agent's work. Fix forward with execute_lua.")
+  end
+  if not SCOPED_EDITS[method] then return run() end
+  local sprite = app.sprite
+  local scope, err = scopeGuard.resolve(sprite, params.scope, layerById)
+  if not scope then error(err) end
+  local before = scopeGuard.snapshot(sprite, scope)
+  local history = sprite.undoHistory
+  local undoBefore = history and history.current or 0
+  local results = table.pack(run())
+  local problem = scopeGuard.check(sprite, scope, before)
+  if problem then
+    if app.sprite == sprite then sprite:undoTo(undoBefore) end
+    app.refresh()
+    error("Out of scope: " .. problem .. ". You may only edit " .. scopeGuard.describe(scope) ..
+      ". The step was undone.")
+  end
+  -- Agent cursor: show the frames this agent works on in the timeline.
+  local ok, err = pcall(function()
+    local frames, numbers = {}, {}
+    for f in pairs(scope.frames) do frames[#frames + 1] = sprite.frames[f]; numbers[#numbers + 1] = f end
+    table.sort(numbers)
+    app.range.frames = frames
+    app.refresh()
+    agentCursor = { frames = numbers, label = scope.label, set = #app.range.frames, clock = os.clock() }
+  end)
+  if not ok then agentCursor = { error = tostring(err) } end
+  return table.unpack(results, 1, results.n)
 end
 
 -- Before/after of edit steps (step_capture.lua), set by M.new.
@@ -1199,6 +1241,31 @@ end
 -- Interface
 ---------------------------------------------------------------------------
 
+-- Request params arrive as json.decode values: userdata, not tables, with
+-- numbers as floats. Copy them into plain Lua values so handlers can use
+-- type(x) == "table" (scopes, saved commands' args), with whole numbers as
+-- integers.
+local function plain(v, depth)
+  depth = depth or 0
+  local t = type(v)
+  if t == "number" then return math.tointeger(v) or v end
+  if t ~= "userdata" or depth > 20 then return v end
+  local ok, out = pcall(function()
+    local copy = {}
+    -- Arrays: ipairs (pairs yields nothing). Objects: # counts keys and v[1] is nil.
+    if #v > 0 and v[1] ~= nil then
+      for i, x in ipairs(v) do copy[i] = plain(x, depth + 1) end
+    else
+      for k, x in pairs(v) do copy[k] = plain(x, depth + 1) end
+    end
+    return copy
+  end)
+  return ok and out or v
+end
+
+-- The <aseprite-state> block (for sub-agents' first message, #33).
+handlers.state_block = function() return { text = stateBlock() } end
+
 local M = {}
 
 function M.new(opts)
@@ -1206,6 +1273,7 @@ function M.new(opts)
   capture = opts.capture
   variations = dofile(app.fs.joinPath(chunkDir, "variations.lua"))
   timelineText = dofile(app.fs.joinPath(chunkDir, "timeline_text.lua"))
+  scopeGuard = dofile(app.fs.joinPath(chunkDir, "scope_guard.lua"))
   onVariations = opts.onVariations
   onCommandsChanged = opts.onCommandsChanged
   PROTOCOL = assert(opts.protocol, "protocol required")
@@ -1221,6 +1289,7 @@ function M.new(opts)
     check = check,
     Uri = Uri,
     variations = function() return variations end,
+    agentCursor = function() return agentCursor end,
   }
 
   -- Answers one protocol request. Errors propagate to the caller.
@@ -1229,9 +1298,13 @@ function M.new(opts)
     if not handler or not PROTOCOL.requests[method] then
       error({ code = -32601, message = "Unknown method: " .. tostring(method) })
     end
-    params = params or {}
-    if capture then return capture:around(method, withQuietAlerts, handler, params) end
-    return withQuietAlerts(handler, params)
+    params = plain(params) or {}
+    local function run()
+      if capture then return capture:around(method, withQuietAlerts, handler, params) end
+      return withQuietAlerts(handler, params)
+    end
+    if type(params.scope) == "table" then return callScoped(method, params, run) end
+    return run()
   end
 
   return H
