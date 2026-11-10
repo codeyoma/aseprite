@@ -145,7 +145,7 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `detect_pixel_grid` / `fix_pixel_art` | Find the pixel grid of upscaled or AI-generated "pixel art" (fractional cells too) and rebuild it as a native-size sprite with a clean palette |
 | `import_sheet` | Slices a sprite sheet into an animated sprite: a grid (cell size found from the gutters), loose sprites on a background, or an Aseprite/TexturePacker atlas; rows can become tags |
 | `recreate_from_reference` / `style_summary` / `split_by_color` | Rebuild an attached screenshot or sprite as an editable sprite (native pixels, palette, frames, layers by color role), and describe a style with rules for drawing new art like it |
-| `make_ramp` / `shade_sprite` / `outline_sprite` | Hue-shifted color ramps; shade flat colors from a light direction onto an `AI: shaded` layer; outer/inner outlines in one color, the darkest, or selout |
+| `make_ramp` / `shade_sprite` / `outline_sprite` | Hue-shifted color ramps; shade flat colors from a light direction onto an `AI: shaded <layer>` layer; outer/inner outlines in one color, the darkest, or selout |
 | `transform_layer` / `rotate_layer` / `squash_stretch` / `smear_frame` | Animate rigid parts along eased arcs, rotate cleanly (RotSprite), squash and stretch on the ground line, smear fast moves — no new colors |
 | `direction_plan` / `mirror_direction` / `iso_project` / `iso_grid` | Plan 4/8 directions from tags, mirror E↔W/NE↔NW/SE↔SW (keeping asymmetric layers), project top-down tiles to 2:1 isometric, add an isometric guide |
 | `make_autotile` / `seamless_check` | Build a 47-tile blob or 16-tile autotile set from 5 template tiles, preview it on a map, export Godot 4 `.tres`, Tiled `.tsx` and JSON; check how a tile wraps |
@@ -158,7 +158,8 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `spawn_agents` | Splits a multi-frame job across up to 4 sub-agents running in parallel, each limited to its frames (and layers) |
 | `propose_variations` | Shows the user the candidates the agent built (`variationLayer`) as thumbnails to keep one or discard |
 | `diff_visual` | What changed on the active frame since the last edit step or a saved checkpoint: PNG with changed pixels in red, bounds and count |
-| `check` | Pixel-art checks (off-palette, orphans, semi-transparent, empty cels, frame timing, outside canvas) with fixes |
+| `check` | Pixel-art checks (off-palette, orphans, semi-transparent, empty cels, frame timing, outside canvas, duplicate frames, ground jitter) with fixes |
+| `list_skills` | Search the skill catalog (built-in and your own) by name, category or trigger |
 | `read_guide` | Agent guide: `basics`, `recipes`, `pixel-art` (in [guide/](guide/)), plus your own skills |
 | `undo` / `redo` | Steps back and forward through the history |
 

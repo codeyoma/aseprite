@@ -281,3 +281,16 @@ ${sprites.join("\n")}
   assetBundleVariant:
 `;
 }
+
+/**
+ * A Tiled tileset (.tsx) of a pack() sheet: frames are tiles on pack's grid.
+ * Each tile is the largest (trimmed) frame size; extrusion becomes the
+ * margin at the image edge plus extra spacing between tiles.
+ */
+export function tiledTileset(name: string, placed: Placed[], width: number, height: number, o: PackOptions = {}): string {
+  const ext = o.extrude ?? 0;
+  const pad = o.padding ?? (ext ? 1 : 0);
+  const tw = Math.max(...placed.map((p) => p.w)), th = Math.max(...placed.map((p) => p.h));
+  const columns = placed.filter((p) => p.y === placed[0].y).length;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<tileset version="1.10" name="${name}" tilewidth="${tw}" tileheight="${th}" spacing="${pad + 2 * ext}" margin="${ext}" tilecount="${placed.length}" columns="${columns}">\n <image source="${name}.png" width="${width}" height="${height}"/>\n</tileset>\n`;
+}

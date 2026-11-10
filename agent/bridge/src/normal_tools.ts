@@ -109,7 +109,7 @@ export const NORMAL_TOOLS: Tool[] = [
       dir: z.string(),
       name: z.string().optional(),
     }),
-    kind: "read",
+    kind: "edit",
     label: () => "Export normal sheet",
     async run(input, aseprite) {
       const info = await spriteInfo(aseprite);

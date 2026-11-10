@@ -1,4 +1,5 @@
 // Export for game engines as a tool (#49).
+import { tiledTileset } from "./export.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
@@ -72,7 +73,7 @@ export const EXPORT_TOOLS: Tool[] = [
       pivot: z.enum(["bottom-center", "center", "top-left"]).optional().describe("Default bottom-center."),
       pixels_per_unit: z.number().int().min(1).max(512).optional().describe("Unity. Default: the frame height."),
     }),
-    kind: "read",
+    kind: "edit",
     label: (a) => (a.engine ? `Export for ${a.engine}` : "Export for engine"),
     async run(input, aseprite) {
       const { result } = await aseprite.request("execute_lua", {
@@ -114,8 +115,7 @@ export const EXPORT_TOOLS: Tool[] = [
       if (input.engine === "unity") write(`${name}.png.meta`, unityMeta(s, input.pixels_per_unit ?? frames[0].height));
       if (input.engine === "phaser") write(`${name}_anims.json`, phaserAnims(s, name));
       if (input.engine === "tiled") {
-        const cw = placed[0].w, ch = placed[0].h;
-        write(`${name}.tsx`, `<?xml version="1.0" encoding="UTF-8"?>\n<tileset version="1.10" name="${name}" tilewidth="${cw}" tileheight="${ch}" spacing="${input.padding ?? 0}" tilecount="${placed.length}" columns="${Math.round(sheet.width / cw)}">\n <image source="${name}.png" width="${sheet.width}" height="${sheet.height}"/>\n</tileset>\n`);
+        write(`${name}.tsx`, tiledTileset(name, placed, sheet.width, sheet.height, opts));
       }
       write("HOW_TO_IMPORT.txt", HOWTO[input.engine](name));
       return { content: [text(`Exported ${frames.length} frames (${anims.length} animations) for ${input.engine} to ${input.dir}: ${files.join(", ")}. ` +

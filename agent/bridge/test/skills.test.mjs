@@ -88,3 +88,13 @@ test("frontmatter: needs and tools", () => {
   const s = parseSkill("---\nneeds: [image]\ntools: [palette_from_image]\ncategory: Color\n---\nx", "p", "built-in");
   assert.deepEqual([s.needs, s.tools, s.category, s.title], [["image"], ["palette_from_image"], "Color", "p"]);
 });
+
+test("every built-in skill lists only real tools", async () => {
+  const { allSkills } = await import("../dist/guide.js");
+  const { TOOLS } = await import("../dist/tools.js");
+  const names = new Set(TOOLS.map((t) => t.name));
+  for (const s of allSkills().values()) {
+    if (s.source !== "built-in") continue;
+    for (const t of s.tools) assert.ok(names.has(t), `${s.name} lists unknown tool ${t}`);
+  }
+});

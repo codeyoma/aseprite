@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { animFrames, godotSpriteFrames, jsonHash, pack, phaserAnims, unityMeta } from "../dist/export.js";
+import { animFrames, godotSpriteFrames, jsonHash, pack, phaserAnims, tiledTileset, unityMeta } from "../dist/export.js";
 import { parseAtlas } from "../dist/sheet.js";
 import { findTool, runTool } from "../dist/tools.js";
 
@@ -76,4 +76,20 @@ test("export_for_engine writes the files for each engine", async () => {
   const dir = mkdtempSync(join(tmpdir(), "exp-g-"));
   await runTool(findTool("export_for_engine"), { engine: "godot", dir }, fake);
   assert.match(readFileSync(join(dir, "HOW_TO_IMPORT.txt"), "utf8"), /Default Texture Filter = Nearest/);
+});
+
+test("Tiled tileset matches pack's grid with trim, padding and extrusion", () => {
+  const img = (w, h, x0, y0, x1, y1) => { const d = new Uint8Array(w * h * 4); for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) d[(y * w + x) * 4 + 3] = 255; return { width: w, height: h, data: d }; };
+  const frames = [img(8, 8, 1, 1, 5, 6), img(8, 8, 0, 0, 3, 7), img(8, 8, 2, 2, 7, 4)];
+  const o = { trim: true, extrude: 1, columns: 2 };
+  const { sheet, placed } = pack(frames, o);
+  const tsx = tiledTileset("hero", placed, sheet.width, sheet.height, o);
+  const attr = (k) => Number(tsx.match(new RegExp(` ${k}="(\\d+)"`))[1]);
+  const [tw, th, sp, mg, cols] = ["tilewidth", "tileheight", "spacing", "margin", "columns"].map(attr);
+  assert.equal(cols, 2);
+  // Tiled's grid (margin + i * (tile + spacing)) lands on every placed frame.
+  for (const [i, p] of placed.entries()) {
+    assert.equal(mg + (i % cols) * (tw + sp), p.x);
+    assert.equal(mg + Math.floor(i / cols) * (th + sp), p.y);
+  }
 });

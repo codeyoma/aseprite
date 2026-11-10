@@ -155,7 +155,7 @@ export const DITHER_TOOLS: Tool[] = [
       dir: z.string(),
       name: z.string().optional(),
     }),
-    kind: "read",
+    kind: "edit",
     label: () => "Export palette LUT",
     async run(input, aseprite) {
       const info = await spriteInfo(aseprite);

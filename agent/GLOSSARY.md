@@ -30,7 +30,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Layer id**: `L` plus Aseprite's `Layer.id` (e.g. `L12`), stable for the session. Used in the state block, mentions and `layerById()`.
 
-**Check**: the pixel-art check gate (`check` tool): mechanical rules (off-palette, orphan, semi-transparent, empty cels in a tag, frame-duration outliers, content outside the canvas) that return findings with coordinates and a fix. Agents run it before saying they are done; the chat shows its result as a badge on the turn.
+**Check**: the pixel-art check gate (`check` tool): mechanical rules (off-palette, orphan, semi-transparent, empty cels in a tag, frame-duration outliers, content outside the canvas, identical neighboring frames, the ground line jumping between frames) that return findings with coordinates and a fix. Agents run it before saying they are done; the chat shows its result as a badge on the turn.
 
 **Mention**: a reference to a document object typed in the chat with `@` (picker) and shown as a `@[Body]` token; sent to the agent as `Body (aseprite://layer/L12)`.
 

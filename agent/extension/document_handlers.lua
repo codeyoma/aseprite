@@ -1633,8 +1633,16 @@ handlers.put_image = function(params)
   app.transaction(params.label or "AI image", function()
     if params.new_layer then
       local name = variations.PREFIX .. params.new_layer
-      for _, l in ipairs(sprite.layers) do if l.name == name then target = l end end
       local source = params.above and layerById(params.above, sprite) or nil
+      -- Reuse the layer made for an earlier frame. aiLayer puts it next to
+      -- the source, inside the source's group when there is one.
+      local function find(layers)
+        for _, l in ipairs(layers) do
+          if l.name == name and not l.isGroup then return l end
+          if l.isGroup then local f = find(l.layers) if f then return f end end
+        end
+      end
+      target = find(source and source.parent and source.parent.layers or sprite.layers) or find(sprite.layers)
       if not target then
         target = variations.aiLayer(params.new_layer, params.prompt, { above = source })
       end
@@ -1642,7 +1650,12 @@ handlers.put_image = function(params)
       -- hide: the new layer itself stays hidden (e.g. a normal map under the colors).
       if params.hide then target.isVisible = false end
     else
-      target = layerById(params.layer, sprite) or app.layer
+      if params.layer then
+        target = layerById(params.layer, sprite)
+        if not target then error("No layer " .. tostring(params.layer)) end
+      else
+        target = app.layer
+      end
       if not target or target.isGroup then error("No image layer to write to") end
     end
     local img = Image(w, h, ColorMode.RGB)
