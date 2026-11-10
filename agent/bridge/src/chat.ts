@@ -16,6 +16,7 @@ import { DEVELOPER_PROMPT, ensureDevWorktree, repoRoot } from "./developer.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
 import type { ChatMode, PermissionOutcome, PermissionRequest } from "./acp.js";
 import type { PlanEntry } from "./providers/acp_mapper.js";
+import { LOOK_NUDGE } from "./look.js";
 
 export type { ProviderId as Provider } from "./providers/index.js";
 
@@ -56,7 +57,7 @@ The user may mention objects as "Body (aseprite://layer/L12)"; URIs are aseprite
 For frame counts, durations, tags and linked cels, read get_timeline_text and change it with one apply_timeline_text call.
 Put content you generate or redraw on a new layer with aiLayer(task, prompt) in execute_lua, not over the user's pixels, unless they ask you to edit a layer in place. When they ask for variations or options, build each with variationLayer(task, i) and then call propose_variations(task); the user picks one.
 You also have a shell for work outside the document (files, converters, image tools, git); the user approves each command, so use it only when the aseprite tools can't do the job, and say why.
-After visual changes, look at your work with snapshot, then run check before you say you are done: fix its errors, and mention any warning you leave on purpose. Keep replies short: say what you changed in one or two sentences.`;
+${LOOK_NUDGE} Then run check: fix its errors, and mention any warning you leave on purpose. Keep replies short: say what you changed in one or two sentences.`;
 
 /** What each chat mode tells the agent with the message (#24). */
 export const MODE_NOTES: Record<ChatMode, string> = {

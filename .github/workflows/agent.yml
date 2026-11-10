@@ -38,8 +38,8 @@ jobs:
       - name: Lua for the syntax check
         run: sudo apt-get install -y lua5.4
 
-      # The same command as locally: generated files up to date (plugin
-      # copies, commands.json), build, extension checks (file access, Lua
+      # The same command as locally: build, generated files up to date (plugin
+      # copies and hooks, commands.json), extension checks (file access, Lua
       # syntax), Lua-tests stamp (a warning here: no Aseprite build in CI),
       # unit tests. The build output is what the packaging steps use.
       - name: Tests

@@ -97,7 +97,7 @@ Produced by [demos/run_demos.mjs](demos/run_demos.mjs), which calls the same MCP
 
 1. Install the extension and connect your agent: see [docs/INSTALL.md](docs/INSTALL.md). To build this fork of Aseprite yourself, see [docs/BUILD-macos.md](docs/BUILD-macos.md).
 2. Connect your agent.
-   - **Claude Code, any folder:** install the plugin (tools plus the guide as skills, see [claude-plugin/](claude-plugin/)):
+   - **Claude Code, any folder:** install the plugin (tools, the guide as skills, and two hooks: at session start it says whether Aseprite is connected, and after the first edit it reminds the agent to look at the result; see [claude-plugin/](claude-plugin/)):
      ```
      /plugin install aseprite --marketplace codeyoma/aseprite
      ```

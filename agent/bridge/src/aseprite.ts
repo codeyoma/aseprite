@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { isRequest, PROTOCOL, checkParams } from "./protocol.js";
@@ -35,6 +36,7 @@ export class AsepriteNotConnectedError extends Error {
  */
 export class AsepriteLink extends EventEmitter {
   private wss?: WebSocketServer;
+  private http?: Server;
   private client?: WebSocket;
   private nextId = 1;
   private pending = new Map<number, Pending>();
@@ -55,9 +57,11 @@ export class AsepriteLink extends EventEmitter {
    * to the session file so Aseprite connects; tests pass publish: false.
    */
   async start(port = 0, { publish = true }: { publish?: boolean } = {}): Promise<number> {
+    // One HTTP server carries the WebSocket upgrade and GET /status, which
+    // the Claude Code plugin's SessionStart hook reads (#81).
+    this.http = createServer((req, res) => this.onHttp(req, res));
     this.wss = new WebSocketServer({
-      host: "127.0.0.1",
-      port,
+      server: this.http,
       // Browsers always send an http(s) Origin. Aseprite (ixwebsocket) sends
       // none or its own ws:// URL. Rejecting web origins stops pages from attaching.
       verifyClient: (info: { origin?: string; req: { headers: Record<string, unknown> } }) => {
@@ -67,10 +71,10 @@ export class AsepriteLink extends EventEmitter {
       },
     });
     await new Promise<void>((resolve, reject) => {
-      this.wss!.once("listening", resolve);
-      this.wss!.once("error", reject);
+      this.http!.once("error", reject);
+      this.http!.listen(port, "127.0.0.1", resolve);
     });
-    const actualPort = (this.wss.address() as AddressInfo).port;
+    const actualPort = (this.http.address() as AddressInfo).port;
     this.wss.on("connection", (socket) => this.onConnection(socket));
 
     const session: Session = {
@@ -92,6 +96,26 @@ export class AsepriteLink extends EventEmitter {
     removeSession(process.pid);
     this.client?.close();
     this.wss?.close();
+    this.http?.close();
+  }
+
+  /**
+   * GET /status: whether Aseprite is connected, never the token. Requests
+   * from web pages (an http(s) Origin) are refused, like WebSocket ones.
+   */
+  private onHttp(req: IncomingMessage, res: ServerResponse): void {
+    const origin = req.headers.origin;
+    if (origin && /^https?:/i.test(origin)) {
+      res.writeHead(403).end();
+      return;
+    }
+    if (req.method === "GET" && (req.url ?? "").split("?")[0] === "/status") {
+      const connected = this.connected;
+      const body = { connected, aseprite: connected ? this.asepriteVersion : undefined, pid: process.pid };
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+      return;
+    }
+    res.writeHead(426, { "content-type": "text/plain" }).end("Upgrade Required");
   }
 
   private onConnection(socket: WebSocket): void {
