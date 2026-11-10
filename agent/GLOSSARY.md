@@ -4,7 +4,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Bridge**: the Node process (`agent/bridge`) between agents and Aseprite. It serves MCP to agents (stdio for agent sessions, localhost HTTP for agents the chat panel starts) and talks to the extension over WebSocket.
 
-**Extension**: the Aseprite Lua extension (`agent/extension`). `agent.lua` wires its modules: **Document Handlers** (`document_handlers.lua`, what the bridge can ask of Aseprite, with no transport) and **Bridge Connection** (`bridge_connection.lua`, session file, WebSocket, handshake, reconnects). File, shell and socket access stay in `agent.lua`, because Aseprite asks permission per script file. The Document Handlers use `pixels.lua` for hex colors, RGB images, pixel walking and base64, and `wire_params.lua` to check request params.
+**Extension**: the Aseprite Lua extension (`agent/extension`). `agent.lua` wires its modules: **Document Handlers** (`document_handlers.lua`, what the bridge can ask of Aseprite, with no transport) and **Bridge Connection** (`bridge_connection.lua`, session file, WebSocket, handshake, reconnects). File, shell and socket access stay in `agent.lua`, because Aseprite asks permission per script file. The Document Handlers use `pixels.lua` for hex colors, RGB images, pixel walking and base64, and `wire_params.lua` to check request params. Their **operation policy** comes from `protocol.json`: each request is a read, a write or a scoped write (and may need an active sprite); every write gets step capture, and a sub-agent's scope guard checks scoped writes and refuses the rest. Handler groups live in area files (`handlers_check.lua`, `handlers_color.lua`, `handlers_sprite.lua`). The **Document View** (`document_view.lua`) answers what the document looks like to the agent and the panel: layer ids and paths, the State block, the context line and `aseprite://` URIs. The Chat Panel's draft (text, mentions, attachments, the `/` picker and skill chip) is the **Composer** (`composer.lua`): a pure module that turns Enter into one outcome (run a command, pick, tip, confirm, send).
 
 **Session file**: `~/.aseprite-agent/session.json`, where the newest bridge publishes its port, token and path so the extension can find it.
 
@@ -29,7 +29,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Document module**: how skill tools see and change the active sprite (`agent/bridge/src/document.ts`): `info()` (size, frames and durations, layers with ids, tags, palette, selection, from `get_state`), frame specs, layer pixels and putting images or new sprites, over the existing wire requests. Tools never write Lua for this; tests use an in-memory fake document.
 
-**State block**: the `<aseprite-state>` text sent with every chat message: sprite, palette, layers top to bottom with ids, tags, active layer/frame/cel and selections (`stateBlock()` in `document_handlers.lua`).
+**State block**: the `<aseprite-state>` text sent with every chat message: sprite, palette, layers top to bottom with ids, tags, active layer/frame/cel and selections (`stateBlock()` in `document_view.lua`).
 
 **Layer id**: `L` plus Aseprite's `Layer.id` (e.g. `L12`), stable for the session. Used in the state block, mentions and `layerById()`.
 
@@ -37,7 +37,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Mention**: a reference to a document object typed in the chat with `@` (picker) and shown as a `@[Body]` token; sent to the agent as `Body (aseprite://layer/L12)`.
 
-**aseprite:// URI**: the address of a document object, shared by mentions and the agent's citations: `aseprite://layer/L12`, `frame/3`, `tag/<name>`, `cel/L12:3`, `palette/5`, `slice/<name>`, `selection`. Links in replies select the object when clicked (`Uri` in `document_handlers.lua`).
+**aseprite:// URI**: the address of a document object, shared by mentions and the agent's citations: `aseprite://layer/L12`, `frame/3`, `tag/<name>`, `cel/L12:3`, `palette/5`, `slice/<name>`, `selection`. Links in replies select the object when clicked (`Uri` in `document_view.lua`).
 
 **Turn History**: where each agent reply sits in the sprite's undo history (`turn_history.lua`). It reverts and restores a whole reply and summarises what changed since the last reply (`<changes-since-your-last-reply>`, sent before the state block).
 
@@ -47,7 +47,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Script Panel**: a script dialog docked in the main window (`Dialog{ dockable = true }`), implemented by `ScriptPanel` in this fork.
 
-**Step Capture**: before and after images of the active frame for each edit request (`execute_lua`, `run_command`, `undo`, `redo`), with a diff (changed pixels in red over a faded frame), kept in memory in a ring buffer of 50 (`agent/extension/step_capture.lua`). The Chat Panel attaches each capture to its edit step as thumbnails; the `diff_visual` tool compares the canvas with the last step or a named checkpoint.
+**Step Capture**: before and after images of the active frame for every write request (the operation policy's writes), with a diff (changed pixels in red over a faded frame), kept in memory in a ring buffer of 50 (`agent/extension/step_capture.lua`); a reply step claims every capture since the last one. The Chat Panel attaches each capture to its edit step as thumbnails; the `diff_visual` tool compares the canvas with the last step or a named checkpoint.
 
 **Attachment**: an image the user sends with a chat message so the agent can see it: the selection, the active layer or frame rendered to a PNG (upscaled to at most 512 px, `agent/extension/attachments.lua`), or an image file. The bridge sends attachments as ACP image blocks (`agent/bridge/src/attachments.ts`).
 
