@@ -29,11 +29,9 @@ Aseprite only loads extensions from real folders: it skips a symlinked extension
 ```bash
 E="$HOME/Library/Application Support/Aseprite/extensions/aseprite-agent"
 mkdir -p "$E"
-ln -sf "$PWD/agent/extension/package.json" "$E/package.json"
-ln -sf "$PWD/agent/extension/agent.lua" "$E/agent.lua"
-ln -sf "$PWD/agent/extension/chat_panel.lua" "$E/chat_panel.lua"
-ln -sf "$PWD/agent/extension/conversation.lua" "$E/conversation.lua"
-ln -sf "$PWD/agent/extension/protocol.json" "$E/protocol.json"
+for f in package.json protocol.json agent.lua document_handlers.lua bridge_connection.lua chat_panel.lua conversation.lua; do
+  ln -sf "$PWD/agent/extension/$f" "$E/$f"
+done
 ```
 
 On first use, Aseprite shows a Security dialog for `agent.lua` (reading `~/.aseprite-agent/session.json`). Tick "Give full trust to this script" and click "Give Script Full Access".
@@ -51,7 +49,7 @@ npm run build
 Lua handlers, in batch mode (no GUI needed):
 
 ```bash
-ASEPRITE_AGENT_TEST=1 build/bin/aseprite -b \
+build/bin/aseprite -b \
   --script-param ext="$PWD/agent/extension" \
   --script agent/tests/batch_test.lua
 ```
@@ -74,7 +72,7 @@ cd agent/bridge && npm test
 Guide recipes, in batch mode (runs every `-- recipe:` block in `agent/guide/recipes.md`):
 
 ```bash
-ASEPRITE_AGENT_TEST=1 build/bin/aseprite -b \
+build/bin/aseprite -b \
   --script-param ext="$PWD/agent/extension" \
   --script-param guide="$PWD/agent/guide" \
   --script-param tmp="$(mktemp -d)" \

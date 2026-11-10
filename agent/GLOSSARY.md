@@ -4,7 +4,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Bridge**: the Node process (`agent/bridge`) between agents and Aseprite. It serves MCP to agents (stdio for agent sessions, localhost HTTP for agents the chat panel starts) and talks to the extension over WebSocket.
 
-**Extension**: the Aseprite Lua extension (`agent/extension`). It connects to the newest bridge and executes requests inside Aseprite.
+**Extension**: the Aseprite Lua extension (`agent/extension`). `agent.lua` wires its modules: **Document Handlers** (`document_handlers.lua`, what the bridge can ask of Aseprite, with no transport) and **Bridge Connection** (`bridge_connection.lua`, session file, WebSocket, handshake, reconnects). File, shell and socket access stay in `agent.lua`, because Aseprite asks permission per script file.
 
 **Session file**: `~/.aseprite-agent/session.json`, where the newest bridge publishes its port, token and path so the extension can find it.
 

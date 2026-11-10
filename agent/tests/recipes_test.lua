@@ -1,12 +1,14 @@
 -- Runs every ```lua block marked "-- recipe: <name>" in agent/guide/recipes.md
 -- through the extension's execute_lua, in order, against one sprite.
--- Run: ASEPRITE_AGENT_TEST=1 aseprite -b --script-param ext=<agent/extension> \
+-- Run: aseprite -b --script-param ext=<agent/extension> \
 --        --script-param guide=<agent/guide> --script-param tmp=<dir> --script agent/tests/recipes_test.lua
 
 local extDir, guideDir, tmp = app.params.ext, app.params.guide, app.params.tmp
-dofile(app.fs.joinPath(extDir, "agent.lua"))
-init({ path = extDir, preferences = { autoconnect = false }, newMenuGroup = function() end, newCommand = function() end })
-local A = __aseprite_agent
+local P = (function()
+  local f = assert(io.open(app.fs.joinPath(extDir, "protocol.json")))
+  local p = json.decode(f:read("a")); f:close(); return p
+end)()
+local A = dofile(app.fs.joinPath(extDir, "document_handlers.lua")).new{ chunkDir = extDir, protocol = P }
 
 local f = io.open(app.fs.joinPath(guideDir, "recipes.md")); local md = f:read("a"); f:close()
 

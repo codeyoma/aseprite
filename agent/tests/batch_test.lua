@@ -1,17 +1,15 @@
 -- Batch-mode test for the extension's request handlers.
--- Run: ASEPRITE_AGENT_TEST=1 aseprite -b --script-param ext=<agent/extension> --script agent/tests/batch_test.lua
+-- Run: aseprite -b --script-param ext=<agent/extension> --script agent/tests/batch_test.lua
 
 local extDir = app.params.ext
-local fakePlugin = {
-  path = extDir,
-  preferences = { autoconnect = false },
-  newMenuGroup = function() end,
-  newCommand = function() end,
-}
-dofile(app.fs.joinPath(extDir, "agent.lua"))
-init(fakePlugin)
-local A = __aseprite_agent
-assert(A, "test hooks missing; set ASEPRITE_AGENT_TEST=1")
+-- Document Handlers are tested through their interface; no plugin, no bridge.
+local P = (function()
+  local f = assert(io.open(app.fs.joinPath(extDir, "protocol.json")))
+  local p = json.decode(f:read("a")); f:close(); return p
+end)()
+local H = dofile(app.fs.joinPath(extDir, "document_handlers.lua")).new{ chunkDir = extDir, protocol = P }
+local A = { getState = H.getState, executeLua = H.executeLua, snapshot = H.snapshot, handlers = H.handlers,
+            protocol = function() return P end }
 
 local failures = 0
 local function check(name, cond, detail)
@@ -157,6 +155,15 @@ do
     if not pcall(c.apply, c, { type = t, id = "1", text = "t", tool = "t", ok = true }) then ok = false end
   end
   check("Conversation accepts every chat.event type", ok)
+end
+
+-- H.call: the interface the bridge connection uses
+do
+  local header, bytes = H.call("snapshot", { frame = 1 })
+  check("call returns binary data for binary requests", type(bytes) == "string" and header.width ~= nil)
+  local ok, err = pcall(H.call, "format_disk", {})
+  check("call refuses methods outside the protocol", not ok and type(err) == "table" and err.code == -32601)
+  check("contextString describes the active sprite", H.contextString():match("^sprite ") ~= nil, H.contextString())
 end
 
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))
