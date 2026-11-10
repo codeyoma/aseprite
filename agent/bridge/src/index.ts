@@ -10,8 +10,7 @@
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { AsepriteLink, log } from "./aseprite.js";
-import { ChatRunner } from "./chat.js";
-import { providerFor } from "./providers/index.js";
+import { ChatRunner, chatMethods } from "./chat.js";
 import { startHttpEndpoint } from "./http.js";
 import { createMcpServer, VERSION } from "./server.js";
 import { newToken } from "./session.js";
@@ -26,20 +25,7 @@ async function main() {
   const endpoint = await startHttpEndpoint(link, newToken());
   const chat = new ChatRunner(link, endpoint);
 
-  link.onRequest("chat.info", () => ({ providers: chat.providers(), busy: chat.busy, version: VERSION }));
-  link.onRequest("chat.send", (p: { prompt: string; context?: string; provider?: string; sessionId?: string }) => {
-    if (!p.prompt?.trim()) throw new Error("Empty prompt");
-    chat.send(p.prompt, p.context ?? "", providerFor(p.provider), p.sessionId || undefined);
-    return { started: true };
-  });
-  link.onRequest("chat.stop", () => {
-    chat.stop();
-    return { stopped: true };
-  });
-  link.onRequest("chat.reset", () => {
-    chat.reset();
-    return { reset: true };
-  });
+  for (const [method, handler] of Object.entries(chatMethods(chat, VERSION))) link.onRequest(method, handler);
 
   const port = await link.start(Number(process.env.ASEPRITE_AGENT_PORT ?? 0));
   log(`listening on ws://127.0.0.1:${port} (${daemon ? "daemon" : "stdio"}), MCP HTTP on ${endpoint.url}`);

@@ -137,4 +137,26 @@ do
   check("read_pixels indexed keys", px.keys == "palette-index" and px.rows[1]:match("^%. %d+ %d+$") ~= nil, px.rows[1])
 end
 
+-- Contract with protocol.json (the bridge checks its side in test/protocol.test.mjs)
+do
+  local P = A.protocol()
+  local missing, extra = {}, {}
+  for m in pairs(P.requests) do if not A.handlers[m] then missing[#missing + 1] = m end end
+  for m in pairs(A.handlers) do if not P.requests[m] then extra[#extra + 1] = m end end
+  check("every protocol request has a handler", #missing == 0, table.concat(missing, ","))
+  check("every handler is a protocol request", #extra == 0, table.concat(extra, ","))
+
+  local header, bytes = A.handlers.snapshot{ frame = 1 }
+  check("binary request returns data as a second value", P.requests.snapshot.binary and type(bytes) == "string" and header.width ~= nil)
+
+  local Conversation = dofile(app.fs.joinPath(extDir, "conversation.lua"))
+  local c = Conversation.new{}
+  c:send("x", "claude")
+  local ok = true
+  for _, t in ipairs(P.notifications["chat.event"].types) do
+    if not pcall(c.apply, c, { type = t, id = "1", text = "t", tool = "t", ok = true }) then ok = false end
+  end
+  check("Conversation accepts every chat.event type", ok)
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

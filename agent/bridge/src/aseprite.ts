@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
+import { isRequest, PROTOCOL } from "./protocol.js";
 import { keepSessionPublished, newToken, removeSession, writeSession, type Session } from "./session.js";
 
 const HELLO_TIMEOUT_MS = 5_000;
@@ -38,7 +39,7 @@ export class AsepriteLink extends EventEmitter {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private awaitingBinary?: { id: number; result: any };
-  private readonly token = newToken();
+  readonly token = newToken();
   private republishTimer?: NodeJS.Timeout;
   private inbound = new Map<string, (params: any) => Promise<unknown> | unknown>();
   /** Extra fields published in the session file (e.g. bridgePath). */
@@ -49,7 +50,11 @@ export class AsepriteLink extends EventEmitter {
     return this.client?.readyState === WebSocket.OPEN && this.asepriteVersion !== undefined;
   }
 
-  async start(port = 0): Promise<number> {
+  /**
+   * Listens on 127.0.0.1. With publish (the default) the port and token go
+   * to the session file so Aseprite connects; tests pass publish: false.
+   */
+  async start(port = 0, { publish = true }: { publish?: boolean } = {}): Promise<number> {
     this.wss = new WebSocketServer({
       host: "127.0.0.1",
       port,
@@ -75,8 +80,10 @@ export class AsepriteLink extends EventEmitter {
       startedAt: new Date().toISOString(),
       ...this.sessionExtra,
     };
-    writeSession(session);
-    this.republishTimer = keepSessionPublished(session);
+    if (publish) {
+      writeSession(session);
+      this.republishTimer = keepSessionPublished(session);
+    }
     return actualPort;
   }
 
@@ -108,6 +115,16 @@ export class AsepriteLink extends EventEmitter {
         if (msg?.method !== "hello" || msg?.params?.token !== this.token) {
           log(`rejected connection: bad hello (${msg?.method ?? "no method"})`);
           return socket.close(4003, "bad token");
+        }
+        const received = msg.params.protocol;
+        if (received !== PROTOCOL.version) {
+          const message =
+            `The Aseprite Agent extension speaks protocol ${received ?? "?"}, but this bridge speaks ` +
+            `${PROTOCOL.version}. Update ${Number(received) < PROTOCOL.version ? "the extension" : "the bridge"} ` +
+            "so both come from the same release.";
+          log(`rejected connection: ${message}`);
+          socket.send(JSON.stringify({ jsonrpc: "2.0", method: "incompatible", params: { expected: PROTOCOL.version, received, message } }));
+          return socket.close(4004, "protocol mismatch");
         }
         authed = true;
         clearTimeout(helloTimer);
@@ -170,6 +187,8 @@ export class AsepriteLink extends EventEmitter {
       p.reject(new Error(msg.error.message ?? "Aseprite error"));
       return;
     }
+    // Requests marked binary in the protocol answer with result.binary and
+    // one binary frame (see protocol.json).
     if (msg.result?.binary) {
       this.awaitingBinary = { id: msg.id, result: msg.result };
       return;
@@ -227,6 +246,7 @@ export class AsepriteLink extends EventEmitter {
   }
 
   async request(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000): Promise<Reply> {
+    if (!isRequest(method)) throw new Error(`Not a protocol request: ${method}`);
     if (!(await this.waitForConnection(3_000))) throw new AsepriteNotConnectedError();
     const id = this.nextId++;
     return new Promise<Reply>((resolve, reject) => {

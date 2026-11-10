@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "guide",
+    "protocol.json",
     "README.md"
   ],
   "scripts": {

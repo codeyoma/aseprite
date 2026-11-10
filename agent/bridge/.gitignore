@@ -2,3 +2,4 @@ node_modules/
 dist/
 guide/
 *.tgz
+protocol.json

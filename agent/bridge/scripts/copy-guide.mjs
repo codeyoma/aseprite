@@ -1,5 +1,5 @@
-// Copies agent/guide into the bridge package so `npx aseprite-agent` can
-// serve read_guide without the rest of the repository.
+// Copies agent/guide and the wire protocol definition into the bridge
+// package so `npx aseprite-agent` works without the rest of the repository.
 import { cpSync, existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,3 +14,7 @@ if (!existsSync(src)) {
 rmSync(dst, { recursive: true, force: true });
 cpSync(src, dst, { recursive: true });
 console.log(`copied guide -> ${dst}`);
+
+// The wire protocol definition ships with the extension; the package needs a copy.
+cpSync(join(root, "..", "extension", "protocol.json"), join(root, "protocol.json"));
+console.log(`copied protocol.json -> ${join(root, "protocol.json")}`);

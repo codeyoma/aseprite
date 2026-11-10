@@ -33,6 +33,7 @@ ln -sf "$PWD/agent/extension/package.json" "$E/package.json"
 ln -sf "$PWD/agent/extension/agent.lua" "$E/agent.lua"
 ln -sf "$PWD/agent/extension/chat_panel.lua" "$E/chat_panel.lua"
 ln -sf "$PWD/agent/extension/conversation.lua" "$E/conversation.lua"
+ln -sf "$PWD/agent/extension/protocol.json" "$E/protocol.json"
 ```
 
 On first use, Aseprite shows a Security dialog for `agent.lua` (reading `~/.aseprite-agent/session.json`). Tick "Give full trust to this script" and click "Give Script Full Access".

@@ -2,6 +2,7 @@
 // connect, then calls each MCP tool.
 // Run: node agent/tests/mcp_smoke.mjs   (with Aseprite open)
 import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startBridge, textOf } from "./mcp_client.mjs";
@@ -48,7 +49,7 @@ const img = snap.content.find((c) => c.type === "image");
 if (snap.isError || !img) {
   console.error("FAIL snapshot:", textOf(snap));
 } else {
-  const out = join(process.env.OUT_DIR ?? here, "smoke_snapshot.png");
+  const out = join(process.env.OUT_DIR ?? tmpdir(), "smoke_snapshot.png");
   writeFileSync(out, Buffer.from(img.data, "base64"));
   console.log("snapshot OK:", textOf(snap), "->", out);
 }

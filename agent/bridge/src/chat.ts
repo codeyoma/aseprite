@@ -9,7 +9,7 @@ import { createInterface } from "node:readline";
 import type { AsepriteLink } from "./aseprite.js";
 import { log } from "./aseprite.js";
 import type { HttpEndpoint } from "./http.js";
-import { PROVIDERS, type AgentProvider, type ProviderEvent, type ProviderId } from "./providers/index.js";
+import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type ProviderId } from "./providers/index.js";
 import { sessionDir } from "./session.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
 
@@ -162,4 +162,27 @@ export class ChatRunner {
       this.emit({ type: "error", text: err.message });
     });
   }
+}
+
+/**
+ * Handlers for the requests the extension's chat panel sends (the
+ * protocol's bridgeMethods), keyed by method name.
+ */
+export function chatMethods(chat: ChatRunner, version: string): Record<string, (params: any) => unknown> {
+  return {
+    "chat.info": () => ({ providers: chat.providers(), busy: chat.busy, version }),
+    "chat.send": (p: { prompt: string; context?: string; provider?: string; sessionId?: string }) => {
+      if (!p.prompt?.trim()) throw new Error("Empty prompt");
+      chat.send(p.prompt, p.context ?? "", providerFor(p.provider), p.sessionId || undefined);
+      return { started: true };
+    },
+    "chat.stop": () => {
+      chat.stop();
+      return { stopped: true };
+    },
+    "chat.reset": () => {
+      chat.reset();
+      return { reset: true };
+    },
+  };
 }

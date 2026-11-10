@@ -7,7 +7,16 @@
 -- This script reads that file, connects, authenticates, and then answers
 -- requests. Every request runs on Aseprite's UI thread.
 
-local PROTOCOL_VERSION = 1
+-- The wire protocol (protocol.json, shipped with this extension and
+-- shared with the bridge). Loaded in init().
+local PROTOCOL = nil
+
+local function loadProtocol(dir)
+  local f = assert(io.open(app.fs.joinPath(dir, "protocol.json"), "r"), "protocol.json missing from the extension")
+  local p = json.decode(f:read("a"))
+  f:close()
+  return p
+end
 
 local ws = nil
 local session = nil      -- { port = n, token = s }
@@ -384,7 +393,11 @@ local Panel = nil  -- chat panel, loaded in init()
 local handlers = {}
 
 handlers.ping = function()
-  return { pong = true, asepriteVersion = tostring(app.version), protocol = PROTOCOL_VERSION }
+  return { pong = true, asepriteVersion = tostring(app.version), protocol = PROTOCOL.version }
+end
+
+handlers.snapshot = function(params)
+  return snapshot(params)   -- header, raw RGBA bytes
 end
 
 handlers.get_state = function()
@@ -605,34 +618,26 @@ handlers.redo = function(params)
   return { redone = n }
 end
 
+-- Answers one request from the bridge. A handler returns its result, plus
+-- the data as a second value for requests the protocol marks binary.
 local function handleRequest(msg)
   local id = msg.id
   local method = msg.method
-  local params = msg.params or {}
-
-  if method == "snapshot" then
-    local ok, header, bytes = pcall(snapshot, params)
-    if ok then
-      header.binary = true
-      send({ jsonrpc = "2.0", id = id, result = header })
-      ws:sendBinary(bytes)
-    else
-      send({ jsonrpc = "2.0", id = id, error = { code = -32000, message = tostring(header) } })
-    end
-    return
-  end
-
   local handler = handlers[method]
-  if not handler then
+  if not handler or not PROTOCOL.requests[method] then
     send({ jsonrpc = "2.0", id = id, error = { code = -32601, message = "Unknown method: " .. tostring(method) } })
     return
   end
 
-  local ok, result = xpcall(handler, debug.traceback, params)
-  if ok then
-    send({ jsonrpc = "2.0", id = id, result = result })
-  else
+  local ok, result, bytes = xpcall(handler, debug.traceback, msg.params or {})
+  if not ok then
     send({ jsonrpc = "2.0", id = id, error = { code = -32000, message = tostring(result) } })
+  elseif bytes ~= nil then
+    result.binary = true
+    send({ jsonrpc = "2.0", id = id, result = result })
+    ws:sendBinary(bytes)
+  else
+    send({ jsonrpc = "2.0", id = id, result = result })
   end
 end
 
@@ -680,13 +685,21 @@ local function onReceive(mt, data, err)
   if mt == WebSocketMessageType.OPEN then
     send({ jsonrpc = "2.0", method = "hello", params = {
       token = session.token,
-      protocol = PROTOCOL_VERSION,
+      protocol = PROTOCOL.version,
       asepriteVersion = tostring(app.version),
     } })
   elseif mt == WebSocketMessageType.TEXT then
     local ok, msg = pcall(json.decode, data)
     if not ok or type(msg) ~= "table" and type(msg) ~= "userdata" then return end
-    if msg.method == "welcome" then
+    if msg.method == "incompatible" then
+      -- Wrong protocol version: stay away from this bridge (same session
+      -- token) until a different one is published, and say why once.
+      if ws then ws:close(); ws = nil end
+      connected = false
+      local text = msg.params and msg.params.message or "The bridge speaks a different protocol version."
+      app.alert{ title = "AI Agent", text = text }
+      startReconnectTimer()
+    elseif msg.method == "welcome" then
       connected = true
       app.tip("AI Agent connected")
       if Panel then Panel.onConnectionChange(true) end
@@ -813,6 +826,7 @@ end
 
 function init(plugin)
   pluginRef = plugin
+  PROTOCOL = loadProtocol(plugin.path)
 
   Panel = dofile(app.fs.joinPath(plugin.path, "chat_panel.lua")){
     Conversation = dofile(app.fs.joinPath(plugin.path, "conversation.lua")),
@@ -890,6 +904,7 @@ end
 -- Expose internals to the batch-mode test harness (agent/tests).
 if os.getenv("ASEPRITE_AGENT_TEST") then
   _G.__aseprite_agent = {
+    protocol = function() return PROTOCOL end,
     getState = getState,
     executeLua = executeLua,
     snapshot = snapshot,

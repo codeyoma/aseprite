@@ -8,6 +8,8 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Session file**: `~/.aseprite-agent/session.json`, where the newest bridge publishes its port, token and path so the extension can find it.
 
+**Wire Protocol**: the JSON-RPC messages between bridge and extension, defined once in `agent/extension/protocol.json` (version, requests, binary results, bridge methods, chat events). Both sides check their code against it, and the bridge rejects a different version at hello.
+
 **Agent Provider**: one agent CLI the chat panel can run (Claude Code, Codex). Each provider is an adapter that builds the CLI command for a message and parses the CLI's JSON output into provider events (`agent/bridge/src/providers`).
 
 **Conversation**: one chat thread with a provider, identified by the provider's own id (Claude session id, Codex thread id). The chat panel's Conversation module (`agent/extension/conversation.lua`) records its messages and steps and keeps the ids, so a conversation survives bridge restarts.
