@@ -226,7 +226,7 @@ return function(deps)
 
     -- A step row: [icon] label [status] [chevron], plus the expanded detail.
     local function stepRow(e, drawIcon, label, labelColor, status, detail, result)
-      local hasDetail = (detail and detail ~= "") or (result and result ~= "")
+      local hasDetail = (detail and detail ~= "") or (result and result ~= "") or e.capture ~= nil
       local open = expanded[e]
       local x = pad + (drawIcon and icon + u * 2 or 0)
       local labelLines = wrapCached(gc, e, "label", label, math.max(lh, textW - (x - pad) - icon * 2 - u * 4))
@@ -248,12 +248,38 @@ return function(deps)
         if hasDetail then iconChevron(gc, cx, y + (h - icon) / 2, icon, open) end
       end, hasDetail and e or nil, open and u or u * 2)
 
-      if open and hasDetail then
+      if open and hasDetail and ((detail and detail ~= "") or (result and result ~= "")) then
         local parts = {}
         if detail and detail ~= "" then parts[#parts + 1] = detail end
         if result and result ~= "" then parts[#parts + 1] = "→ " .. result end
         local bh, draw = textBlock(e, "detail", table.concat(parts, "\n"), x, textW - (x - pad), C.faint)
         addRow(bh, draw, nil, u * 2)
+      end
+
+      -- Before | After | Changes thumbnails of an edit step (#23).
+      if open and e.capture then
+        local cap = e.capture
+        local gap = u * 2
+        local avail = textW - (x - pad)
+        local box = math.min(math.floor((avail - gap * 2) / 3), u * 40)
+        local iw, ih = cap.after.width, cap.after.height
+        local s = box / math.max(iw, ih)
+        if s >= 1 then s = math.floor(s) end
+        local dw, dh = math.max(1, math.floor(iw * s)), math.max(1, math.floor(ih * s))
+        local caption = cap.changed == 1 and "1 px changed" or (cap.changed .. " px changed")
+        local thumbs = { { "Before", cap.before }, { "After", cap.after }, { caption, cap.diff } }
+        addRow(dh + lh + u, function(y)
+          for i, t in ipairs(thumbs) do
+            local tx = x + (i - 1) * (box + gap)
+            gc.color = C.rule
+            gc:fillRect(Rectangle(tx, y, dw, dh))
+            if t[2] then
+              gc:drawImage(t[2], Rectangle(0, 0, t[2].width, t[2].height), Rectangle(tx, y, dw, dh))
+            end
+            gc.color = C.faint
+            gc:fillText(t[1], tx, y + dh + u)
+          end
+        end, nil, u * 2)
       end
     end
 
@@ -490,6 +516,16 @@ return function(deps)
     if ev.type == "tool_result" or ev.type == "done" or ev.type == "error" then refreshContext() end
     local r = conv:apply(ev)
     if r.status then updateStatus(r.status) end
+    -- Attach the before/after capture to each successful edit step (#23).
+    if ev.type == "tool_result" and ev.ok and deps.capture and currentTurn then
+      for i = #conv:entries(), 1, -1 do
+        local e = conv:entries()[i]
+        if e.kind == "tool" and e.id == ev.id then
+          if e.toolKind == "edit" and not e.capture then e.capture = deps.capture:claim(currentTurn.captureSeq) end
+          break
+        end
+      end
+    end
     if r.permission then Panel.askPermission(r.permission) end
     if r.turnEnded and currentTurn then
       deps.TurnHistory.finish(currentTurn, app.sprite)
@@ -578,6 +614,7 @@ return function(deps)
     -- Record where this reply starts in the undo history (#22).
     local header = conv:entries()[#conv:entries()]
     currentTurn = deps.TurnHistory.begin(app.sprite)
+    currentTurn.captureSeq = deps.capture and deps.capture:seq() or 0
     turns[header] = currentTurn
     dlg:modify{ id = "prompt", text = "" }
     syncBusy()
@@ -677,14 +714,19 @@ return function(deps)
   function Panel.entries()
     local out = {}
     for _, e in ipairs(conv:entries()) do
-      out[#out + 1] = { kind = e.kind, text = e.text, status = e.status, secs = e.secs }
+      out[#out + 1] = { kind = e.kind, text = e.text, status = e.status, secs = e.secs,
+        changed = e.capture and e.capture.changed or nil }
     end
     return out
   end
 
   -- Expands every row with details (for screenshots and tests).
+  -- state: true / false, or "captures" to expand only edit steps with thumbnails.
   function Panel.expandAll(state)
-    for _, e in ipairs(conv:entries()) do expanded[e] = (state ~= false) or nil end
+    for _, e in ipairs(conv:entries()) do
+      if state == "captures" then expanded[e] = e.capture and true or nil
+      else expanded[e] = (state ~= false) or nil end
+    end
     if dlg then dlg:repaint() end
   end
 

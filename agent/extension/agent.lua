@@ -19,7 +19,8 @@ function init(plugin)
   local function load(name) return dofile(app.fs.joinPath(plugin.path, name)) end
   local protocol = loadProtocol(plugin.path)
 
-  local handlers = load("document_handlers.lua").new{ chunkDir = plugin.path, protocol = protocol }
+  local capture = load("step_capture.lua").new{ limit = 50 }
+  local handlers = load("document_handlers.lua").new{ chunkDir = plugin.path, protocol = protocol, capture = capture }
 
   connection = load("bridge_connection.lua").new{
     protocol = protocol,
@@ -54,6 +55,7 @@ function init(plugin)
     resolveUri = handlers.Uri.resolve,
     selectUri = handlers.Uri.select,
     TurnHistory = load("turn_history.lua"),
+    capture = capture,
     ensureBridge = connection.ensureBridge,
     preferences = plugin.preferences,
   }
@@ -80,6 +82,11 @@ function init(plugin)
     setPermissionAnswer = function(fn) Panel.permissionAnswer = fn end,
     -- Feeds a chat event to the panel as if the bridge sent it (tests).
     applyEvent = function(ev) Panel.onEvent(ev) end,
+    -- The newest before/after capture of an edit request (#23).
+    lastCapture = function()
+      local c = capture:last()
+      return c and { seq = c.seq, method = c.method, changed = c.changed, claimed = c.claimed or false } or nil
+    end,
     stop = function() connection.request("chat.stop", {}, function() end) end,
     lastTurnStatus = function() local t = Panel.lastTurn(); return t and load("turn_history.lua").status(t) end,
   }

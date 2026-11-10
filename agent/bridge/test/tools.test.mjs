@@ -139,3 +139,28 @@ test("check: formats findings with coordinates and fixes", async () => {
   assert.match(textOf(res), /^Check: 1 errors/);
   assert.equal(toolKind("check"), "read");
 });
+
+test("diff_visual: returns the diff PNG, bounds and count", async () => {
+  const w = 4, h = 2;
+  const binary = Buffer.alloc(w * h * 4);
+  binary.writeUInt32BE(0xff0000ff, 0); // one red pixel at 0,0
+  const fake = fakeAseprite({
+    diff_visual: { result: { width: w, height: h, changed: 1, against: "before the last edit step (execute_lua)", bounds: { x: 0, y: 0, width: 1, height: 1 } }, binary },
+  });
+  const res = await runTool(findTool("diff_visual"), {}, fake);
+  const img = res.content.find((c) => c.type === "image");
+  assert.ok(img, "has an image");
+  const png = PNG.sync.read(Buffer.from(img.data, "base64"));
+  assert.equal(png.width, w * 128);
+  assert.match(textOf(res), /1 pixels changed, bounds x=0 y=0 w=1 h=1, compared with before the last edit step/);
+  assert.equal(toolKind("diff_visual"), "read");
+
+  const none = await runTool(findTool("diff_visual"), { checkpoint: "start" },
+    fakeAseprite({ diff_visual: { result: { width: w, height: h, changed: 0, against: "checkpoint start" }, binary } }));
+  assert.equal(textOf(none), "No pixels changed (compared with checkpoint start).");
+  assert.ok(!none.content.some((c) => c.type === "image"));
+
+  const saved = fakeAseprite();
+  assert.equal(textOf(await runTool(findTool("diff_visual"), { save: "start" }, saved)), 'Saved checkpoint "start".');
+  assert.deepEqual(saved.calls[0], { method: "diff_visual", params: { save: "start", checkpoint: undefined } });
+});

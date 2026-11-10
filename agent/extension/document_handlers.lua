@@ -394,6 +394,14 @@ handlers.ping = function()
   return { pong = true, asepriteVersion = tostring(app.version), protocol = PROTOCOL.version }
 end
 
+-- Before/after of edit steps (step_capture.lua), set by M.new.
+local capture
+
+handlers.diff_visual = function(params)
+  if not capture then error("Step capture is not enabled") end
+  return capture:diffVisual(params)
+end
+
 handlers.snapshot = function(params)
   return snapshot(params)   -- header, raw RGBA bytes
 end
@@ -1124,6 +1132,7 @@ local M = {}
 
 function M.new(opts)
   chunkDir = assert(opts and opts.chunkDir, "chunkDir required")
+  capture = opts.capture
   PROTOCOL = assert(opts.protocol, "protocol required")
 
   local H = {
@@ -1144,7 +1153,9 @@ function M.new(opts)
     if not handler or not PROTOCOL.requests[method] then
       error({ code = -32601, message = "Unknown method: " .. tostring(method) })
     end
-    return withQuietAlerts(handler, params or {})
+    params = params or {}
+    if capture then return capture:around(method, withQuietAlerts, handler, params) end
+    return withQuietAlerts(handler, params)
   end
 
   return H

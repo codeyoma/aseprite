@@ -127,6 +127,27 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "diff_visual",
+    title: "Visual diff",
+    description:
+      "Show what changed on the active frame: compares the canvas now with the canvas before the last edit step " +
+      "(default) or with a checkpoint you saved earlier (save: 'name', then checkpoint: 'name'). Returns a PNG " +
+      "with changed pixels in red over a faded copy of the frame, the changed bounds and the changed-pixel count.",
+    input: z.object({
+      checkpoint: z.string().optional().describe("Compare with this saved checkpoint instead of the last edit step."),
+      save: z.string().optional().describe("Save the current canvas as a checkpoint with this name, and return."),
+      scale: z.number().int().min(1).max(32).optional()
+        .describe("Upscale factor. Default: largest factor that keeps the image at or under 512 px."),
+    }),
+    kind: "read",
+    label: (a) => (a.save ? `Save checkpoint ${a.save}` : "Compare with before"),
+    async run({ checkpoint, save, scale }, aseprite) {
+      const { result, binary } = await aseprite.request("diff_visual", { checkpoint, save });
+      if (save) return { content: [text(`Saved checkpoint "${save}".`)] };
+      return formatDiff(result, binary, scale);
+    },
+  },
+  {
     name: "read_pixels",
     title: "Read pixels",
     description:
@@ -265,6 +286,22 @@ export const TOOLS: Tool[] = [
 ];
 
 /** Readable check report: a summary line, then one line per finding. */
+/** diff_visual result: the diff PNG and a summary line. */
+export function formatDiff(result: any, binary: Buffer | undefined, scale?: number): ToolResult {
+  const w = result.width as number;
+  const h = result.height as number;
+  const b = result.bounds as { x: number; y: number; width: number; height: number } | undefined;
+  const summary =
+    result.changed === 0
+      ? `No pixels changed (compared with ${result.against}).`
+      : `${result.changed} pixels changed${result.sizeChanged ? " (canvas size changed)" : ""}, ` +
+        `bounds x=${b?.x} y=${b?.y} w=${b?.width} h=${b?.height}, compared with ${result.against}. Red marks changed pixels.`;
+  if (!binary || result.changed === 0) return { content: [text(summary)] };
+  const s = scale ?? Math.max(1, Math.floor(512 / Math.max(w, h)));
+  const png = encodeSnapshot(binary, w, h, s, "checker");
+  return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }, text(summary)] };
+}
+
 export function formatCheck(result: any): string {
   const findings: any[] = result?.findings ?? [];
   const head = `Check: ${result?.errors ?? 0} errors, ${result?.warnings ?? 0} warnings` +

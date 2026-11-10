@@ -43,3 +43,5 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Step**: one row of an agent turn in the chat panel: a thought, a tool call with its result, or the reply.
 
 **Script Panel**: a script dialog docked in the main window (`Dialog{ dockable = true }`), implemented by `ScriptPanel` in this fork.
+
+**Step Capture**: before and after images of the active frame for each edit request (`execute_lua`, `run_command`, `undo`, `redo`), with a diff (changed pixels in red over a faded frame), kept in memory in a ring buffer of 50 (`agent/extension/step_capture.lua`). The Chat Panel attaches each capture to its edit step as thumbnails; the `diff_visual` tool compares the canvas with the last step or a named checkpoint.
