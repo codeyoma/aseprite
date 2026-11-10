@@ -7,10 +7,8 @@ import {
   detectBackground, detectCells, findSprites, frameImages, gridFrames, parseAtlas, removeBackground, tagsFromRows,
   type Align, type Frame, type Tag,
 } from "./sheet.js";
-import type { Tool, ToolResult } from "./tools.js";
+import { failure, text, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 export function readPng(path: string): Rgba {
   if (!/\.png$/i.test(path)) throw new Error("Only PNG sheets can be read");

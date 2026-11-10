@@ -7,10 +7,8 @@ import { detectGrid, resample, trim, type Rgba } from "./pixel_grid.js";
 import { detectBackground, findSprites, frameImages, removeBackground, tagsFromRows } from "./sheet.js";
 import { readPng } from "./sheet_tools.js";
 import { analyzeStyle, colorGroups, countColors, type Style } from "./style.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 export const RIGHTS_NOTE =
   "Recreated art from other games is for study and personal use; publishing it needs the rights holder's permission.";

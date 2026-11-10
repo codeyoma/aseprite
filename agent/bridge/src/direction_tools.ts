@@ -4,10 +4,8 @@
 import * as z from "zod/v4";
 import { directionPlan, isoGrid, isoProject, mirroredTagName, MIRROR, tagDirection } from "./directions.js";
 import { trim, type Rgba } from "./pixel_grid.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 async function tagNames(aseprite: AsepriteRequester): Promise<{ tags: string[]; width: number; height: number }> {
   const { result } = await aseprite.request("execute_lua", {

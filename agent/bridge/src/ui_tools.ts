@@ -4,10 +4,8 @@ import { adjust, nearest, parseHex, type RGBA } from "./color.js";
 import type { Rgba } from "./pixel_grid.js";
 import { spriteInfo } from "./shading_tools.js";
 import { loadFont, measureText, panel, renderText, stamp, type PanelStyle } from "./ui.js";
-import type { Tool, ToolResult } from "./tools.js";
+import { failure, text, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 const send = (img: Rgba) => Buffer.from(img.data).toString("base64");
 const rgb = (h: string | undefined): [number, number, number] | undefined => {
   const c = h ? parseHex(h) : undefined;

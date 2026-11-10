@@ -6,10 +6,8 @@ import * as z from "zod/v4";
 import { hex, kMeans, mergeNear, tally, type Counted } from "./color.js";
 import { detectGrid, resample, trim, type Grid, type Rgba } from "./pixel_grid.js";
 import { encodeSnapshot } from "./png.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 const sourceSchema = z.object({
   source: z.enum(["file", "sprite", "layer"]).optional().describe("Default 'file' when a path is given, else 'sprite'."),

@@ -7,9 +7,8 @@ import { light, normalMap } from "./normals.js";
 import type { Rgba } from "./pixel_grid.js";
 import { encodeSnapshot } from "./png.js";
 import { frameList, layerPixels, spriteInfo } from "./shading_tools.js";
-import type { Tool } from "./tools.js";
+import { text, type Tool } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
 const send = (img: Rgba) => Buffer.from(img.data).toString("base64");
 
 const lightSchema = z.object({

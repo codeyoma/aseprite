@@ -2,11 +2,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import * as z from "zod/v4";
 import type { Rgba } from "./pixel_grid.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 import { layersToModel, parseVox, renderIso, rotateModel, writeVox, type VoxelModel } from "./voxels.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 const DIRS = ["SE", "SW", "NW", "NE"];
 
 /** Renders directions and opens them as one sprite: a frame and tag per direction, bottom-aligned. */

@@ -5,10 +5,8 @@ import { hex, parseHex, toOklch, type RGBA } from "./color.js";
 import type { Rgba } from "./pixel_grid.js";
 import { makeRamp, outline, shadeFlat, type LightDir } from "./shading.js";
 import { findOutline } from "./style.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 const framesSchema = z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional()
   .describe("Frames: 3, [1,2] or '1-4'. Default: the active frame.");

@@ -9,10 +9,8 @@ import {
   tally, toneStats, toneTowards, type Counted, type RGBA,
 } from "./color.js";
 import { findPalette, knownPalettes, parsePaletteFile } from "./palettes.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 /** Where colors come from: the sprite, a layer, the selection, or an image file (e.g. an attachment). */
 export const sourceSchema = z.object({

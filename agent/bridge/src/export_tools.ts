@@ -6,10 +6,8 @@ import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { godotSpriteFrames, jsonHash, pack, phaserAnims, placeLike, unityMeta, type Anim, type SheetInfo } from "./export.js";
 import type { Rgba } from "./pixel_grid.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 function writePng(path: string, img: Rgba) {
   const png = new PNG({ width: img.width, height: img.height });

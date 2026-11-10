@@ -4,10 +4,8 @@
 import * as z from "zod/v4";
 import { along, smear, squashStretch, transform, type Easing } from "./animation.js";
 import type { Rgba } from "./pixel_grid.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 async function layerPixels(aseprite: AsepriteRequester, layer: string, frame: number): Promise<Rgba> {
   const { result, binary } = await aseprite.request("snapshot", { layer, frame });

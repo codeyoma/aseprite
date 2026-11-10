@@ -1,22 +1,20 @@
 // 3D model to pixel sprites as a tool (#44).
 import * as z from "zod/v4";
 import { hex, nearest, type RGBA } from "./color.js";
+import { DIRECTIONS_4, DIRECTIONS_8 } from "./directions.js";
 import { ELEVATIONS, fitFrame, loadModel, renderView, type View } from "./model3d.js";
 import { findPalette } from "./palettes.js";
 import type { Rgba } from "./pixel_grid.js";
 import { encodeSnapshot } from "./png.js";
 import { outline } from "./shading.js";
 import { spriteInfo } from "./shading_tools.js";
-import type { Tool, ToolResult } from "./tools.js";
+import { failure, text, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 /** Facing names by camera azimuth: 0 sees the model's front (it faces the viewer: S). */
 export function directionNames(n: number): string[] {
-  const names8 = ["S", "SW", "W", "NW", "N", "NE", "E", "SE"];
-  if (n === 8) return names8;
-  if (n === 4) return ["S", "W", "N", "E"];
+  if (n === 8) return [...DIRECTIONS_8];
+  if (n === 4) return [...DIRECTIONS_4];
   if (n === 1) return ["S"];
   return Array.from({ length: n }, (_, i) => `d${Math.round((i * 360) / n)}`);
 }

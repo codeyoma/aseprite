@@ -24,7 +24,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Tool**: an MCP tool the bridge offers agents (`get_state`, `execute_lua`, `snapshot`, ...). A tool is either an edit (changes the document) or a read.
 
-**Tool table**: the single definition of every tool (`agent/bridge/src/tools.ts`): name, input, edit/read kind, step label and behaviour. MCP registration and chat labels come from it.
+**Tool table**: the single definition of every tool (`agent/bridge/src/tools.ts`): name, input, edit/read kind, step label and behaviour. MCP registration and chat labels come from it. Skill tools live in their own `*_tools.ts` modules, listed once in the **tool module registry** (`tool_modules.ts`); the `Tool` interface and result helpers are in `tool.ts`.
 
 **State block**: the `<aseprite-state>` text sent with every chat message: sprite, palette, layers top to bottom with ids, tags, active layer/frame/cel and selections (`stateBlock()` in `document_handlers.lua`).
 

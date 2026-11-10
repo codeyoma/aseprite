@@ -8,10 +8,8 @@ import * as z from "zod/v4";
 import type { Rgba } from "./pixel_grid.js";
 import { readPng } from "./sheet_tools.js";
 import { buildTileset, godotTileset, jsonTileset, renderMap, seamScore, tiledTileset } from "./tiles.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 
 async function pixels(aseprite: AsepriteRequester, input: { path?: string; layer?: string; frame?: number }): Promise<Rgba> {
   if (input.path) return readPng(input.path);

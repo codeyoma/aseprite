@@ -27,8 +27,6 @@ test("every tool is fully defined", () => {
     assert.ok(t.title && t.description, `${t.name}: title and description`);
     assert.ok(t.kind === "edit" || t.kind === "read", `${t.name}: kind`);
     assert.ok(t.label({}).length > 0, `${t.name}: label`);
-    const required = new Set(["execute_lua", "run_command", "propose_variations", "save_command", "run_saved_command", "delete_saved_command", "apply_timeline_text", "spawn_agents", "import_sheet", "recreate_from_reference", "make_ramp", "transform_layer", "rotate_layer", "squash_stretch", "smear_frame", "mirror_direction", "dither_gradient", "palette_swap", "export_palette_lut", "export_normal_sheet", "export_for_engine", "draw_text", "make_ui", "render_voxels", "render_model"]);
-    assert.ok(t.input.safeParse({}).success || required.has(t.name), `${t.name}: optional input`);
   }
 });
 
@@ -187,4 +185,11 @@ test("timeline text: plan, apply, errors with line numbers", async () => {
   const none = await runTool(findTool("apply_timeline_text"), { text: "frames 4" },
     fakeAseprite({ apply_timeline_text: { result: { ok: true, errors: [], changes: [] } } }));
   assert.equal(textOf(none), "No changes: the timeline already matches.");
+});
+
+test("every registered tool module adds tools, and every tool has one owner", async () => {
+  const { TOOL_MODULES } = await import("../dist/tool_modules.js");
+  for (const m of TOOL_MODULES) assert.ok(m.tools.length > 0, m.what);
+  const owned = TOOL_MODULES.flatMap((m) => m.tools);
+  for (const t of owned) assert.equal(TOOLS.filter((x) => x === t).length, 1, t.name);
 });

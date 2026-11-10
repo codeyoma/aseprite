@@ -2,61 +2,16 @@
 // registration, the chat panel's step labels and the edit/read kind all
 // come from here. A tool without `run` forwards its input to the Aseprite
 // request method of the same name and returns the result as JSON.
-import { MODEL_TOOLS } from "./model_tools.js";
-import { VOXEL_TOOLS } from "./voxel_tools.js";
-import { UI_TOOLS } from "./ui_tools.js";
-import { EXPORT_TOOLS } from "./export_tools.js";
-import { NORMAL_TOOLS } from "./normal_tools.js";
-import { DITHER_TOOLS } from "./dither_tools.js";
-import { TILE_TOOLS } from "./tile_tools.js";
-import { DIRECTION_TOOLS } from "./direction_tools.js";
-import { ANIMATION_TOOLS } from "./animation_tools.js";
-import { SHADING_TOOLS } from "./shading_tools.js";
-import { RECREATE_TOOLS } from "./recreate_tools.js";
-import { SHEET_TOOLS } from "./sheet_tools.js";
-import { PIXEL_TOOLS } from "./pixel_tools.js";
-import { COLOR_TOOLS } from "./color_tools.js";
 import { formatSubResults, type SubAgents } from "./subagents.js";
 import { COMMAND_NAME, commandsDir, SavedCommands, type SavedCommand } from "./saved_commands.js";
 import * as z from "zod/v4";
-import type { Reply } from "./aseprite.js";
+import { TOOL_MODULES } from "./tool_modules.js";
 import { describeCommand, filterCommands, findCommand, COMMANDS, suggestCommands, toWireParams } from "./commands.js";
 import { catalog, guideIndex, guideTopics, readGuide, searchCatalog } from "./guide.js";
 import { encodeSnapshot } from "./png.js";
 
-/** The seam tools use to reach Aseprite: AsepriteLink in the bridge, a fake in tests. */
-export interface AsepriteRequester {
-  request(method: string, params?: Record<string, unknown>, timeoutMs?: number): Promise<Reply>;
-}
-
-type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
-export interface ToolResult {
-  content: Content[];
-  isError?: boolean;
-}
-
-export interface Tool {
-  name: string;
-  title: string;
-  description: string;
-  input: z.ZodObject<any>;
-  /** "edit" changes the document; "read" does not. */
-  kind: "edit" | "read";
-  /** Short description of a call, shown as a step in the chat panel. */
-  label(input: any): string;
-  /** Custom behaviour; omitted for tools that forward to Aseprite as-is. */
-  run?(input: any, aseprite: AsepriteRequester): Promise<ToolResult>;
-  /** Timeout for forwarded requests. */
-  timeoutMs?: number;
-}
-
-export function text(value: unknown): Content {
-  return { type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) };
-}
-
-export function failure(message: string): ToolResult {
-  return { content: [text(message)], isError: true };
-}
+export { failure, text, type AsepriteRequester, type Content, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type AsepriteRequester, type Content, type Tool, type ToolResult } from "./tool.js";
 
 const steps = z.object({ steps: z.number().int().min(1).max(100).optional() });
 
@@ -473,34 +428,8 @@ export const TOOLS: Tool[] = [
     label: () => "Redo",
   },
 ];
-// Palette and tone tools (#36, #38).
-TOOLS.push(...COLOR_TOOLS);
-// Pixel snap tools (#37).
-TOOLS.push(...PIXEL_TOOLS);
-// Sprite sheet import (#41).
-TOOLS.push(...SHEET_TOOLS);
-// Recreate from a reference (#40).
-TOOLS.push(...RECREATE_TOOLS);
-// Ramps, shading and outlines (#39).
-TOOLS.push(...SHADING_TOOLS);
-// Animation helpers (#42).
-TOOLS.push(...ANIMATION_TOOLS);
-// Directions (#43).
-TOOLS.push(...DIRECTION_TOOLS);
-// Tilesets and autotiles (#46).
-TOOLS.push(...TILE_TOOLS);
-// Dithering and palette swaps (#48).
-TOOLS.push(...DITHER_TOOLS);
-// Normal maps and 2D lighting (#47).
-TOOLS.push(...NORMAL_TOOLS);
-// Export for game engines (#49).
-TOOLS.push(...EXPORT_TOOLS);
-// Pixel text and UI elements (#50).
-TOOLS.push(...UI_TOOLS);
-// Voxels and 2.5D (#45).
-TOOLS.push(...VOXEL_TOOLS);
-// 3D model to pixel sprites (#44).
-TOOLS.push(...MODEL_TOOLS);
+// Tool modules (skills and their tools) from the registry.
+TOOLS.push(...TOOL_MODULES.flatMap((m) => m.tools));
 
 // The bridge's sub-agent runner (#33), set by index.ts.
 let spawner: SubAgents | undefined;

@@ -8,10 +8,8 @@ import { applyLut, applyMap, ditherGradient, ditherToPalette, paletteLut, rampMa
 import { findPalette } from "./palettes.js";
 import type { Rgba } from "./pixel_grid.js";
 import { frameList, layerPixels, spriteInfo } from "./shading_tools.js";
-import type { AsepriteRequester, Tool, ToolResult } from "./tools.js";
+import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
-const text = (t: string) => ({ type: "text" as const, text: t });
-const failure = (t: string): ToolResult => ({ content: [text(t)], isError: true });
 const send = (img: Rgba) => Buffer.from(img.data).toString("base64");
 const colorsOf = (list: string[]) => list.map((h) => parseHex(h)).filter((c): c is RGBA => !!c);
 
