@@ -82,6 +82,7 @@
     "kind": "read",
     "label": "Check pixel art",
     "input": [
+      "expect",
       "frames",
       "layer",
       "rules"
@@ -772,7 +773,7 @@
     "name": "rotate_layer",
     "title": "Rotate cleanly",
     "kind": "edit",
-    "label": "Rotate  °",
+    "label": "Rotate  \u00b0",
     "input": [
       "angle",
       "frames",

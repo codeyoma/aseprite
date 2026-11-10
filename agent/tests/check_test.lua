@@ -169,4 +169,103 @@ do
   s:close()
 end
 
+-- Stated expectations (#80): layer_frames and must_not_overlap, by name or id, groups and linked cels.
+do
+  local s = newSprite(8, 8, { black, red, white })
+  for _ = 1, 3 do s:newEmptyFrame() end            -- 4 frames
+  local body = s.layers[1]; body.name = "Body"
+  local weapon = s:newLayer(); weapon.name = "Weapon"
+  for f = 1, 4 do paint(s, f, { { 1, 6, black } }, body) end
+  -- Weapon: art on 2-3 as stated, plus a stray on frame 4 (a cel linked from frame 3).
+  paint(s, 2, { { 6, 1, red } }, weapon)
+  paint(s, 3, { { 6, 2, red } }, weapon)
+  s:newCel(weapon, 4)
+  app.range:clear()
+  local linked = weapon:cel(3)
+  s:deleteCel(weapon, 4)
+  -- Link frame 4 to frame 3 the way the timeline does.
+  app.sprite = s
+  app.range.layers = { weapon }
+  app.range.frames = { s.frames[3], s.frames[4] }
+  app.command.LinkCels()
+  app.range:clear()
+  check("expect: frame 4 is linked to 3", weapon:cel(4) and weapon:cel(4).image == linked.image)
+
+  local r = H.call("check", { rules = { "orphan" }, expect = { layer_frames = { Weapon = "2-3" } } })
+  local f = findings(r, "layer-frames")
+  check("layer_frames: linked cel outside the range", #f == 1 and f[1].frames[1] == 4 and f[1].severity == "error"
+    and f[1].layer == "Weapon" and f[1].fix:match("2%-3") ~= nil, json.encode(r.findings))
+  check("layer_frames: runs whatever rules select", r.checked.rules[2] == "layer-frames", json.encode(r.checked.rules))
+
+  r = H.call("check", { rules = {}, expect = { layer_frames = { ["L" .. weapon.id] = "2-4" } } })
+  check("layer_frames: by id, linked cel counts as art", #findings(r, "layer-frames") == 0, json.encode(r.findings))
+
+  r = H.call("check", { expect = { layer_frames = { Weapon = "1-3" } }, rules = { "orphan" } })
+  f = findings(r, "layer-frames")
+  local miss
+  for _, x in ipairs(f) do if x.fix:match("no art") then miss = x end end
+  check("layer_frames: missing cel inside the range", #f == 2 and miss and miss.frames[1] == 1 and #miss.frames == 1,
+    json.encode(f))
+
+  -- An empty cel counts as missing.
+  s:newCel(weapon, 1, Image(8, 8), Point(0, 0))
+  r = H.call("check", { rules = { "orphan" }, expect = { layer_frames = { Weapon = "1-4" } } })
+  f = findings(r, "layer-frames")
+  check("layer_frames: empty cel inside the range", #f == 1 and f[1].frames[1] == 1, json.encode(f))
+
+  -- Only the checked frames are judged.
+  r = H.call("check", { rules = { "orphan" }, frames = "1-3", expect = { layer_frames = { Weapon = "2-3" } } })
+  check("layer_frames: limited to frames", #findings(r, "layer-frames") == 0, json.encode(r.findings))
+
+  -- Groups: a group's art is its image layers' art.
+  local group = s:newGroup(); group.name = "Arm"
+  weapon.parent = group
+  r = H.call("check", { rules = { "orphan" }, expect = { layer_frames = { Arm = "2-3" } } })
+  f = findings(r, "layer-frames")
+  check("layer_frames: group by name", #f == 1 and f[1].layer == "Arm" and f[1].frames[1] == 4, json.encode(f))
+  weapon.parent = s
+
+  -- must_not_overlap: the weapon crosses the head in frame 3 only.
+  local head = s:newLayer(); head.name = "Head"
+  for f2 = 1, 4 do paint(s, f2, { { 6, 2, white }, { 5, 2, white } }, head) end
+  r = H.call("check", { rules = { "orphan" }, expect = { must_not_overlap = { { "Weapon", "Head" } } } })
+  f = findings(r, "overlap")
+  check("overlap: found on frames 3 and its linked frame 4", #f == 2 and f[1].frame == 3 and f[2].frame == 4,
+    json.encode(f))
+  check("overlap: count, coordinates, both layers, error with a fix", f[1] and f[1].count == 1 and f[1].pixels[1][1] == 6
+    and f[1].pixels[1][2] == 2 and f[1].layer == "Weapon" and f[1].other == "Head" and f[1].otherId == "L" .. head.id
+    and f[1].severity == "error" and f[1].fix:match("Weapon and Head") ~= nil, f[1] and json.encode(f[1]))
+  check("overlap: json-encodable", pcall(json.encode, r))
+
+  -- A faint pixel (alpha below 128) does not collide.
+  paint(s, 2, { { 6, 1, Color(255, 255, 255, 60) } }, head)
+  r = H.call("check", { rules = {}, frames = 2, expect = { must_not_overlap = { { "Weapon", "Head" } } } })
+  check("overlap: faint pixels ignored", #findings(r, "overlap") == 0, json.encode(r.findings))
+
+  -- Groups on either side; by id.
+  local face = s:newGroup(); face.name = "Face"
+  head.parent = face
+  r = H.call("check", { rules = {}, expect = { must_not_overlap = { { "L" .. weapon.id, "Face" } } } })
+  f = findings(r, "overlap")
+  check("overlap: group and id", #f == 2 and f[1].other == "Face", json.encode(f))
+
+  -- Clean: the weapon passes in front of the head, not through it.
+  weapon:cel(3).position = Point(0, 4)
+  r = H.call("check", { rules = {}, expect = { must_not_overlap = { { "Weapon", "Face" } } } })
+  check("overlap: clean", #findings(r, "overlap") == 0, json.encode(r.findings))
+
+  -- Malformed expectations fail before any work, naming the problem.
+  local function fails(params, pattern)
+    local ok, err = pcall(H.call, "check", params)
+    return not ok and tostring(err):match(pattern) ~= nil, tostring(err)
+  end
+  check("expect: unknown layer", fails({ expect = { layer_frames = { Nope = "1-2" } } }, "Layer not found: Nope"))
+  check("expect: unknown key", fails({ expect = { layers = {} } }, "unknown expectation 'layers'"))
+  check("expect: bad range", fails({ expect = { layer_frames = { Weapon = "2-9" } } }, "out of range"))
+  check("expect: pair of one", fails({ expect = { must_not_overlap = { { "Weapon" } } } }, "must be a pair"))
+  check("expect: same layer twice", fails({ expect = { must_not_overlap = { { "Weapon", "Weapon" } } } }, "twice"))
+  check("expect: not an object", fails({ expect = { 1, 2 } }, "'expect' must be a"))
+  s:close()
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

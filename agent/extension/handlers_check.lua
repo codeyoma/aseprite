@@ -5,7 +5,7 @@
 
 return function(handlers, D)
   local px, layerById, layerId = D.px, D.layerById, D.view.layerId
-  local framesFromParam, imageLayers = D.framesFromParam, D.imageLayers
+  local framesFromParam, imageLayers, wireParams = D.framesFromParam, D.imageLayers, D.wireParams
 
   local CHECK_RULES = { "off-palette", "orphan", "semi-transparent", "empty-cel", "frame-duration", "outside-canvas",
                         "duplicate-frame", "ground-jitter" }
@@ -31,8 +31,156 @@ return function(handlers, D)
     return best
   end
 
+  local EXPECT_KEYS = { layer_frames = true, must_not_overlap = true }
+  local OPAQUE = 128   -- alpha at which a pixel counts as art for overlaps (as the bridge's image.ts)
+
+  local function isList(v) return type(v) == "table" and (next(v) == nil or v[1] ~= nil) end
+  local function isObject(v) return type(v) == "table" and v[1] == nil end
+
+  -- A layer reference from expect, resolved as the wire resolves layer params (wire_params.lua).
+  local function expectLayer(ref, sprite, where)
+    if type(ref) ~= "string" and type(ref) ~= "number" then
+      error(string.format("check: %s must be a layer id or name", where))
+    end
+    local layer = layerById(ref, sprite)
+    if not layer then error("Layer not found: " .. tostring(ref)) end
+    return layer
+  end
+
+  -- The image layers that make up a named layer: itself, or a group's visible image layers.
+  local function members(layer)
+    if layer.isGroup then return imageLayers(layer.layers) end
+    return { layer }
+  end
+
+  local function hasArt(layers, f)
+    for _, l in ipairs(layers) do
+      local cel = l:cel(f)
+      if cel and not cel.image:isEmpty() then return true end
+    end
+    return false
+  end
+
+  -- "x,y" -> true for the pixels with alpha >= OPAQUE on these layers in frame f.
+  local function opaqueSet(layers, f, palette)
+    local set = {}
+    for _, l in ipairs(layers) do
+      local cel = l:cel(f)
+      if cel then
+        px.eachPixel(cel, palette, function(x, y, _, _, _, a)
+          if a >= OPAQUE then set[x .. "," .. y] = { x, y } end
+        end)
+      end
+    end
+    return set
+  end
+
+  -- Checks expect's shape and resolves its layers and frame ranges.
+  -- Returns { layerFrames = { {layer, frames} }, overlaps = { {a, b} } }.
+  local function parseExpect(expect, sprite)
+    if not isObject(expect) then error("check: 'expect' must be an object") end
+    for k in pairs(expect) do
+      if not EXPECT_KEYS[k] then
+        error(string.format("check: unknown expectation '%s' (use layer_frames or must_not_overlap)", tostring(k)))
+      end
+    end
+    local out = { layerFrames = {}, overlaps = {} }
+    if expect.layer_frames ~= nil then
+      if not isObject(expect.layer_frames) then
+        error("check: layer_frames must be an object of layer -> frames, e.g. { Weapon = '3-5' }")
+      end
+      local refs = {}
+      for ref in pairs(expect.layer_frames) do refs[#refs + 1] = ref end
+      table.sort(refs, function(a, b) return tostring(a) < tostring(b) end)
+      for _, ref in ipairs(refs) do
+        local layer = expectLayer(ref, sprite, "a layer_frames key")
+        local spec = expect.layer_frames[ref]
+        local ok, frames = pcall(wireParams.resolveFrames, spec, #sprite.frames, 1, nil)
+        if not ok or not frames then
+          error(string.format("check: layer_frames for %s: %s", tostring(ref),
+            ok and "frames are required" or tostring(frames):gsub("^.-:%d+: ", "")))
+        end
+        out.layerFrames[#out.layerFrames + 1] = { layer = layer, frames = frames }
+      end
+    end
+    if expect.must_not_overlap ~= nil then
+      if not isList(expect.must_not_overlap) then
+        error("check: must_not_overlap must be a list of layer pairs, e.g. [['Weapon', 'Head']]")
+      end
+      for i, pair in ipairs(expect.must_not_overlap) do
+        if not isList(pair) or #pair ~= 2 then
+          error(string.format("check: must_not_overlap[%d] must be a pair of layers", i))
+        end
+        local a = expectLayer(pair[1], sprite, string.format("must_not_overlap[%d][1]", i))
+        local b = expectLayer(pair[2], sprite, string.format("must_not_overlap[%d][2]", i))
+        if a == b then error(string.format("check: must_not_overlap[%d] names %s twice", i, a.name)) end
+        out.overlaps[#out.overlaps + 1] = { a = a, b = b }
+      end
+    end
+    return out
+  end
+
+  local function rangeText(frames)
+    local parts, i = {}, 1
+    while i <= #frames do
+      local j = i
+      while j < #frames and frames[j + 1] == frames[j] + 1 do j = j + 1 end
+      parts[#parts + 1] = i == j and tostring(frames[i]) or (frames[i] .. "-" .. frames[j])
+      i = j + 1
+    end
+    return table.concat(parts, ",")
+  end
+
+  -- Stated expectations (#80): which frames a layer holds art in, and layer pairs
+  -- that must never share an opaque pixel (a blade through the face). Adapted from
+  -- the `expect` option of aseprite-ai-artist's validate (MIT).
+  local function checkExpect(expect, sprite, frames, palette, add)
+    for _, e in ipairs(expect.layerFrames) do
+      local layer, set = e.layer, {}
+      for _, f in ipairs(e.frames) do set[f] = true end
+      local parts = members(layer)
+      local outside, missing = {}, {}
+      for _, f in ipairs(frames) do
+        local art = hasArt(parts, f)
+        if art and not set[f] then outside[#outside + 1] = f end
+        if not art and set[f] then missing[#missing + 1] = f end
+      end
+      local range = rangeText(e.frames)
+      if #outside > 0 then
+        add{ rule = "layer-frames", severity = "error", layer = layer.name, layerId = layerId(layer), frames = outside,
+             fix = string.format("%s has art in frames %s but should only show in %s; clear those cels, or state the range it really has",
+               layer.name, table.concat(outside, ","), range) }
+      end
+      if #missing > 0 then
+        add{ rule = "layer-frames", severity = "error", layer = layer.name, layerId = layerId(layer), frames = missing,
+             fix = string.format("%s has no art in frames %s of its range %s; draw it there or link the cel from a neighboring frame",
+               layer.name, table.concat(missing, ","), range) }
+      end
+    end
+    for _, o in ipairs(expect.overlaps) do
+      local pa, pb = members(o.a), members(o.b)
+      for _, f in ipairs(frames) do
+        if hasArt(pa, f) and hasArt(pb, f) then
+          local setA = opaqueSet(pa, f, palette)
+          local both = {}
+          for k, p in pairs(opaqueSet(pb, f, palette)) do if setA[k] then both[#both + 1] = p end end
+          if #both > 0 then
+            table.sort(both, function(p, q) return p[2] < q[2] or (p[2] == q[2] and p[1] < q[1]) end)
+            local pixels = {}
+            for i = 1, math.min(#both, CHECK_MAX_PIXELS) do pixels[i] = both[i] end
+            add{ rule = "overlap", severity = "error", layer = o.a.name, layerId = layerId(o.a),
+                 other = o.b.name, otherId = layerId(o.b), frame = f, count = #both, pixels = pixels,
+                 fix = string.format("%s and %s cross in frame %d; move or redraw one so they share no pixels (pass the %s in front of or behind the %s, not through it)",
+                   o.a.name, o.b.name, f, o.a.name, o.b.name) }
+          end
+        end
+      end
+    end
+  end
+
   -- Runs the pixel-art checks and returns { findings, summary }.
-  -- params: layer (id or name), frames ("1-4", n or list), rules (list of names).
+  -- params: layer (id or name), frames ("1-4", n or list), rules (list of names),
+  -- expect ({ layer_frames = { [layer] = frames }, must_not_overlap = { {a, b} } }).
   local function check(params)
     local sprite = app.sprite
     params = params or {}
@@ -52,6 +200,8 @@ return function(handlers, D)
     local entries = paletteEntries(palette)
     local findings = {}
     local function add(f) findings[#findings + 1] = f end
+    -- Expectations are checked first, so a malformed one fails before any work.
+    local expect = params.expect ~= nil and parseExpect(params.expect, sprite) or nil
 
     -- Pixel rules.
     local pixelRules = enabled["off-palette"] or enabled["orphan"] or enabled["semi-transparent"]
@@ -239,6 +389,9 @@ return function(handlers, D)
       end
     end
 
+    -- Stated expectations run whatever `rules` selects: the caller asked for them by name.
+    if expect then checkExpect(expect, sprite, frames, palette, add) end
+
     local errors, warnings = 0, 0
     for _, f in ipairs(findings) do
       if f.severity == "error" then errors = errors + 1 else warnings = warnings + 1 end
@@ -249,6 +402,8 @@ return function(handlers, D)
                          lightLayers = (pixelRules and #lightLayers > 0) and lightLayers or nil, rules = (function()
                local r = {}
                for _, name in ipairs(CHECK_RULES) do if enabled[name] then r[#r + 1] = name end end
+               if expect and #expect.layerFrames > 0 then r[#r + 1] = "layer-frames" end
+               if expect and #expect.overlaps > 0 then r[#r + 1] = "overlap" end
                return r
              end)() } }
   end

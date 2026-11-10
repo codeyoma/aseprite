@@ -185,6 +185,37 @@ test("check: formats findings with coordinates and fixes", async () => {
   assert.equal(toolKind("check"), "read");
 });
 
+test("check: expect is checked in the bridge, sent as given, and overlaps name both layers (#80)", async () => {
+  const tool = findTool("check");
+  const expect = { layer_frames: { Weapon: "3-5", L4: [1, 2] }, must_not_overlap: [["Weapon", "Head"]] };
+  assert.equal(tool.input.safeParse({ expect }).success, true);
+  for (const bad of [
+    { layer_frames: { Weapon: true } },
+    { must_not_overlap: [["Weapon"]] },
+    { must_not_overlap: [["Weapon", "Weapon"]] },
+    { must_not_overlap: "Weapon,Head" },
+    { layers: {} },
+  ]) assert.equal(tool.input.safeParse({ expect: bad }).success, false, JSON.stringify(bad));
+  const { checkParams } = await import("../dist/protocol.js");
+  checkParams("check", { expect });
+  assert.throws(() => checkParams("check", { expect: [["Weapon", "Head"]] }), /'expect' must be a object/);
+
+  const result = {
+    errors: 2, warnings: 0, checked: { layers: 3, frames: 6, rules: ["layer-frames", "overlap"] },
+    findings: [
+      { rule: "layer-frames", severity: "error", layer: "Weapon", layerId: "L2", frames: [6], fix: "Weapon has art in frames 6 but should only show in 3-5" },
+      { rule: "overlap", severity: "error", layer: "Weapon", layerId: "L2", other: "Head", otherId: "L3", frame: 4, count: 3,
+        pixels: [[6, 2], [7, 2]], fix: "Weapon and Head cross in frame 4" },
+    ],
+  };
+  const ase = fakeAseprite({ check: { result } });
+  const res = await runTool(tool, { rules: [], expect }, ase);
+  assert.deepEqual(ase.calls[0], { method: "check", params: { rules: [], expect } });
+  const out = textOf(res).split("\n");
+  assert.match(out[1], /^- error layer-frames \[L2 Weapon, frames 6\]$/);
+  assert.match(out[3], /^- error overlap \[L2 Weapon \/ L3 Head, frame 4\]: 3 px at \(6,2\) \(7,2\) …$/);
+});
+
 test("diff_visual: returns the diff PNG, bounds and count", async () => {
   const w = 4, h = 2;
   const binary = Buffer.alloc(w * h * 4);

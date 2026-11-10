@@ -34,6 +34,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Layer id**: `L` plus Aseprite's `Layer.id` (e.g. `L12`), stable for the session. Used in the state block, mentions and `layerById()`.
 
 **Check**: the pixel-art check gate (`check` tool): mechanical rules (off-palette, orphan, semi-transparent, empty cels in a tag, frame-duration outliers, content outside the canvas, identical neighboring frames, the ground line jumping between frames) that return findings with coordinates and a fix. Layers that do not blend Normal (an Addition glow) are light layers: the per-pixel rules skip them and the result names them. Agents run it before saying they are done; the chat shows its result as a badge on the turn.
+**Check expectations**: what the caller states the animation must hold, passed to `check` as `expect` and reported as errors whatever rules are selected: `layer_frames` (`{Weapon: "3-5"}`: the layer has art only in those frames and a non-empty cel in each) and `must_not_overlap` (`[["Weapon", "Head"]]`: the frames where both layers have a pixel with alpha 128 or more at the same place, with the count and sample coordinates). Layers by id or name; a group stands for its visible image layers; a linked cel counts in every frame it appears in (`handlers_check.lua`).
 
 **Mention**: a reference to a document object typed in the chat with `@` (picker) and shown as a `@[Body]` token; sent to the agent as `Body (aseprite://layer/L12)`.
 

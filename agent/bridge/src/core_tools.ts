@@ -10,6 +10,15 @@ import { snapshotView } from "./views.js";
 
 const steps = z.object({ steps: z.number().int().min(1).max(100).optional() });
 
+/** `check`'s stated expectations (#80); the extension checks them again against the sprite. */
+export const checkExpect = z.object({
+  layer_frames: z.record(z.string().min(1), framesSpec).optional()
+    .describe("Layer -> the frames it has art in, e.g. {Weapon: '3-5'}: art outside them, or a missing or empty cel inside them, is an error."),
+  must_not_overlap: z.array(z.tuple([z.string().min(1), z.string().min(1)])
+    .refine(([a, b]) => a !== b, "a pair names two different layers")).optional()
+    .describe("Layer pairs that must never share an opaque pixel, e.g. [['Weapon', 'Head']]: each frame where they do is an error with sample coordinates."),
+}).strict();
+
 export const CORE_TOOLS: Tool[] = [
   {
     name: "get_state",
@@ -249,8 +258,10 @@ export const CORE_TOOLS: Tool[] = [
       "off-palette colors (RGB sprites), orphan pixels, semi-transparent pixels, empty cels inside a tag, frame " +
       "durations that stand out within a tag, content outside the canvas, repeated frames in a tag, and feet that " +
       "jitter by 1-3 px within a tag. Layers that don't blend Normal (an Addition glow) are light, not pixels: the " +
-      "pixel rules skip them and the result says so. Run it before saying a drawing or " +
-      "animation task is done; fix errors, and mention warnings you leave on purpose.",
+      "pixel rules skip them and the result says so. `expect` states what the animation must hold and reports " +
+      "breaks as errors: `layer_frames` ({Weapon: '3-5'}: art only in those frames, and a cel in each) and " +
+      "`must_not_overlap` ([['Weapon', 'Head']]: frames where both layers have opaque pixels at the same place). " +
+      "Run it before saying a drawing or animation task is done; fix errors, and mention warnings you leave on purpose.",
     input: z.object({
       layer: z.string().optional().describe("Check only this layer (id like 'L12' or name). Default: all visible layers."),
       frames: z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional()
@@ -258,6 +269,8 @@ export const CORE_TOOLS: Tool[] = [
       rules: z.array(z.enum(["off-palette", "orphan", "semi-transparent", "empty-cel", "frame-duration", "outside-canvas",
         "duplicate-frame", "ground-jitter"]))
         .optional().describe("Rules to run. Default: all."),
+      expect: checkExpect.optional()
+        .describe("Stated expectations, checked whatever `rules` selects. Layers by id ('L12') or name; a group counts as its layers."),
     }),
     kind: "read",
     label: () => "Check pixel art",
@@ -326,7 +339,9 @@ export function formatCheck(result: any): string {
     ` (${result?.checked?.layers ?? "?"} layers, ${result?.checked?.frames ?? "?"} frames)` + lightNote(result?.checked?.lightLayers);
   if (!findings.length) return `${head}. No problems found.`;
   const lines = findings.map((f) => {
-    const where = [f.layerId && f.layer ? `${f.layerId} ${f.layer}` : f.layer, f.frame ? `frame ${f.frame}` : "",
+    const layer = f.layerId && f.layer ? `${f.layerId} ${f.layer}` : f.layer;
+    const other = f.otherId && f.other ? `${f.otherId} ${f.other}` : f.other;
+    const where = [other ? `${layer} / ${other}` : layer, f.frame ? `frame ${f.frame}` : "",
       f.tag ? `tag ${f.tag}` : "", f.frames ? `frames ${f.frames.join(",")}` : ""].filter(Boolean).join(", ");
     const what = [f.color, f.count ? `${f.count} px` : "",
       f.pixels?.length ? `at ${f.pixels.map((p: number[]) => `(${p[0]},${p[1]})`).join(" ")}${f.count > f.pixels.length ? " …" : ""}` : ""]

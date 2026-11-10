@@ -165,7 +165,7 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `spawn_agents` | Splits a multi-frame job across up to 4 sub-agents running in parallel, each limited to its frames (and layers) |
 | `propose_variations` | Shows the user the candidates the agent built (`variationLayer`) as thumbnails to keep one or discard |
 | `diff_visual` | What changed on the active frame since the last edit step or a saved checkpoint: PNG with changed pixels in red, and the changed bounds (x, y, w, h) and pixel count in text |
-| `check` | Pixel-art checks (off-palette, orphans, semi-transparent, empty cels, frame timing, outside canvas, duplicate frames, ground jitter) with fixes |
+| `check` | Pixel-art checks (off-palette, orphans, semi-transparent, empty cels, frame timing, outside canvas, duplicate frames, ground jitter) with fixes; `expect` adds stated expectations: which frames a layer has art in (`layer_frames`) and layer pairs that must never cross (`must_not_overlap`, e.g. a blade through the face) |
 | `list_skills` | Search the skill catalog (built-in and your own) by name, category or trigger |
 | `read_guide` | Agent guide: `basics`, `recipes`, `pixel-art` (in [guide/](guide/)), plus your own skills; the pixel-art rules: `rules` (index), `rules/<chapter>`, or one rule id such as `anim.timing.walk` |
 | `undo` / `redo` | Steps back and forward through the history |

@@ -1,6 +1,6 @@
 {
   "description": "Wire protocol between the aseprite-agent bridge and the Aseprite extension (JSON-RPC 2.0 over WebSocket). This file is the single definition: the extension ships it, the bridge copies it, and contract tests check both sides against it. Bump version on any incompatible change.",
-  "version": 32,
+  "version": 33,
   "handshake": {
     "hello": "extension -> bridge, first message: { token, protocol, asepriteVersion }",
     "welcome": "bridge -> extension: the connection is accepted",
@@ -89,7 +89,8 @@
       "params": {
         "layer": "layer?",
         "frames": "frames?all",
-        "rules": "array?"
+        "rules": "array?",
+        "expect": "object?"
       }
     },
     "diff_visual": {
