@@ -21,7 +21,9 @@ await chat("/skill:animate make a 6 frame walk cycle");
 await ranSkill("animate");
 
 const entries = (await lua("return AsepriteAgent.entries()")) ?? [];
-const steps = entries.filter((e) => e.kind === "tool").map((e) => e.text ?? "");
+// Only this turn: the entries after the last user message.
+const lastUser = entries.map((e) => e.kind).lastIndexOf("user");
+const steps = entries.slice(lastUser + 1).filter((e) => e.kind === "tool").map((e) => e.text ?? "");
 // The step label is "Read guide: <topic>"; the chapter, the index or an animation rule id all count.
 const readRules = steps.filter((t) => /^Read guide: (rules\/animation|rules\/anim|rules|(rule:)?anim(\.[\w.-]+)?)$/i.test(t.trim()));
 check("the animate skill read its timing table (read_guide on the animation rules)", readRules.length > 0, steps);
