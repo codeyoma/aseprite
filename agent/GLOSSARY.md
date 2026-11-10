@@ -95,3 +95,5 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Engine export**: frames packed into a grid sheet (trimmed with their offsets kept, padded and extruded against bleeding) plus metadata per engine: a Godot 4 SpriteFrames, a Unity .png.meta with slices and pivots, Phaser atlas and animations, a Tiled .tsx, and Aseprite's JSON hash; a normal layer gets a matching `_n` sheet (`agent/bridge/src/export.ts`).
 
 **Pixel text and UI**: text drawn from Aseprite's bitmap fonts (`aseprite` 7 px, `mini` 5 px; CC BY 4.0), parsed like Aseprite's sprite-sheet fonts; UI panels and buttons with a border, highlight, shadow and rounded corners, a 9-patch slice for stretching, button states as tagged frames, colors snapped to the palette (`agent/bridge/src/ui.ts`).
+
+**Voxel render**: a MagicaVoxel model (or layers stacked as height slices) drawn as 2:1 isometric pixel art, each voxel a 4x4 block with three shades of its material (lit top, mid left, dark right), back to front, in 90-degree turns (`agent/bridge/src/voxels.ts`).
