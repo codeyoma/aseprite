@@ -156,14 +156,14 @@ for (const file of files) {
       const fake = fakeDocument(fixtureOptions(sc.fixture, legend));
       const state = async () => (await fake.request("get_state", {})).result;
       const idsIn = (st) => (name) => flat(st.activeSprite.layers).find((l) => l.name === name)?.id;
-      // Params with { rows } encoded and { $id } resolved.
-      const prepare = async (v) => {
-        if (Array.isArray(v)) return Promise.all(v.map(prepare));
+      // Params with rgba { rows } encoded and { $id } resolved.
+      const prepare = async (v, key) => {
+        if (Array.isArray(v)) return Promise.all(v.map((x) => prepare(x)));
         if (!v || typeof v !== "object") return v;
         if ("$id" in v) return idsIn(await state())(v.$id);
-        if ("rows" in v) return Buffer.from(rowsToImage(v.rows, legend).data).toString("base64");
+        if (key === "rgba" && "rows" in v) return Buffer.from(rowsToImage(v.rows, legend).data).toString("base64");
         const out = {};
-        for (const [k, x] of Object.entries(v)) out[k] = await prepare(x);
+        for (const [k, x] of Object.entries(v)) out[k] = await prepare(x, k);
         return out;
       };
       for (const [n, step] of sc.steps.entries()) {

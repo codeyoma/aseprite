@@ -1,0 +1,67 @@
+{
+  "scenarios": [
+    {
+      "name": "write_pixels writes back what read_pixels returns (RGB), grows the cel, and refuses ragged rows, unknown keys and off-canvas pixels",
+      "notes": "Writable pixel grid (#74). RGB keys come from the legend of the read; '.' is transparent, '-' leaves a pixel alone. Errors name the row and column (1-based) and the pixel.",
+      "fixture": {
+        "width": 4, "height": 2,
+        "layers": [{ "name": "Art", "cels": { "1": { "x": 1, "y": 0, "rows": ["rg"] } } }]
+      },
+      "steps": [
+        { "request": "read_pixels", "params": { "layer": "Art" },
+          "result": { "keys": "color-key", "rows": [". 0 1 .", ". . . ."], "legend": { "0": "#ff0000", "1": "#00ff00" } } },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": [". 0 1 .", ". . . ."], "legend": { "0": "#ff0000", "1": "#00ff00" } },
+          "result": { "written": 8, "changed": 0, "cel": { "x": 1, "y": 0, "width": 2, "height": 1 } } },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": [". 1 0 .", ". . . ."], "legend": { "0": "#ff0000", "1": "#00ff00" } },
+          "result": { "written": 8, "changed": 2, "cel": { "x": 1, "y": 0, "width": 2, "height": 1 } } },
+        { "pixels": { "layer": "Art" }, "rows": [".gr.", "...."] },
+        { "request": "write_pixels", "params": { "layer": "Art", "x": 0, "y": 1, "rows": ["b - - #ffff00"], "legend": { "b": "#0000ff" } },
+          "result": { "written": 2, "changed": 2, "cel": { "x": 0, "y": 0, "width": 4, "height": 2 } } },
+        { "pixels": { "layer": "Art" }, "rows": [".gr.", "b..y"] },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": [". 0", "0"], "legend": { "0": "#ff0000" } },
+          "error": "Row 2 (y=1) has 1 pixels but row 1 has 2" },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": [". z"], "legend": { "0": "#ff0000" } },
+          "error": "Row 1, column 2 (x=1, y=0): unknown key 'z'" },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": ["5"], "legend": {} },
+          "error": "Row 1, column 1 (x=0, y=0): unknown key '5'" },
+        { "request": "write_pixels", "params": { "layer": "Art", "x": 3, "rows": ["0 0"], "legend": { "0": "#ff0000" } },
+          "error": "Row 1, column 2 (x=4, y=0) is outside the 4x2 canvas" },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": ["0"], "legend": { "0": "red" } },
+          "error": "Legend key '0': red is not a color" },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": ["."], "legend": { ".": "#ff0000" } },
+          "error": "Legend key '.' is reserved" },
+        { "request": "write_pixels", "params": { "layer": "Art", "x": 3, "rows": ["- -"], "legend": {} },
+          "result": { "written": 0, "changed": 0 } },
+        { "pixels": { "layer": "Art" }, "rows": [".gr.", "b..y"] }
+      ]
+    },
+    {
+      "name": "write_pixels in an indexed sprite: numbers are palette entries, as read_pixels gives them; a new cel covers only painted pixels",
+      "fixture": {
+        "width": 4, "height": 1, "colorMode": "indexed",
+        "palette": ["#000000", "#ff0000", "#00ff00", "#0000ff"],
+        "layers": [{ "name": "Art", "cels": { "1": ["rg.."] } }, { "name": "Empty" }]
+      },
+      "steps": [
+        { "request": "read_pixels", "params": { "layer": "Art" },
+          "result": { "keys": "palette-index", "rows": ["1 2 . ."], "legend": { "1": "#ff0000", "2": "#00ff00" } } },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": ["2 1 3 ."], "legend": { "1": "#ff0000", "2": "#00ff00" } },
+          "result": { "written": 4, "changed": 3, "cel": { "x": 0, "y": 0, "width": 4, "height": 1 } } },
+        { "pixels": { "layer": "Art" }, "rows": ["grb."] },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": ["0 #0000ff"] },
+          "result": { "written": 2, "changed": 2 } },
+        { "pixels": { "layer": "Art" }, "rows": [".bb."] },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": ["1"], "legend": { "1": "#00ff00" } },
+          "error": "the legend says '1' is #00ff00 but palette entry 1 is #ff0000" },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": ["9"] },
+          "error": "Row 1, column 1 (x=0, y=0): palette index 9 is past the palette's end (4 colors)" },
+        { "request": "write_pixels", "params": { "layer": "Art", "rows": ["#123456"] },
+          "error": "#123456 is not in the palette" },
+        { "request": "write_pixels", "params": { "layer": "Empty", "x": 1, "rows": [". 3 ."] },
+          "result": { "written": 3, "changed": 1, "cel": { "x": 2, "y": 0, "width": 1, "height": 1 } } },
+        { "pixels": { "layer": "Empty" }, "rows": ["..b."] },
+        { "state": { "layers": [{ "name": "Art", "cels": [1] }, { "name": "Empty", "cels": [1] }] } }
+      ]
+    }
+  ]
+}

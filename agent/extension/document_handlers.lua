@@ -113,8 +113,12 @@ local function plain(v, depth)
   if t ~= "userdata" or depth > 20 then return v end
   local ok, out = pcall(function()
     local copy = {}
-    -- Arrays: ipairs (pairs yields nothing). Objects: # counts keys and v[1] is nil.
-    if #v > 0 and v[1] ~= nil then
+    -- Arrays: ipairs (pairs yields nothing). Objects: pairs yields their keys.
+    -- # and v[1] can't tell them apart: an object with the key "1" (a
+    -- write_pixels legend) answers v[1] too.
+    local isObject = false
+    for _ in pairs(v) do isObject = true; break end
+    if not isObject and #v > 0 then
       for i, x in ipairs(v) do copy[i] = plain(x, depth + 1) end
     else
       for k, x in pairs(v) do copy[k] = plain(x, depth + 1) end
@@ -430,6 +434,18 @@ function M.new(opts)
   local MAX_READ_PIXELS = 128 * 128
   local KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
+  -- Hex -> palette index for an indexed sprite's keys: the lowest index with
+  -- that color, never the transparent index (a pixel there reads as '.'), so
+  -- read_pixels and write_pixels give a color the same key (#74).
+  local function paletteKeys(sprite)
+    local palette, mask = sprite.palettes[1], sprite.transparentColor
+    local out = {}
+    for i = #palette - 1, 0, -1 do
+      if i ~= mask then out[px.colorHex(palette:getColor(i))] = i end
+    end
+    return out
+  end
+
   handlers.read_pixels = function(params)
     local sprite = app.sprite
 
@@ -448,10 +464,7 @@ function M.new(opts)
 
     local palette = sprite.palettes[1]
     local indexed = sprite.colorMode == ColorMode.INDEXED
-    local paletteIndex = {}
-    if indexed then
-      for i = #palette - 1, 0, -1 do paletteIndex[px.colorHex(palette:getColor(i))] = i end
-    end
+    local paletteIndex = indexed and paletteKeys(sprite) or {}
 
     -- Indexed sprites use palette indices as keys; RGB sprites get short keys.
     local keys, legend, nextKey = {}, {}, 1
@@ -501,6 +514,185 @@ function M.new(opts)
       legend = legend,
       rows = rows,
     }
+  end
+
+  -- Writable pixel grid (#74): write_pixels takes rows and a legend in the
+  -- format read_pixels returns and writes them into one layer's cel at x, y.
+  -- A key means what read_pixels made it mean: in an indexed sprite a number
+  -- is that palette entry, any other key is looked up in the legend; '#hex'
+  -- is that color; '.' is transparent; '-' leaves the pixel as it is
+  -- (read_pixels writes it outside the canvas). Ragged rows and unknown keys
+  -- are refused with their row and column, never padded. One undo step; the
+  -- cel keeps its position and grows to cover painted pixels outside it.
+  -- The idea and its strict, located errors come from aseprite-ai-artist's
+  -- PixelGrid (src/lib/grid.ts; MIT License, Copyright (c) 2026
+  -- with-pebbly, https://github.com/with-pebbly/aseprite-ai-artist).
+  local GRID_KEEP, GRID_CLEAR = {}, {}
+
+  handlers.write_pixels = function(params)
+    local sprite = app.sprite
+    local layer = params.layer and layerById(params.layer, sprite) or app.layer
+    if not layer then error("No layer to write to") end
+    if layer.isGroup or layer.isTilemap or not layer.isImage then
+      error("write_pixels writes into an image layer; " .. layer.name .. " is not one")
+    end
+    local frame = params.frame or (app.frame and app.frame.frameNumber) or 1
+    local x0, y0 = params.x or 0, params.y or 0
+    local rows = params.rows
+    if type(rows) ~= "table" or #rows == 0 then error("rows must list at least one row") end
+
+    -- Rows of keys, all the same width.
+    local grid, width = {}, 0
+    for r, row in ipairs(rows) do
+      if type(row) ~= "string" then error(string.format("Row %d is not text", r)) end
+      local cells = {}
+      for t in row:gmatch("%S+") do cells[#cells + 1] = t end
+      if r == 1 then
+        width = #cells
+        if width == 0 then error("Row 1 is empty") end
+      elseif #cells ~= width then
+        error(string.format("Row %d (y=%d) has %d pixels but row 1 has %d. Every row must be the same width; rows are never padded",
+          r, y0 + r - 1, #cells, width))
+      end
+      grid[r] = cells
+    end
+    if width * #grid > MAX_READ_PIXELS then
+      error(string.format("Grid %dx%d is too large; write at most %d pixels per call", width, #grid, MAX_READ_PIXELS))
+    end
+
+    -- The legend: key -> normalized hex.
+    local legend = {}
+    for k, v in pairs(params.legend or {}) do
+      k = tostring(k)
+      if k == "." or k == "-" then
+        error("Legend key '" .. k .. "' is reserved: '.' is transparent and '-' leaves a pixel unchanged")
+      end
+      local ok, r, g, b, a = pcall(px.parseHex, v)
+      if not ok then error(string.format("Legend key '%s': %s is not a color (use #rrggbb or #rrggbbaa)", k, tostring(v))) end
+      legend[k] = px.hex(r, g, b, a)
+    end
+
+    local cm = sprite.colorMode
+    local indexed = cm == ColorMode.INDEXED
+    local palette = sprite.palettes[1]
+    local paletteIndex = indexed and paletteKeys(sprite) or nil
+    local pc = app.pixelColor
+    local clearValue = indexed and sprite.transparentColor or 0
+
+    -- A key -> GRID_KEEP, GRID_CLEAR or a pixel value; nil and a reason when unknown.
+    local function pixelOfHex(hex)
+      local r, g, b, a = px.parseHex(hex)
+      if a == 0 then return GRID_CLEAR end
+      if cm == ColorMode.RGB then return pc.rgba(r, g, b, a) end
+      if indexed then
+        local i = paletteIndex[px.hex(r, g, b, a)]
+        if not i then return nil, hex .. " is not in the palette (indexed sprite)" end
+        return i
+      end
+      if r ~= g or g ~= b then return nil, hex .. " is not a gray (grayscale sprite)" end
+      return pc.graya(r, a)
+    end
+    local cache = {}
+    local function resolve(t)
+      if t == "-" then return GRID_KEEP end
+      if t == "." then return GRID_CLEAR end
+      if cache[t] then return cache[t] end
+      local v, why
+      local hex = legend[t]
+      if indexed and t:match("^%d+$") then
+        local i = tonumber(t)
+        if i >= #palette then
+          why = string.format("palette index %d is past the palette's end (%d colors)", i, #palette)
+        elseif hex and hex ~= px.colorHex(palette:getColor(i)) then
+          why = string.format("the legend says '%s' is %s but palette entry %d is %s", t, hex, i, px.colorHex(palette:getColor(i)))
+        else
+          v = (i == clearValue) and GRID_CLEAR or i
+        end
+      else
+        if not hex and t:sub(1, 1) == "#" and pcall(px.parseHex, t) then hex = t end
+        if not hex then
+          why = "unknown key '" .. t .. "'; add it to the legend or use '.' for transparent"
+        else
+          v, why = pixelOfHex(hex)
+        end
+      end
+      cache[t] = v
+      return v, why
+    end
+
+    -- Every pixel checked before anything changes.
+    local writes, written = {}, 0
+    local bx0, by0, bx1, by1
+    for r, cells in ipairs(grid) do
+      for c, t in ipairs(cells) do
+        local x, y = x0 + c - 1, y0 + r - 1
+        local v, why = resolve(t)
+        if v == nil then error(string.format("Row %d, column %d (x=%d, y=%d): %s", r, c, x, y, why)) end
+        if v ~= GRID_KEEP then
+          if x < 0 or y < 0 or x >= sprite.width or y >= sprite.height then
+            error(string.format("Row %d, column %d (x=%d, y=%d) is outside the %dx%d canvas; write '-' there",
+              r, c, x, y, sprite.width, sprite.height))
+          end
+          written = written + 1
+          writes[#writes + 1] = { x, y, v }
+          if v ~= GRID_CLEAR then
+            bx0 = bx0 and math.min(bx0, x) or x; by0 = by0 and math.min(by0, y) or y
+            bx1 = bx1 and math.max(bx1, x) or x; by1 = by1 and math.max(by1, y) or y
+          end
+        end
+      end
+    end
+
+    -- The cel's bounds, grown to cover painted pixels.
+    local cel = layer:cel(frame)
+    local ox, oy, ow, oh
+    if cel then ox, oy, ow, oh = cel.position.x, cel.position.y, cel.image.width, cel.image.height end
+    local nx, ny, nx1, ny1 = ox, oy, ox and ox + ow - 1, oy and oy + oh - 1
+    if bx0 then
+      nx = nx and math.min(nx, bx0) or bx0; ny = ny and math.min(ny, by0) or by0
+      nx1 = nx1 and math.max(nx1, bx1) or bx1; ny1 = ny1 and math.max(ny1, by1) or by1
+    end
+    local result = { written = written, changed = 0, layer = "L" .. layer.id, frame = frame }
+    if not nx then return result end   -- only clears where there is no cel
+    local nw, nh = nx1 - nx + 1, ny1 - ny + 1
+    local grown = not cel or nx ~= ox or ny ~= oy or nw ~= ow or nh ~= oh
+
+    local img
+    if grown then
+      img = Image(nw, nh, cm)
+      img:clear(clearValue)
+      if cel then
+        local dx, dy = ox - nx, oy - ny
+        for it in cel.image:pixels() do img:drawPixel(it.x + dx, it.y + dy, it()) end
+      end
+    else
+      img = cel.image:clone()
+    end
+    local changed = 0
+    for _, w in ipairs(writes) do
+      local ix, iy = w[1] - nx, w[2] - ny
+      if ix >= 0 and iy >= 0 and ix < nw and iy < nh then
+        local v = w[3] == GRID_CLEAR and clearValue or w[3]
+        if img:getPixel(ix, iy) ~= v then
+          img:drawPixel(ix, iy, v)
+          changed = changed + 1
+        end
+      end
+    end
+    result.changed = changed
+    result.cel = { x = nx, y = ny, width = nw, height = nh }
+    if changed == 0 and not grown then return result end
+
+    app.transaction("Write pixels", function()
+      if cel then
+        cel.image = img
+        if nx ~= ox or ny ~= oy then cel.position = Point(nx, ny) end
+      else
+        sprite:newCel(layer, frame, img, Point(nx, ny))
+      end
+    end)
+    app.refresh()
+    return result
   end
 
   handlers.undo = function(params)

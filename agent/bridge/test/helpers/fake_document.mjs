@@ -1,5 +1,5 @@
 // An in-memory sprite behind the AsepriteRequester seam (#52): answers every
-// request the document module sends (get_state, snapshot, put_image,
+// request the document module sends (get_state, snapshot, read_pixels, write_pixels, put_image,
 // put_images, create_sprite, create_animation, create_tilemap, and the color,
 // palette, mirror, split and slice requests) the way the extension's handlers do
 // (document_handlers.lua, handlers_color.lua, handlers_sprite.lua), so tool
@@ -41,6 +41,8 @@ const DIRECTIONS = { forward: "forward", reverse: "reverse", pingpong: "ping-pon
 const BLEND_MODES = new Set(["normal", "multiply", "screen", "overlay", "darken", "lighten", "color_dodge", "color_burn", "hard_light",
   "soft_light", "difference", "exclusion", "hue", "saturation", "color", "luminosity", "addition", "subtract", "divide"]);
 /** put_images item keys (handlers_sprite.lua IMAGE_KEYS). */
+/** read_pixels keys for colors in order of first use (document_handlers.lua KEY_CHARS). */
+const KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const IMAGE_KEYS = new Set(["width", "height", "rgba", "frame", "new_layer", "layer", "above", "x", "y", "hide", "blend_mode", "opacity"]);
 
 // Aseprite's normal blend (doc/blend_funcs.cpp rgba_blender_normal) at full opacity, as drawSprite composites layers.
@@ -346,6 +348,133 @@ export function fakeDocument({
         data = layerImage(s, l, f);
       } else data = composite(s, f);
       return [{ width: s.width, height: s.height, frame: f, layer: p.layer }, data];
+    },
+    // A region as rows of keys (document_handlers.lua read_pixels): palette indexes in indexed sprites (the lowest
+    // index other than the transparent 0), short keys in order of first use in RGB sprites.
+    read_pixels: (p) => {
+      const s = active.sprite;
+      if (s.colorMode === "grayscale") throw unsupported("read_pixels in a grayscale sprite");
+      const x0 = p.x ?? 0, y0 = p.y ?? 0, w = p.width ?? s.width - x0, h = p.height ?? s.height - y0;
+      if (w <= 0 || h <= 0) throw new Error("Empty region");
+      if (w * h > 128 * 128) throw new Error(`Region ${w}x${h} is too large; read at most ${128 * 128} pixels per call`);
+      const data = p.layer !== undefined ? layerImage(s, byRef(p.layer), p.frame) : composite(s, p.frame);
+      const indexed = s.colorMode === "indexed";
+      const keys = new Map(), legend = {}, rows = [];
+      for (let y = y0; y < y0 + h; y++) {
+        const row = [];
+        for (let x = x0; x < x0 + w; x++) {
+          if (x < 0 || y < 0 || x >= s.width || y >= s.height) { row.push("-"); continue; }
+          const i = (y * s.width + x) * 4;
+          if (!data[i + 3]) { row.push("."); continue; }
+          const hx = hexAt(data, i);
+          const idx = indexed ? s.palette.findIndex((c, k) => k > 0 && c === hx) : -1;
+          if (idx > 0) { row.push(String(idx)); legend[String(idx)] = hx; continue; }
+          if (!keys.has(hx)) {
+            if (keys.size >= KEY_CHARS.length) throw unsupported("more than 62 keyed colors in read_pixels");
+            const k = (indexed ? "c" : "") + KEY_CHARS[keys.size];
+            keys.set(hx, k);
+            legend[k] = hx;
+          }
+          row.push(keys.get(hx));
+        }
+        rows.push(row.join(" "));
+      }
+      return { x: x0, y: y0, width: w, height: h, frame: p.frame, layer: p.layer, keys: indexed ? "palette-index" : "color-key", legend, rows };
+    },
+    // A grid of keys into one layer's cel (document_handlers.lua write_pixels): checked whole first, then
+    // written; the cel keeps its position and grows to cover painted pixels.
+    write_pixels: (p) => {
+      const s = active.sprite;
+      if (s.colorMode === "grayscale") throw unsupported("write_pixels in a grayscale sprite");
+      const layer = p.layer !== undefined ? byRef(p.layer) : active.layer;
+      if (!layer) throw new Error("No layer to write to");
+      if (layer.group || layer.tilemap) throw new Error(`write_pixels writes into an image layer; ${layer.name} is not one`);
+      const x0 = p.x ?? 0, y0 = p.y ?? 0, f = p.frame;
+      if (!Array.isArray(p.rows) || !p.rows.length) throw new Error("rows must list at least one row");
+      let width = 0;
+      const grid = p.rows.map((row, r) => {
+        if (typeof row !== "string") throw new Error(`Row ${r + 1} is not text`);
+        const cells = row.split(/\s+/).filter(Boolean);
+        if (r === 0) { width = cells.length; if (!width) throw new Error("Row 1 is empty"); }
+        else if (cells.length !== width) {
+          throw new Error(`Row ${r + 1} (y=${y0 + r}) has ${cells.length} pixels but row 1 has ${width}. Every row must be the same width; rows are never padded`);
+        }
+        return cells;
+      });
+      if (width * grid.length > 128 * 128) throw new Error(`Grid ${width}x${grid.length} is too large; write at most ${128 * 128} pixels per call`);
+      const legend = {};
+      for (const [k, v] of Object.entries(p.legend ?? {})) {
+        if (k === "." || k === "-") throw new Error(`Legend key '${k}' is reserved: '.' is transparent and '-' leaves a pixel unchanged`);
+        try { legend[k] = norm(v); } catch { throw new Error(`Legend key '${k}': ${v} is not a color (use #rrggbb or #rrggbbaa)`); }
+      }
+      const indexed = s.colorMode === "indexed";
+      const KEEP = Symbol("keep"), CLEAR = Symbol("clear");
+      const ofHex = (h) => {
+        const rgba = parse(h);
+        if (rgba[3] === 0) return [CLEAR];
+        if (!indexed) return [rgba];
+        const i = s.palette.findIndex((c, k) => k > 0 && c === norm(h));
+        return i > 0 ? [i] : [undefined, `${h} is not in the palette (indexed sprite)`];
+      };
+      const resolve = (t) => {
+        if (t === "-") return [KEEP];
+        if (t === ".") return [CLEAR];
+        let h = legend[t];
+        if (indexed && /^\d+$/.test(t)) {
+          const i = Number(t);
+          if (i >= s.palette.length) return [undefined, `palette index ${i} is past the palette's end (${s.palette.length} colors)`];
+          if (h && h !== s.palette[i]) return [undefined, `the legend says '${t}' is ${h} but palette entry ${i} is ${s.palette[i]}`];
+          return [i === 0 ? CLEAR : i];
+        }
+        if (!h && /^#([0-9a-f]{6}|[0-9a-f]{8})$/i.test(t)) h = t;
+        if (!h) return [undefined, `unknown key '${t}'; add it to the legend or use '.' for transparent`];
+        return ofHex(h);
+      };
+      const writes = [];
+      let box;
+      grid.forEach((cells, r) => cells.forEach((t, c) => {
+        const x = x0 + c, y = y0 + r;
+        const [v, why] = resolve(t);
+        if (v === undefined) throw new Error(`Row ${r + 1}, column ${c + 1} (x=${x}, y=${y}): ${why}`);
+        if (v === KEEP) return;
+        if (x < 0 || y < 0 || x >= s.width || y >= s.height) {
+          throw new Error(`Row ${r + 1}, column ${c + 1} (x=${x}, y=${y}) is outside the ${s.width}x${s.height} canvas; write '-' there`);
+        }
+        writes.push([x, y, v]);
+        if (v !== CLEAR) box = box ? [Math.min(box[0], x), Math.min(box[1], y), Math.max(box[2], x), Math.max(box[3], y)] : [x, y, x, y];
+      }));
+      const cel = layer.cels[f - 1];
+      let b = cel ? [cel.x, cel.y, cel.x + cel.width - 1, cel.y + cel.height - 1] : undefined;
+      if (box) b = b ? [Math.min(b[0], box[0]), Math.min(b[1], box[1]), Math.max(b[2], box[2]), Math.max(b[3], box[3])] : box;
+      const result = { written: writes.length, changed: 0, layer: `L${layer.id}`, frame: f };
+      if (!b) return result;
+      const [nx, ny] = b, nw = b[2] - nx + 1, nh = b[3] - ny + 1, px = indexed ? 1 : 4;
+      const data = new Uint8Array(nw * nh * px);
+      if (cel) {
+        for (let y = 0; y < cel.height; y++) for (let x = 0; x < cel.width; x++) {
+          const j = (y * cel.width + x) * px, i = ((y + cel.y - ny) * nw + x + cel.x - nx) * px;
+          data.set(cel.data.subarray(j, j + px), i);
+        }
+      }
+      let changed = 0;
+      for (const [x, y, v] of writes) {
+        const ix = x - nx, iy = y - ny;
+        if (ix < 0 || iy < 0 || ix >= nw || iy >= nh) continue;
+        const i = (iy * nw + ix) * px;
+        const val = v === CLEAR ? (indexed ? [0] : [0, 0, 0, 0]) : indexed ? [v] : v;
+        if (val.every((n, k) => data[i + k] === n)) continue;
+        data.set(val, i);
+        changed++;
+      }
+      result.changed = changed;
+      result.cel = { x: nx, y: ny, width: nw, height: nh };
+      const grown = !cel || nx !== cel.x || ny !== cel.y || nw !== cel.width || nh !== cel.height;
+      // In place, so linked cels (one object in several frames) change together, as in Aseprite.
+      if (changed || grown) {
+        if (cel) Object.assign(cel, { x: nx, y: ny, width: nw, height: nh, data });
+        else layer.cels[f - 1] = { x: nx, y: ny, width: nw, height: nh, data };
+      }
+      return result;
     },
     put_image: (p) => {
       const bytes = decode(p.rgba);

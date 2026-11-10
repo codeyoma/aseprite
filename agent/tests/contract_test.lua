@@ -18,7 +18,10 @@ local function plain(v)
   if t == "number" then return math.tointeger(v) or v end
   if t ~= "userdata" and t ~= "table" then return v end
   local copy = {}
-  if #v > 0 and v[1] ~= nil then
+  -- pairs yields nothing on a decoded array; an object with the key "1" answers v[1] too.
+  local isObject = false
+  if t == "userdata" then for _ in pairs(v) do isObject = true; break end end
+  if not isObject and #v > 0 and v[1] ~= nil then
     for i, x in ipairs(v) do copy[i] = plain(x) end
   else
     for k, x in pairs(v) do copy[k] = plain(x) end
@@ -309,12 +312,12 @@ local function runScenario(sc)
       for _, l in ipairs(flat(st.activeSprite.layers)) do if l.name == name then return l.id end end
     end
   end
-  local function prepare(v)
+  local function prepare(v, key)
     if type(v) ~= "table" then return v end
     if v["$id"] then return idsIn(state())(v["$id"]) end
-    if v.rows then return base64(rowsToBytes(v.rows, legend)) end
+    if key == "rgba" and v.rows then return base64(rowsToBytes(v.rows, legend)) end
     local out = {}
-    for k, x in pairs(v) do out[k] = prepare(x) end
+    for k, x in pairs(v) do out[k] = prepare(x, k) end
     return out
   end
   for n, step in ipairs(sc.steps) do

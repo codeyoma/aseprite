@@ -948,5 +948,19 @@
     "input": [
       "steps"
     ]
+  },
+  {
+    "name": "write_pixels",
+    "title": "Write pixels",
+    "kind": "edit",
+    "label": "Write pixels",
+    "input": [
+      "frame",
+      "layer",
+      "legend",
+      "rows",
+      "x",
+      "y"
+    ]
   }
 ]

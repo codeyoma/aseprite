@@ -138,6 +138,7 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `list_commands` | Finds commands and their parameters, generated from this fork's source |
 | `snapshot` | PNG of the sprite or a layer, upscaled so pixels are visible; review views: `filmstrip` (a tag's or a range's frames in one numbered image), `onion` (a frame over its neighbors, earlier ones ghosted red, later ones blue) and `compare` (a reference layer beside the art) |
 | `read_pixels` | A region as a text grid with a color legend |
+| `write_pixels` | Writes a grid in `read_pixels`' format back into a layer in one undo step; ragged rows and unknown keys are refused with their row and column |
 | `save_command` / `run_saved_command` / `list_saved_commands` / `delete_saved_command` | Keep Lua the agent wrote as a command in **My Commands**, versioned with git |
 | `get_timeline_text` / `apply_timeline_text` | The timeline (frames, durations, tags, linked cels) as editable text, applied in one undo step or previewed as a plan |
 | `palette_from_image` | Colors of an image, layer, selection or the sprite: counts, ramps, near-duplicates, closest available palettes; set, swatch or save as `.gpl`; saves .gpl, .hex, .pal, .act, .col or .aseprite palettes |

@@ -92,6 +92,50 @@ test("read_pixels formats a grid with a legend", async () => {
   assert.deepEqual(lines.slice(2), [" 9| . 0 1", "10| 0 0 ."]);
 });
 
+test("write_pixels writes back what read_pixels printed, as rows with labels and the Legend line", async () => {
+  const { fakeDocument, rect } = await import("./helpers/fake_document.mjs");
+  const doc = fakeDocument({ width: 4, height: 3, layers: [{ name: "Body", frames: [rect(4, 3, [1, 1, 2, 1], [255, 0, 0])] }] });
+  const read = textOf(await runTool(findTool("read_pixels"), { layer: "Body" }, doc)).split("\n");
+  assert.equal(read[1], "Legend: 0=#ff0000");
+  // The agent copies the printed rows (labels included) and the Legend line, and changes one key.
+  const rows = read.slice(2).map((r, i) => (i === 1 ? r.replace(". 0 0 .", ". 0 1 .") : r));
+  const res = await runTool(findTool("write_pixels"), { layer: "Body", rows, legend: read[1] + "  1=#00ff00" }, doc);
+  assert.equal(res.isError, undefined, textOf(res));
+  assert.match(textOf(res), /4x3 grid at 0,0 into L\d+, frame 1: 1 of 12 pixels changed/);
+  const sent = doc.calls.at(-1);
+  assert.deepEqual(sent.params.rows, [". . . .", ". 0 1 .", ". . . ."]);
+  assert.deepEqual(sent.params.legend, { 0: "#ff0000", 1: "#00ff00" });
+  const img = doc.cel("Body");
+  assert.deepEqual([...img.subarray((1 * 4 + 2) * 4, (1 * 4 + 2) * 4 + 4)], [0, 255, 0, 255]);
+});
+
+test("write_pixels refuses ragged rows, unknown keys and bad legends before sending anything", async () => {
+  const aseprite = fakeAseprite();
+  const tool = findTool("write_pixels");
+  const fails = async (input, pattern) => {
+    const res = await runTool(tool, input, aseprite);
+    assert.equal(res.isError, true, JSON.stringify(input));
+    assert.match(textOf(res), pattern);
+  };
+  await fails({ rows: ["a a a", "a a"], legend: { a: "#ff0000" }, y: 4 }, /Row 2 \(y=5\) has 2 pixels but row 1 has 3/);
+  await fails({ rows: ["a . q"], legend: { a: "#ff0000" }, x: 2 }, /Row 1, column 3 \(x=4, y=0\): unknown key 'q'/);
+  await fails({ rows: ["a"], legend: { a: "red" } }, /Legend key 'a': red is not a color/);
+  await fails({ rows: ["."], legend: { ".": "#ff0000" } }, /Legend key '\.' is reserved/);
+  await fails({ rows: ["a"], legend: "a:#ff0000" }, /Legend entry 'a:#ff0000' is not key=#rrggbb/);
+  const wide = Array(129).fill(".").join(" ");
+  await fails({ rows: Array(129).fill(wide) }, /too large/);
+  assert.equal(aseprite.calls.length, 0);
+});
+
+test("parseGrid keeps numbers, hex keys, '-' and '.', and drops read_pixels' row labels", async () => {
+  const { parseGrid, parseLegend } = await import("../dist/pixel_text.js");
+  const g = parseGrid([" 9| 12 #00ff00 - .", "10| .  .   . 3"], undefined, 0, 9);
+  assert.deepEqual(g.rows, ["12 #00ff00 - .", ". . . 3"]);
+  assert.equal(g.width, 4);
+  assert.deepEqual(parseLegend("Legend: (none)"), {});
+  assert.deepEqual(parseLegend({ a: "FF0000" }), { a: "#ff0000" });
+});
+
 test("snapshot encodes an upscaled PNG", async () => {
   const rgba = Buffer.from([255, 0, 0, 255, 0, 0, 255, 128]); // 2x1: red, half-transparent blue
   const res = await runTool(findTool("snapshot"), { scale: 4, background: "transparent" }, fakeAseprite({

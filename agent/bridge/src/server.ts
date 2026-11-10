@@ -14,7 +14,7 @@ Workflow:
    snippets (pixelate, retime, idle animation, outline, sprite sheet export) and read_guide("pixel-art") when drawing.
 2. Call get_state to see the document and get_context to see what the user has selected.
 3. Make changes with execute_lua or run_command. Each execute_lua call is one undo step and rolls back on error.
-4. Call snapshot after visual changes and check the result. Use read_pixels for exact pixel work.
+4. Call snapshot after visual changes and check the result. Use read_pixels for exact pixel work, and write_pixels to write its rows back after changing keys.
 
 Aseprite Lua essentials:
 - Globals: app, Sprite, Image, Color, Point, Rectangle, Size, Palette, ColorMode, json.

@@ -1,7 +1,8 @@
 // Core tools: reading the document (state, context, pixels, snapshots,
-// checks, visual diffs), running Lua, undo/redo, variations and sub-agents.
+// checks, visual diffs), writing a pixel grid, running Lua, undo/redo, variations and sub-agents.
 import * as z from "zod/v4";
 import { encodeSnapshot } from "./png.js";
+import { parseGrid } from "./pixel_text.js";
 import { formatSubResults } from "./subagents.js";
 import { failure, text, type Content, type Tool, type ToolResult } from "./tool.js";
 import { framesSpec } from "./tool_inputs.js";
@@ -198,6 +199,46 @@ export const CORE_TOOLS: Tool[] = [
         (result.layer ? `, layer "${result.layer}"` : "") +
         `. Keys: ${result.keys}. '.'=transparent '-'=outside canvas.`;
       return { content: [text([header, `Legend: ${legend || "(none)"}`, ...rows].join("\n"))] };
+    },
+  },
+  {
+    name: "write_pixels",
+    title: "Write pixels",
+    description:
+      "Write a text grid into one layer at x, y, in exactly the format read_pixels returns: rows of keys separated " +
+      "by spaces, plus its legend. Read the region with read_pixels and the same layer, change keys, write the rows " +
+      "back. A key means what read_pixels made it mean: in indexed sprites a number is that palette index; other " +
+      "keys come from the legend (key -> #rrggbb or #rrggbbaa); '#rrggbb' is that color; '.' is transparent; '-' " +
+      "leaves the pixel unchanged. Every row must have the same number of keys and every key must be known: " +
+      "mistakes are refused with their row and column, never padded. One undo step; the cel keeps its position " +
+      "and grows when you paint outside it. For the next animation frame, start from a copy of the last frame's " +
+      "rows (read_pixels frame N, write to frame N+1, then change only what moves) so shapes keep their size. " +
+      "At most 16384 pixels per call.",
+    input: z.object({
+      rows: z.array(z.string()).min(1)
+        .describe("Rows top to bottom starting at y, keys separated by spaces (e.g. '. 3 3 .'). A leading ' 9| ' row label is ignored."),
+      legend: z.union([z.record(z.string(), z.string()), z.string()]).optional()
+        .describe("Key -> hex color, as read_pixels returned it ({\"0\": \"#ff0000\"} or the 'Legend: 0=#ff0000 ...' line). Indexed sprites need no entry for palette indexes."),
+      x: z.number().int().optional().describe("Left edge in sprite pixels. Default 0."),
+      y: z.number().int().optional().describe("Top edge in sprite pixels. Default 0."),
+      layer: z.string().optional().describe("Image layer to write into (id like 'L12' or name). Default: the active layer."),
+      frame: z.number().int().min(1).optional().describe("1-based frame. Default: active frame."),
+    }),
+    kind: "edit",
+    label: (a) => (a.rows ? `Write ${a.rows.length} pixel rows` : "Write pixels"),
+    async run({ rows, legend, x, y, layer, frame }, ctx) {
+      let grid;
+      try {
+        grid = parseGrid(rows, legend, x ?? 0, y ?? 0);
+      } catch (e) {
+        return failure((e as Error).message);
+      }
+      const { result } = await ctx.request("write_pixels", { rows: grid.rows, legend: grid.legend, x, y, layer, frame });
+      const cel = result.cel ? ` Cel now ${result.cel.width}x${result.cel.height} at ${result.cel.x},${result.cel.y}.` : "";
+      return {
+        content: [text(`Wrote a ${grid.width}x${grid.height} grid at ${x ?? 0},${y ?? 0} into ${result.layer}, frame ${result.frame}: ` +
+          `${result.changed} of ${result.written} pixels changed.${cel}`)],
+      };
     },
   },
   {

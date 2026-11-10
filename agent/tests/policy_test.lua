@@ -43,6 +43,7 @@ local SAMPLES = {
   run_command = { name = "ReplaceColor", params = { from = { __color = "#ff0000" }, to = { __color = "#0000ff" }, tolerance = 0 } },
   apply_timeline_text = { text = "frames 2\nframe 1 duration 70ms" },
   put_image = { width = 2, height = 2, rgba = RGBA_2x2, x = 4, y = 4 },
+  write_pixels = { rows = { "g g", "g ." }, legend = { g = "#00ff00" }, x = 5, y = 5 },
   put_images = { images = { { width = 2, height = 2, rgba = RGBA_2x2, frame = 1, x = 4, y = 4, new_layer = "fx" } } },
   split_layer_by_colors = { groups = { { name = "Red", colors = { "#ff0000" } } } },
   mirror_frames = { frames = 1 },

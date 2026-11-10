@@ -21,4 +21,4 @@ Finish every drawing or animation task with the `check` tool. It finds off-palet
 2. Add base colors per material.
 3. Add shadows, then highlights.
 4. Outline.
-5. `snapshot` and check at the zoom shown. Use `read_pixels` to fix individual pixels.
+5. `snapshot` and check at the zoom shown. To fix individual pixels, `read_pixels` the region of one layer, change the keys and write the rows back with `write_pixels`.
