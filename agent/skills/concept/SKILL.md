@@ -63,4 +63,6 @@ In the same message as the spec and prompt, ask which way to go:
 - Ask for the image twice, or hide the prompt inside a paragraph.
 - Let the image overrule the spec: if the model changed the view or added a cape nobody wanted, the spec wins; note it as a deviation.
 
+Then: `shade-sprite` or `animate` on the drawn frames, then `review`.
+
 Adapted from aseprite-ai-artist's concept skill (MIT, https://github.com/with-pebbly/aseprite-ai-artist).
