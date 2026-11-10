@@ -1480,6 +1480,11 @@ handlers.create_animation = function(params)
     sprite:newCel(sprite.layers[1], i, img, Point(0, 0))
     sprite.frames[i].duration = (f.duration or 100) / 1000
   end
+  if params.palette and #params.palette > 0 then
+    local p = Palette(#params.palette)
+    for i, hx in ipairs(params.palette) do p:setColor(i - 1, Color(hexRgba(hx))) end
+    sprite:setPalette(p)
+  end
   local dirs = { forward = AniDir.FORWARD, reverse = AniDir.REVERSE, pingpong = AniDir.PING_PONG,
                  ["ping-pong"] = AniDir.PING_PONG }
   for _, t in ipairs(params.tags or {}) do
@@ -1493,6 +1498,59 @@ handlers.create_animation = function(params)
   app.frame = sprite.frames[1]
   app.refresh()
   return { frames = #sprite.frames, tags = #sprite.tags, title = app.fs.fileTitle(sprite.filename) }
+end
+
+-- Splits a layer into one layer per color group (#40), across all frames,
+-- in one undo step: groups = { { name, colors = { "#rrggbb", ... } } }.
+-- Pixels in no group stay on the original layer (removed when empty).
+handlers.split_layer_by_colors = function(params)
+  local sprite = app.sprite
+  if not sprite then error("No active sprite") end
+  if sprite.colorMode ~= ColorMode.RGB then error("Splitting by color needs an RGB sprite") end
+  local src = params.layer and layerById(params.layer, sprite) or app.layer
+  if not src or src.isGroup then error("Pick an image layer") end
+  local pc = app.pixelColor
+  local groupOf = {}
+  for gi, g in ipairs(params.groups or {}) do
+    for _, h in ipairs(g.colors or {}) do
+      local r, gg, b = hexRgba(h)
+      groupOf[pc.rgba(r, gg, b, 255)] = gi
+    end
+  end
+  local names, made = {}, {}
+  app.transaction("Split layer by color", function()
+    -- Each new layer goes just above the source, so the first group (the
+    -- outline) ends up on top.
+    for gi = 1, #params.groups do
+      local l = sprite:newLayer()
+      l.name = params.groups[gi].name
+      l.parent = src.parent
+      l.stackIndex = src.stackIndex + 1
+      made[gi] = l
+    end
+    local leftover = false
+    local cels = {}
+    for _, c in ipairs(src.cels) do cels[#cels + 1] = c end
+    for _, cel in ipairs(cels) do
+      local img, pos = cel.image, cel.position
+      local parts, rest = {}, img:clone()
+      for it in img:pixels() do
+        local v = it()
+        local gi = pc.rgbaA(v) > 0 and groupOf[pc.rgba(pc.rgbaR(v), pc.rgbaG(v), pc.rgbaB(v), 255)]
+        if gi then
+          parts[gi] = parts[gi] or Image(img.width, img.height, ColorMode.RGB)
+          parts[gi]:drawPixel(it.x, it.y, v)
+          rest:drawPixel(it.x, it.y, 0)
+        end
+      end
+      for gi, part in pairs(parts) do sprite:newCel(made[gi], cel.frameNumber, part, pos) end
+      if rest:isEmpty() then sprite:deleteCel(cel) else cel.image = rest; leftover = true end
+    end
+    if not leftover then sprite:deleteLayer(src) else src.name = src.name .. " (rest)" end
+  end)
+  for gi = 1, #params.groups do names[#names + 1] = made[gi].name end
+  app.refresh()
+  return { layers = names }
 end
 
 -- A swatch strip of colors on a new layer "AI: <name>" (one undo step).

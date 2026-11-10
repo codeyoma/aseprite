@@ -714,6 +714,7 @@ return function(deps)
 
   -- Attachments (#21): images that go with the next message.
   local pending = {}
+  local imageSent = false    -- this conversation already has an image (skills that need one)
   local function updateAttachments()
     if not dlg then return end
     local names = {}
@@ -895,7 +896,8 @@ return function(deps)
     local skill = skillName and skillByName(skillName)
     if skill then
       for _, n in ipairs(skill.needs or {}) do
-        if n == "image" and #pending == 0 then
+        -- A follow-up in a conversation that already has the image is fine.
+        if n == "image" and #pending == 0 and not imageSent then
           app.tip(skill.title .. " needs an image: attach one with + first")
           return
         end
@@ -936,6 +938,7 @@ return function(deps)
       expanded = expanded .. string.format("\n[Attached image %d: %s%s, file %s]", i, a.label, a.uri and (" (" .. a.uri .. ")") or "", a.path)
       shown = shown .. "\nAttached: " .. a.label
     end
+    if #pending > 0 then imageSent = true end
     pending = {}
     updateAttachments()
     -- The header names the skill, so the bubble shows only the request.
@@ -1325,6 +1328,7 @@ return function(deps)
     dlg:button{ id = "new", text = "&New chat", onclick = function()
       deps.request("chat.reset", {}, function() end)
       conv:reset()
+      imageSent = false
       syncBusy()
       updateStatus("")
       changed()

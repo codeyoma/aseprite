@@ -61,4 +61,26 @@ r = H.call("apply_color_map", { map = { ["#29adff"] = "#1d2b53" } })
 local c = ix.palettes[1]:getColor(2)
 check("indexed maps palette entries", r.mode == "palette entries" and c.red == 29 and c.blue == 83)
 
+-- split_layer_by_colors (#40): one layer per group, all frames, one undo step.
+local sp = Sprite(4, 2, ColorMode.RGB)
+sp:newFrame()
+for f = 1, 2 do
+  local im = Image(4, 2, ColorMode.RGB)
+  im:drawPixel(0, 0, Color(24, 20, 37)); im:drawPixel(1, 0, Color(60, 170, 80)); im:drawPixel(2, 0, Color(255, 204, 170))
+  im:drawPixel(3, f - 1, Color(9, 9, 9))
+  sp.layers[1]:cel(f).image = im
+end
+app.layer = sp.layers[1]
+r = H.call("split_layer_by_colors", { groups = {
+  { name = "Outline", colors = { "#181425" } }, { name = "Green", colors = { "#3caa50" } }, { name = "Skin", colors = { "#ffccaa" } } } })
+local names = {}
+for _, l in ipairs(sp.layers) do names[#names + 1] = l.name end
+check("split makes a layer per group, keeps the rest", table.concat(names, ",") == "Layer 1 (rest),Skin,Green,Outline"
+  and #r.layers == 3, table.concat(names, ","))
+local outline = sp.layers[4]
+check("split covers every frame", outline:cel(1) and outline:cel(2)
+  and app.pixelColor.rgbaR(outline:cel(2).image:getPixel(0 - outline:cel(2).position.x, 0 - outline:cel(2).position.y)) == 24)
+app.undo()
+check("split is one undo step", #sp.layers == 1 and sp.layers[1].name == "Layer 1")
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))
