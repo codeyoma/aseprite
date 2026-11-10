@@ -41,17 +41,23 @@ export const READ_ONLY_NOTE =
   "This connection is read-only (Ask or Plan mode): only tools that read the document are available. " +
   "Do not try to change the document; describe or plan changes instead.";
 
+/** Tools that start agents, left out for critics. */
+const AGENT_TOOLS = new Set(["spawn_agents", "critique", "ab_compare"]);
+
 /**
  * The MCP server over one ToolContext. readOnly lists (and so allows) only
- * the read tools (Ask and Plan modes); subAgent leaves out spawn_agents.
+ * the read tools (Ask and Plan modes); subAgent leaves out spawn_agents; critic
+ * (with readOnly) also critique and ab_compare.
  */
-export function createMcpServer(ctx: ToolContext, opts: { readOnly?: boolean; subAgent?: boolean } = {}): McpServer {
+export function createMcpServer(ctx: ToolContext, opts: { readOnly?: boolean; subAgent?: boolean; critic?: boolean } = {}): McpServer {
   const instructions = opts.readOnly ? `${INSTRUCTIONS}\n\n${READ_ONLY_NOTE}` : INSTRUCTIONS;
   const server = new McpServer({ name: "aseprite-agent", version: VERSION }, { instructions });
   for (const tool of TOOLS) {
     if (opts.readOnly && tool.kind !== "read") continue;
     // Sub-agents don't start more sub-agents.
     if (opts.subAgent && tool.name === "spawn_agents") continue;
+    // Critics (#76) don't start agents either.
+    if (opts.critic && AGENT_TOOLS.has(tool.name)) continue;
     server.registerTool(
       tool.name,
       { title: tool.title, description: tool.description, inputSchema: tool.input },

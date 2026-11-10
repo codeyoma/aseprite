@@ -4,6 +4,7 @@ import * as z from "zod/v4";
 import { encodeSnapshot } from "./png.js";
 import { parseGrid } from "./pixel_text.js";
 import { formatSubResults } from "./subagents.js";
+import { saveReviewCheckpoint } from "./critic.js";
 import { failure, text, type Content, type Tool, type ToolResult } from "./tool.js";
 import { framesSpec } from "./tool_inputs.js";
 import { snapshotView } from "./views.js";
@@ -163,7 +164,8 @@ export const CORE_TOOLS: Tool[] = [
     description:
       "Show what changed on the active frame: compares the canvas now with the canvas before the last edit step " +
       "(default) or with a checkpoint you saved earlier (save: 'name', then checkpoint: 'name'). Returns a PNG " +
-      "with changed pixels in red over a faded copy of the frame, the changed bounds and the changed-pixel count.",
+      "with changed pixels in red over a faded copy of the frame, the changed bounds and the changed-pixel count. A save also " +
+      "keeps a copy of every layer in the bridge, which critique and ab_compare use as the before image and for the fix guard.",
     input: z.object({
       checkpoint: z.string().optional().describe("Compare with this saved checkpoint instead of the last edit step."),
       save: z.string().optional().describe("Save the current canvas as a checkpoint with this name, and return."),
@@ -174,7 +176,12 @@ export const CORE_TOOLS: Tool[] = [
     label: (a) => (a.save ? `Save checkpoint ${a.save}` : "Compare with before"),
     async run({ checkpoint, save, scale }, ctx) {
       const { result, binary } = await ctx.request("diff_visual", { checkpoint, save });
-      if (save) return { content: [text(`Saved checkpoint "${save}".`)] };
+      if (save) {
+        // The bridge keeps its own copy, per layer and frame, for critique's and ab_compare's fix guard (#76).
+        const cp = await saveReviewCheckpoint(ctx, save).catch(() => undefined);
+        const kept = cp ? ` Kept ${cp.layers.size} layer${cp.layers.size === 1 ? "" : "s"} x ${cp.frames.length} frame${cp.frames.length === 1 ? "" : "s"} for the fix guard and ab_compare.` : "";
+        return { content: [text(`Saved checkpoint "${save}".${kept}`)] };
+      }
       return formatDiff(result, binary, scale);
     },
   },

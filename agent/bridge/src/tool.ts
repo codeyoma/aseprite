@@ -3,6 +3,7 @@
 // tools.ts so tool modules can import it without an import cycle.
 import type * as z from "zod/v4";
 import type { Reply } from "./aseprite.js";
+import type { ImageBlock } from "./attachments.js";
 import { SavedCommands } from "./saved_commands.js";
 import type { SubResult, SubTask } from "./subagents.js";
 
@@ -16,6 +17,17 @@ export interface SubAgentRunner {
   run(tasks: SubTask[], parallel?: number): Promise<SubResult[]>;
 }
 
+/** One fresh critic agent (#76): each ask is a message in the same session; its reply text comes back. */
+export interface CriticSession {
+  ask(message: string, images?: ImageBlock[]): Promise<string>;
+  close(): void;
+}
+
+/** Starts critic agents for critique and ab_compare (SubAgents in the bridge, a fake in tests). */
+export interface CriticRunner {
+  open(label: string): CriticSession;
+}
+
 /**
  * Everything a tool may use, built once per MCP server or CLI call. It is an
  * AsepriteRequester, so tools that only talk to Aseprite take it as one.
@@ -25,17 +37,22 @@ export interface ToolContext extends AsepriteRequester {
   commands: SavedCommands;
   /** Sub-agents for spawn_agents; absent where they can't run (CLI, sub-agents themselves). */
   subAgents?: SubAgentRunner;
+  /** Fresh critics for critique and ab_compare; absent where they can't run (CLI, sub-agents, critics themselves). */
+  critic?: CriticRunner;
+  /** ab_compare's coin flip; default Math.random (tests pass a seeded one). */
+  random?: () => number;
 }
 
 /** A ToolContext over `aseprite`; the commands store defaults to the user's folder. */
 export function toolContext(
   aseprite: AsepriteRequester,
-  opts: { commands?: SavedCommands; subAgents?: SubAgentRunner } = {},
+  opts: { commands?: SavedCommands; subAgents?: SubAgentRunner; critic?: CriticRunner } = {},
 ): ToolContext {
   return {
     request: (method, params, timeoutMs) => aseprite.request(method, params, timeoutMs),
     commands: opts.commands ?? new SavedCommands(),
     subAgents: opts.subAgents,
+    critic: opts.critic,
   };
 }
 

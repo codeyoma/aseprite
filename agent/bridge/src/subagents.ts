@@ -7,9 +7,13 @@
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { AcpRunner } from "./acp.js";
+import type { ImageBlock } from "./attachments.js";
 import type { ChatEvent } from "./chat.js";
+import { CRITIC_PROMPT } from "./critic.js";
+import type { CriticSession } from "./tool.js";
 import { toChatEvent } from "./chat.js";
 import type { AgentProvider } from "./providers/agent_provider.js";
+import { providerFor } from "./providers/index.js";
 import { sessionDir } from "./session.js";
 
 export interface Scope {
@@ -68,7 +72,8 @@ export async function pool<T, R>(items: T[], limit: number, fn: (item: T, index:
 
 export class SubAgents {
   constructor(
-    private readonly endpoint: { url: string; token: string },
+    /** criticUrl: the critics' read-only endpoint (#76); without it critics use askUrl. */
+    private readonly endpoint: { url: string; token: string; askUrl?: string; criticUrl?: string },
     /** The document's state block, sent with each sub-agent's task. */
     private readonly stateBlock: () => Promise<string>,
     /** The provider of the running chat turn (sub-agents use the same agent). */
@@ -81,6 +86,57 @@ export class SubAgents {
     const provider = this.providerFor();
     const state = await this.stateBlock().catch(() => "");
     return pool(tasks, parallel, (task) => this.runOne(provider, task, state));
+  }
+
+  /**
+   * A fresh critic (#76): an agent of the running chat's provider on the critics' read-only endpoint (read tools,
+   * no critique, ab_compare or spawn_agents), with the critic prompt and none of the conversation. Each ask is one
+   * prompt in the same ACP session, so a retry can say what was wrong with the last reply.
+   */
+  open(label: string): CriticSession {
+    // ASEPRITE_AGENT_CRITIC=claude|codex picks the critic's agent outside a chat turn (live tests over MCP).
+    const forced = process.env.ASEPRITE_AGENT_CRITIC;
+    const provider = forced ? providerFor(forced) : this.providerFor();
+    const url = this.endpoint.criticUrl ?? this.endpoint.askUrl ?? this.endpoint.url;
+    let texts: string[] = [];
+    let failed: string | undefined;
+    let conversationId: string | undefined;
+    const runner = new AcpRunner(
+      provider,
+      { url, askUrl: url, token: this.endpoint.token },
+      join(sessionDir, "workspace"),
+      CRITIC_PROMPT,
+      {
+        onEvent: (ev) => {
+          if (ev.type === "plan" || ev.type === "thinking" || ev.type === "conversation") return;
+          if (ev.type === "text") {
+            texts.push(ev.text);
+            return; // the reply is JSON for the tool, not chat text
+          }
+          if (ev.type === "error") {
+            failed = ev.text;
+            this.emit({ type: "status", text: `${label}: ${ev.text}` });
+            return;
+          }
+          this.emit({ ...toChatEvent(ev, provider.id), agent: label });
+        },
+        onPermission: async () => ({ outcome: "cancelled" }),
+      },
+    );
+    this.emit({ type: "status", text: `${label} started` });
+    return {
+      ask: async (message: string, images: ImageBlock[] = []) => {
+        texts = [];
+        failed = undefined;
+        // Ask mode: the read-only endpoint and no built-in tools (Claude) or a read-only sandbox (Codex).
+        const r = await runner.prompt(message, conversationId, images, "ask");
+        conversationId = r.conversationId;
+        if (failed) throw new Error(`${label} failed: ${failed}`);
+        if (r.stopReason !== "end_turn") throw new Error(`${label} stopped early (${r.stopReason})`);
+        return texts.join("\n").trim();
+      },
+      close: () => runner.dispose(),
+    };
   }
 
   private async runOne(provider: AgentProvider, task: SubTask, state: string): Promise<SubResult> {

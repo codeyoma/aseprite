@@ -146,12 +146,12 @@ export function writePng(path: string, img: Rgba): void {
 
 /**
  * 3x5 pixel glyphs for labels, rows top to bottom, 3 bits each (4 = left column): the digits and the few letters
- * the review views write (REF, ART).
+ * the review views and ab_compare write (REF, ART, A, B).
  */
 const GLYPHS: Record<string, number[]> = {
   "0": [7, 5, 5, 5, 7], "1": [2, 6, 2, 2, 7], "2": [7, 1, 7, 4, 7], "3": [7, 1, 3, 1, 7], "4": [5, 5, 7, 1, 1],
   "5": [7, 4, 7, 1, 7], "6": [7, 4, 7, 5, 7], "7": [7, 1, 1, 2, 2], "8": [7, 5, 7, 5, 7], "9": [7, 5, 7, 1, 7],
-  A: [2, 5, 7, 5, 5], E: [7, 4, 6, 4, 7], F: [7, 4, 6, 4, 4], R: [6, 5, 6, 5, 5], T: [7, 2, 2, 2, 2],
+  A: [2, 5, 7, 5, 5], B: [6, 5, 6, 5, 6], E: [7, 4, 6, 4, 7], F: [7, 4, 6, 4, 4], R: [6, 5, 6, 5, 5], T: [7, 2, 2, 2, 2],
 };
 
 /** Normal "over" blending of one RGBA pixel onto an opaque background pixel. */

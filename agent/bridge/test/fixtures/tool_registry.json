@@ -1,5 +1,18 @@
 [
   {
+    "name": "ab_compare",
+    "title": "Blind A/B comparison",
+    "kind": "read",
+    "label": "Blind A/B comparison",
+    "input": [
+      "a",
+      "b",
+      "checkpoint",
+      "frames",
+      "what"
+    ]
+  },
+  {
     "name": "add_fx",
     "title": "Add effect",
     "kind": "edit",
@@ -110,6 +123,19 @@
       "layer",
       "path",
       "source"
+    ]
+  },
+  {
+    "name": "critique",
+    "title": "Fresh-eyes critique",
+    "kind": "read",
+    "label": "Ask a fresh critic",
+    "input": [
+      "checkpoint",
+      "frames",
+      "layer",
+      "tag",
+      "what"
     ]
   },
   {

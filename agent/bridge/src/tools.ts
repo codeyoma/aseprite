@@ -7,7 +7,7 @@ import { failure, text, type Tool, type ToolContext, type ToolResult } from "./t
 
 export {
   failure, text, toolContext,
-  type AsepriteRequester, type Content, type SubAgentRunner, type Tool, type ToolContext, type ToolResult,
+  type AsepriteRequester, type Content, type CriticRunner, type CriticSession, type SubAgentRunner, type Tool, type ToolContext, type ToolResult,
 } from "./tool.js";
 export { formatCheck, formatDiff, formatExecute } from "./core_tools.js";
 export { withDefaults } from "./command_tools.js";

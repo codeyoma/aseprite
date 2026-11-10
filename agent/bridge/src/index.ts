@@ -31,7 +31,7 @@ async function main() {
   const commands = new SavedCommands();
   // spawn_agents (#33): set below, since sub-agents connect back to the endpoint.
   let subAgents: SubAgents | undefined;
-  const endpoint = await startHttpEndpoint(link, newToken(), { commands, subAgents: () => subAgents });
+  const endpoint = await startHttpEndpoint(link, newToken(), { commands, subAgents: () => subAgents, critic: () => subAgents });
   const chat = new ChatRunner(link, endpoint);
   // Sub-agents use the running chat's agent and show their steps in the panel.
   subAgents = new SubAgents(
@@ -72,7 +72,7 @@ async function main() {
   }
 
   process.stdin.on("close", shutdown);
-  await createMcpServer(toolContext(link, { commands, subAgents })).connect(new StdioServerTransport());
+  await createMcpServer(toolContext(link, { commands, subAgents, critic: subAgents })).connect(new StdioServerTransport());
 }
 
 main().catch((err) => {
