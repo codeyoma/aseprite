@@ -43,6 +43,7 @@ Start a session and ask, for example: "Make a 32×32 sprite with a red circle on
 | Panel says "No bridge found" | Run your agent once with the `aseprite` MCP server so the extension learns the bridge path. |
 | Panel says "The bridge did not start" | Read `~/.aseprite-agent/daemon.log`. Usually `node` is not on your login shell's `PATH`. |
 | Codex tool calls fail with an approval message | The panel pre-approves the `aseprite` server's tools. In your own Codex sessions, approve them when asked, or set `default_tools_approval_mode = "approve"` under `[mcp_servers.aseprite]`. |
+| Chat text looks blurry | Aseprite draws its UI at reduced resolution when **Screen Scaling** is above 100%. Set **Edit > Preferences > General > Screen Scaling = 100%** and **UI Elements Scaling = 200%**: the UI keeps its size and the panel text renders at full resolution. |
 | Two agent sessions | The newest bridge takes over Aseprite; when it exits, the previous one reconnects. |
 
 ## Security

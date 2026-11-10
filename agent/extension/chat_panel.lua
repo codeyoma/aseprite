@@ -554,7 +554,7 @@ return function(deps)
       height = 240,
       autoscaling = false,      -- full resolution, so the system font stays crisp
       font = "system",
-      fontsize = 13,
+      fontsize = 7.5,   -- x UI scale (e.g. 15 px at 200%), close to Aseprite's own text
       hexpand = true,
       vexpand = true,
       onpaint = paint,
@@ -574,10 +574,10 @@ return function(deps)
       end,
     }
     dlg:newrow()
-    dlg:label{ id = "context", text = "Context: " .. deps.contextString(), hexpand = true, font = "system", fontsize = 11 }
+    dlg:label{ id = "context", text = "Context: " .. deps.contextString(), hexpand = true, font = "system", fontsize = 6.5 }
     dlg:newrow()
     dlg:label{ id = "status", text = deps.isConnected() and "" or "Bridge not connected", hexpand = true,
-               font = "system", fontsize = 11 }
+               font = "system", fontsize = 6.5 }
     dlg:newrow()
     -- Multi-line box that wraps and grows (this fork's dlg:textedit);
     -- stock Aseprite falls back to a single-line entry.
@@ -590,7 +590,7 @@ return function(deps)
         maxlines = 5,
         focus = true,
         font = "system",
-        fontsize = 13,
+        fontsize = 7.5,
         onsubmit = function() send() end,   -- Enter sends, Shift+Enter adds a line
       }
     end)

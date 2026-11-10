@@ -854,7 +854,9 @@ void MainWindow::dockScriptPanel(ScriptPanel* panel)
   const bool horizontal = (side == ui::LEFT || side == ui::RIGHT);
   const int extent =
     get_config_int(kScriptPanelsSection, (id + ".size").c_str(), horizontal ? 220 : 160);
-  const gfx::Size size = horizontal ? gfx::Size(extent, 0) : gfx::Size(0, extent);
+  // The config stores UI units; the dock works in pixels.
+  const int px = extent * ui::guiscale();
+  const gfx::Size size = horizontal ? gfx::Size(px, 0) : gfx::Size(0, px);
 
   m_customizableDock->dockRelativeTo(m_workspace.get(), side, panel, size);
   updateAgentButton();
