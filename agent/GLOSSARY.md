@@ -85,3 +85,5 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **RotSprite transform**: rotating or scaling pixel art without blending: upscale x8 with Scale2x, sample through the inverse transform, and when an axis shrinks take the most common color in each pixel's footprint so thin lines survive (`agent/bridge/src/animation.ts`). Used by `transform_layer` (in-betweens of rigid parts along eased arcs), `rotate_layer`, `squash_stretch` and `smear_frame`.
 
 **Directions**: a character's facings as tags named by compass direction (`walk_S`, `E`, `idle-north`; S faces the viewer, E faces right). `direction_plan` lists what exists, what mirrors (E↔W, NE↔NW, SE↔SW) and what must be drawn; `mirror_direction` copies a tag flipped as the opposite direction (`agent/bridge/src/directions.ts`).
+
+**Autotile set**: terrain tiles for every neighbor combination (47-tile blob, or 16 sides-only), composed from a 5-tile template (island, vertical, horizontal, fill, inner): each tile's four quarters are picked by its neighbors. Exported with neighbor masks as a Godot 4 TileSet (terrain peering bits), a Tiled wang set and JSON (`agent/bridge/src/tiles.ts`).
