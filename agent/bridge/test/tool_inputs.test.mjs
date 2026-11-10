@@ -88,5 +88,5 @@ test("resolvePalette: none, the sprite's, a known one by name", async () => {
   const own = await resolvePalette("sprite", doc);
   assert.deepEqual(own.map((c) => [c.r, c.g, c.b]), [[0, 0, 0], [255, 255, 255]], "transparent entries skipped");
   assert.deepEqual(await resolvePalette("pico8", doc), findPalette("PICO-8").colors, "names match loosely");
-  await assert.rejects(resolvePalette("no such palette", doc), /No palette named no such palette\. Known: /);
+  await assert.rejects(resolvePalette("no such palette", doc), /Could not reach Lospec for .no-such'.*offline/, "unknown names try Lospec; npm test has no network");
 });

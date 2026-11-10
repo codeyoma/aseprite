@@ -23,7 +23,7 @@
     "prepack": "npm run build",
     "gen": "node scripts/gen.mjs",
     "gen:check": "node scripts/gen.mjs --check",
-    "test": "npm run gen:check && npm run build && node ../tools/check_extension.mjs && node ../tools/check_lua_stamp.mjs && node --test test/*.test.mjs"
+    "test": "npm run gen:check && npm run build && node ../tools/check_extension.mjs && node ../tools/check_lua_stamp.mjs && ASEPRITE_AGENT_OFFLINE=1 node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"

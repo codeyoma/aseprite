@@ -474,6 +474,16 @@
     ]
   },
   {
+    "name": "list_palettes",
+    "title": "List palettes",
+    "kind": "read",
+    "label": "List palettes",
+    "input": [
+      "search",
+      "source"
+    ]
+  },
+  {
     "name": "list_saved_commands",
     "title": "List saved commands",
     "kind": "read",
@@ -627,6 +637,7 @@
     "kind": "edit",
     "label": "Extract palette",
     "input": [
+      "compare_with",
       "frame",
       "frames",
       "ignore_alpha_below",

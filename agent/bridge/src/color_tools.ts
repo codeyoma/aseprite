@@ -9,7 +9,7 @@ import {
   tally, toneStats, toneTowards, type Counted, type RGBA,
 } from "./color.js";
 import { documentOf, type Document } from "./document.js";
-import { findPalette, knownPalettes, parsePaletteFile } from "./palettes.js";
+import { knownPalettes, PALETTE_ALIASES, paletteCredit, parsePaletteFile, resolveNamedPalette, type NamedPalette } from "./palettes.js";
 import { describeSource, framesInput, imageSource, readSource, resolvePalette, sourceFrames, sourceKind, sourceLayer, type ImageSource } from "./tool_inputs.js";
 import { findOutline } from "./style.js";
 import { failure, text, type AsepriteRequester, type Tool } from "./tool.js";
@@ -34,21 +34,73 @@ function pct(x: number): string {
 }
 
 /** The palette to remap to: hex colors, a palette file, or a palette by name (default the sprite's). */
-async function targetPalette(t: { palette?: string; colors?: string[]; file?: string }, doc: Document): Promise<{ name: string; colors: RGBA[] }> {
+async function targetPalette(t: { palette?: string; colors?: string[]; file?: string }, doc: Document): Promise<{ name: string; colors: RGBA[]; named?: NamedPalette }> {
   if (t.colors?.length) return { name: "the given colors", colors: t.colors.map((h) => parseHex(h)).filter((c): c is RGBA => !!c) };
   if (t.file) return { name: t.file, colors: parsePaletteFile(t.file) };
   const spec = t.palette || "sprite";
-  const colors = (await resolvePalette(spec, doc)) ?? [];
-  return { name: spec === "sprite" ? "the sprite palette" : findPalette(spec)?.name ?? spec, colors };
+  if (spec === "sprite") return { name: "the sprite palette", colors: (await resolvePalette(spec, doc)) ?? [] };
+  const named = await resolveNamedPalette(spec);
+  return { name: named.name, colors: named.colors, named };
 }
 
+/** A line crediting a Lospec palette's author and page, or nothing for other palettes. */
+function creditLine(p: NamedPalette | undefined): string[] {
+  return p?.credit ? [`Palette: ${paletteCredit(p)}, from Lospec.`] : [];
+}
+
+/** A palette's name, with its credit when it is a Lospec one. */
+function credited(name: string, byName: Map<string, NamedPalette>): string {
+  const p = byName.get(name);
+  return p?.credit ? paletteCredit(p) : name;
+}
+
+const SOURCE_LABEL: Record<string, string> = { user: "User's (~/.aseprite-agent/palettes)", aseprite: "Aseprite's", lospec: "Lospec (cached)" };
+
 export const COLOR_TOOLS: Tool[] = [
+  {
+    name: "list_palettes",
+    title: "List palettes",
+    description:
+      "The palettes available by name: the user's, Aseprite's, and Lospec palettes already fetched (each with its author " +
+      "and URL), plus the aliases for common ones ('Game Boy', 'nes', 'db32', 'endesga-32'). Any other Lospec palette " +
+      "works by its slug ('lospec:<slug>', from lospec.com/palette-list/<slug>) and is fetched once and cached.",
+    input: z.object({
+      source: z.enum(["all", "user", "aseprite", "lospec"]).optional().describe("Default all."),
+      search: z.string().optional().describe("Only names, slugs or Lospec authors containing this."),
+    }),
+    kind: "read",
+    label: () => "List palettes",
+    async run(input) {
+      const q = input.search?.toLowerCase();
+      const shown = knownPalettes(true).filter((p) =>
+        (!input.source || input.source === "all" || p.source === input.source) &&
+        (!q || p.name.toLowerCase().includes(q) || !!p.slug?.includes(q) || !!p.credit?.author.toLowerCase().includes(q)));
+      const lines = [
+        "Resolution order: 'lospec:<slug>' goes to Lospec only; else the user's, then Aseprite's palettes by name; " +
+        "then an alias (its Aseprite palette when installed, else Lospec); then cached Lospec palettes; then Lospec by slug.",
+      ];
+      for (const source of ["user", "aseprite", "lospec"]) {
+        const group = shown.filter((p) => p.source === source);
+        if (!group.length) continue;
+        lines.push(`${SOURCE_LABEL[source]}:`, ...group.map((p) => p.credit
+          ? `- lospec:${p.slug}: ${paletteCredit(p)}, ${p.colors.length} colors`
+          : `- ${p.name} (${p.colors.length} colors)`));
+      }
+      if (!shown.length) lines.push("No palettes match.");
+      if (!input.source || input.source === "all" || input.source === "lospec") {
+        lines.push("Aliases: " + PALETTE_ALIASES.map((a) => `${a.names[0]} -> ${a.local ? `${a.local} (Aseprite), else ` : ""}lospec:${a.slug}`).join("; "));
+        lines.push("Lospec palettes are made by their authors; credit them (name, author, URL) when you use one.");
+      }
+      return { content: [text(lines.join("\n"))] };
+    },
+  },
   {
     name: "palette_from_image",
     title: "Extract palette",
     description:
       "The colors an image, layer, selection or the whole sprite uses: counts and shares, grouped into ramps (dark to " +
-      "light), near-duplicate colors, and the closest palettes among those available (Aseprite's and the user's). " +
+      "light), near-duplicate colors, and the closest palettes among those available (the user's, Aseprite's and cached " +
+      "Lospec ones, with their author and URL); compare_with names more (e.g. 'lospec:endesga-32'). " +
       "Reduces to max_colors with k-means in OKLab when there are more. Can set the result as the sprite palette, " +
       "draw swatches on an 'AI: palette' layer, or save it as a palette file (.gpl, .hex, .pal, .act, .col, or .aseprite/.png). " +
       "ignore_alpha_below skips soft edges; min_share drops colors used by too few pixels (anti-aliasing noise) before reducing.",
@@ -61,6 +113,8 @@ export const COLOR_TOOLS: Tool[] = [
       save_gpl: z.string().optional().describe("Same as save (older name)."),
       ignore_alpha_below: z.number().int().min(1).max(255).optional().describe("Pixels with less alpha don't count. Default 128."),
       min_share: z.number().min(0).max(0.5).optional().describe("Drop colors covering less than this share of the pixels (e.g. 0.002). Default 0."),
+      compare_with: z.array(z.string()).max(8).optional().describe(
+        "Palettes by name to also compare against, e.g. ['lospec:endesga-32', 'resurrect-64', 'Game Boy']; Lospec ones are fetched once and cached."),
     }),
     kind: "edit",
     label: () => "Extract palette",
@@ -78,7 +132,11 @@ export const COLOR_TOOLS: Tool[] = [
       const total = colors.reduce((s, c) => s + c.count, 0);
       const groups = ramps(colors);
       const dups = nearDuplicates(colors);
-      const matches = matchPalettes(all, knownPalettes(), 3);
+      const extra = await Promise.all(((input.compare_with ?? []) as string[]).map((n) => resolveNamedPalette(n)));
+      const known = knownPalettes();
+      const candidates = [...known, ...extra.filter((p) => !known.some((k) => k.name === p.name && k.source === p.source))];
+      const matches = matchPalettes(all, candidates, 3);
+      const byName = new Map(candidates.map((p) => [p.name, p]));
       const ordered = groups.flatMap((g) => g.colors);
       const lines = [
         `${describeSource(input)}: ${all.length} distinct colors${dropped ? ` (${dropped} rare color${dropped === 1 ? "" : "s"} under ${pct(input.min_share!)} dropped)` : ""}${reduced ? `, reduced to ${colors.length} (${input.method ?? "k-means"})` : ""}.`,
@@ -89,7 +147,12 @@ export const COLOR_TOOLS: Tool[] = [
       if (all.length > 64) lines.push(`Warning: ${all.length} colors is a lot for pixel art; consider reducing.`);
       if (matches.length) {
         lines.push("Closest among available palettes:", ...matches.map((m) =>
-          `- ${m.name} (${m.size} colors): ${pct(m.coverage)} of pixels match closely, mean error ${m.error.toFixed(3)}`));
+          `- ${credited(m.name, byName)} (${m.size} colors): ${pct(m.coverage)} of pixels match closely, mean error ${m.error.toFixed(3)}`));
+      }
+      const compared = extra.filter((p) => !matches.some((m) => m.name === p.name));
+      if (compared.length) {
+        lines.push("Asked to compare:", ...matchPalettes(all, compared, compared.length).map((m) =>
+          `- ${credited(m.name, byName)} (${m.size} colors): ${pct(m.coverage)} of pixels match closely, mean error ${m.error.toFixed(3)}`));
       }
       if (input.set_palette) {
         await doc.setPalette(ordered, { label: "Palette from image" });
@@ -150,9 +213,10 @@ export const COLOR_TOOLS: Tool[] = [
     description:
       "Recolor a layer or the sprite so it uses only a palette's colors, by perceptual distance (OKLab). Shading ramps " +
       "stay in one target ramp and keep their dark-to-light order. The palette: a known one by name (e.g. 'PICO-8', " +
-      "'EDG32'; see palette_from_image), hex colors, a .gpl/.hex file, or the sprite palette. One undo step.",
+      "'Game Boy', 'endesga-64', 'lospec:<slug>'; see list_palettes), hex colors, a .gpl/.hex file, or the sprite palette. " +
+      "A Lospec palette is fetched once, cached, and credited in the result. One undo step.",
     input: z.object({
-      palette: z.string().optional().describe("Palette name, or 'sprite' (default)."),
+      palette: z.string().optional().describe("Palette name or alias ('Game Boy', 'endesga-32', 'lospec:<slug>'), or 'sprite' (default)."),
       colors: z.array(z.string()).optional().describe("Hex colors to use instead of a named palette."),
       file: z.string().optional().describe("A .gpl or .hex palette file."),
       layer: z.string().optional().describe("Only this layer (id or name). Default: all visible layers."),
@@ -174,12 +238,12 @@ export const COLOR_TOOLS: Tool[] = [
         if (hex(to) !== hex(c)) changes[hex(c)] = hex(to);
       }
       if (input.set_palette) await doc.setPalette(target.colors, { label: `Palette ${target.name}` });
-      if (!Object.keys(changes).length) return { content: [text(`Already within ${target.name}; nothing changed.`)] };
+      if (!Object.keys(changes).length) return { content: [text([`Already within ${target.name}; nothing changed.`, ...creditLine(target.named)].join("\n"))] };
       const result = await doc.applyColorMap(changes, { layer: input.layer, frames: input.frames, label: `Remap to ${target.name}` });
       const err = source.reduce((s, c) => s + nearest(c, target.colors).d * c.count, 0) / Math.max(1, source.reduce((s, c) => s + c.count, 0));
       return {
-        content: [text(`Remapped ${Object.keys(changes).length} of ${source.length} colors to ${target.name} ` +
-          `(${result.changed} ${result.mode} changed, mean color shift ${err.toFixed(3)}). One undo step.`)],
+        content: [text([`Remapped ${Object.keys(changes).length} of ${source.length} colors to ${target.name} ` +
+          `(${result.changed} ${result.mode} changed, mean color shift ${err.toFixed(3)}). One undo step.`, ...creditLine(target.named)].join("\n"))],
       };
     },
   },

@@ -6,7 +6,7 @@ import * as z from "zod/v4";
 import type { RGBA } from "./color.js";
 import type { Document } from "./document.js";
 import { readPng, type Rgba } from "./image.js";
-import { findPalette, knownPalettes } from "./palettes.js";
+import { resolveNamedPalette } from "./palettes.js";
 
 /**
  * Frames as agents write them: a number (3), a list ([1, 2]), a range
@@ -107,13 +107,11 @@ function cropTo(img: Rgba, r: { x: number; y: number; w: number; h: number }): {
 
 /**
  * A palette by name: undefined for 'none' (or nothing), the sprite palette's
- * colors (transparent entries skipped) for 'sprite', else a known palette.
+ * colors (transparent entries skipped) for 'sprite', else a known palette (Lospec ones fetched on demand, see palettes.ts).
  * Throws for a name no known palette has.
  */
 export async function resolvePalette(spec: string | undefined, doc: Document): Promise<RGBA[] | undefined> {
   if (spec === undefined || spec === "" || spec === "none") return undefined;
   if (spec === "sprite") return (await doc.palette()).filter((c) => c.a > 0);
-  const p = findPalette(spec);
-  if (!p) throw new Error(`No palette named ${spec}. Known: ${knownPalettes().map((x) => x.name).slice(0, 40).join(", ")}…`);
-  return p.colors;
+  return (await resolveNamedPalette(spec)).colors;
 }
