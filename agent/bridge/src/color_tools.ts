@@ -1,7 +1,7 @@
 // Palette and tone tools (#36, #38): extract a palette, compare tone, remap
 // to a palette and adjust tone. The math is in color.ts; the extension
 // gathers colors (collect_colors) and applies color maps (apply_color_map).
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { basename } from "node:path";
 import * as z from "zod/v4";
 import {
@@ -10,74 +10,36 @@ import {
 } from "./color.js";
 import { documentOf, type Document } from "./document.js";
 import { findPalette, knownPalettes, parsePaletteFile } from "./palettes.js";
-import { decodePng as decodeImage, readPng, type Rgba } from "./image.js";
+import { describeSource, framesInput, imageSource, readSource, resolvePalette, sourceFrames, sourceKind, sourceLayer, type ImageSource } from "./tool_inputs.js";
 import { findOutline } from "./style.js";
-import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type AsepriteRequester, type Tool } from "./tool.js";
 
-
-/** Where colors come from: the sprite, a layer, the selection, or an image file (e.g. an attachment). */
-export const sourceSchema = z.object({
-  source: z.enum(["sprite", "layer", "selection", "file"]).optional()
-    .describe("Default 'sprite' (all visible layers). 'file' reads an image path, e.g. an attachment."),
-  layer: z.string().optional().describe("Layer id like 'L3' or name (source 'layer', or limits 'selection')."),
-  frames: z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional()
-    .describe("Frames: 3, [1,2] or '1-4'. Default: all."),
-  path: z.string().optional().describe("Image file for source 'file' (PNG)."),
-});
-type Source = z.infer<typeof sourceSchema>;
-
-export function decodePng(buf: Buffer): Counted[] {
-  const png = decodeImage(buf);
-  const counts = new Map<number, number>();
-  for (let i = 0; i < png.data.length; i += 4) {
-    const v = png.data.readUInt32BE(i) >>> 0;
-    counts.set(v, (counts.get(v) ?? 0) + 1);
+/** The colors of a source with pixel counts: a PNG's pixels, or the extension's count over the source's cels and frames (default all). */
+export async function gatherColors(src: ImageSource, doc: Document): Promise<Counted[]> {
+  const kind = sourceKind(src);
+  if (kind === "file") {
+    const { data } = (await readSource(src, doc)).image;
+    const counts = new Map<number, number>();
+    for (let i = 0; i < data.length; i += 4) {
+      const v = ((data[i] << 24) | (data[i + 1] << 16) | (data[i + 2] << 8) | data[i + 3]) >>> 0;
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return [...counts].map(([v, count]) => ({ r: v >>> 24, g: (v >>> 16) & 255, b: (v >>> 8) & 255, a: v & 255, count }));
   }
-  return [...counts].map(([v, count]) => ({ r: v >>> 24, g: (v >>> 16) & 255, b: (v >>> 8) & 255, a: v & 255, count }));
-}
-
-export async function gatherColors(src: Source, doc: Document): Promise<Counted[]> {
-  if (src.source === "file") {
-    if (!src.path) throw new Error("source 'file' needs a path");
-    if (!/\.png$/i.test(src.path)) throw new Error("Only PNG files can be read; attach the image as PNG");
-    return decodePng(readFileSync(src.path));
-  }
-  return (await doc.colors({ layer: src.layer, frames: src.frames, selection: src.source === "selection" })).colors;
-}
-
-/** The source as one image for shape analysis: the file, or the layer (or sprite) in its first frame. */
-async function sourceImage(src: Source, doc: Document): Promise<Rgba | undefined> {
-  if (src.source === "file") {
-    if (!src.path) return undefined;
-    const img = readPng(src.path);
-    return { ...img, data: new Uint8Array(img.data) };
-  }
-  if (src.source === "selection") return undefined;
-  const [frame] = await doc.frames(src.frames ?? undefined);
-  return doc.pixels(src.source === "layer" || src.layer ? src.layer : undefined, frame);
-}
-
-function describeSource(s: Source): string {
-  if (s.source === "file") return s.path ?? "the image";
-  if (s.source === "selection") return "the selection";
-  if (s.layer) return `layer ${s.layer}`;
-  return "the sprite";
+  return (await doc.colors({ layer: sourceLayer(src), frames: sourceFrames(src), selection: kind === "selection" })).colors;
 }
 
 function pct(x: number): string {
   return `${(x * 100).toFixed(x < 0.01 ? 1 : 0)}%`;
 }
 
-/** The palette to remap to: a known palette by name, hex colors, a palette file, or the sprite's palette. */
+/** The palette to remap to: hex colors, a palette file, or a palette by name (default the sprite's). */
 async function targetPalette(t: { palette?: string; colors?: string[]; file?: string }, doc: Document): Promise<{ name: string; colors: RGBA[] }> {
   if (t.colors?.length) return { name: "the given colors", colors: t.colors.map((h) => parseHex(h)).filter((c): c is RGBA => !!c) };
   if (t.file) return { name: t.file, colors: parsePaletteFile(t.file) };
-  if (t.palette && t.palette !== "sprite") {
-    const p = findPalette(t.palette);
-    if (!p) throw new Error(`No palette named ${t.palette}. Known: ${knownPalettes().map((x) => x.name).slice(0, 40).join(", ")}…`);
-    return p;
-  }
-  return { name: "the sprite palette", colors: (await doc.palette()).filter((c) => c.a > 0) };
+  const spec = t.palette || "sprite";
+  const colors = (await resolvePalette(spec, doc)) ?? [];
+  return { name: spec === "sprite" ? "the sprite palette" : findPalette(spec)?.name ?? spec, colors };
 }
 
 export const COLOR_TOOLS: Tool[] = [
@@ -90,7 +52,7 @@ export const COLOR_TOOLS: Tool[] = [
       "Reduces to max_colors with k-means in OKLab when there are more. Can set the result as the sprite palette, " +
       "draw swatches on an 'AI: palette' layer, or save it as a palette file (.gpl, .hex, .pal, .act, .col, or .aseprite/.png). " +
       "ignore_alpha_below skips soft edges; min_share drops colors used by too few pixels (anti-aliasing noise) before reducing.",
-    input: sourceSchema.extend({
+    input: imageSource.extend({
       max_colors: z.number().int().min(2).max(256).optional().describe("Default 32."),
       method: z.enum(["exact", "median-cut", "k-means"]).optional().describe("Default k-means (only used above max_colors)."),
       set_palette: z.boolean().optional().describe("Replace the sprite palette with the result."),
@@ -151,7 +113,7 @@ export const COLOR_TOOLS: Tool[] = [
       "Tone statistics of a source (mean lightness, saturation, contrast, warmth, color count, darkest/lightest), its " +
       "hue histogram, its outline color (the color around the shapes' edges, or selout) and its ramps with their step counts, and " +
       "with compare_to, how it differs from another source in plain words (e.g. 'darker overall, 20% more saturated').",
-    input: sourceSchema.extend({ compare_to: sourceSchema.optional().describe("A second source to compare with.") }),
+    input: imageSource.extend({ compare_to: imageSource.optional().describe("A second source to compare with.") }),
     kind: "read",
     label: () => "Compare tone",
     async run(input, aseprite) {
@@ -166,7 +128,7 @@ export const COLOR_TOOLS: Tool[] = [
       lines.push(`Hues: ${[...hist.hues.slice(0, 6).map((h) => `${h.name} ${pct(h.share)}`), ...(hist.neutral > 0.005 ? [`neutral ${pct(hist.neutral)}`] : [])].join(", ") || "none"}`);
       const groups = ramps(counted);
       lines.push(`Ramps: ${groups.length} (${groups.map((g) => `${g.name} ${g.colors.length} step${g.colors.length === 1 ? "" : "s"}`).join(", ")})`);
-      const img = await sourceImage(input, doc).catch(() => undefined);
+      const img = await readSource(input, doc).then((r) => r.image).catch(() => undefined);
       if (img) {
         const o = findOutline(img);
         lines.push(o.present
@@ -194,7 +156,7 @@ export const COLOR_TOOLS: Tool[] = [
       colors: z.array(z.string()).optional().describe("Hex colors to use instead of a named palette."),
       file: z.string().optional().describe("A .gpl or .hex palette file."),
       layer: z.string().optional().describe("Only this layer (id or name). Default: all visible layers."),
-      frames: z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional(),
+      frames: framesInput("all frames"),
       preserve_ramps: z.boolean().optional().describe("Default true."),
       set_palette: z.boolean().optional().describe("Also make it the sprite palette."),
     }),
@@ -230,12 +192,12 @@ export const COLOR_TOOLS: Tool[] = [
       "strength 0..1). snap_to_palette keeps the result within the sprite palette. One undo step.",
     input: z.object({
       layer: z.string().optional(),
-      frames: z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional(),
+      frames: framesInput("all frames"),
       lightness: z.number().min(-1).max(1).optional(),
       saturation: z.number().min(-1).max(3).optional(),
       contrast: z.number().min(-1).max(3).optional(),
       hue: z.number().min(-180).max(180).optional(),
-      match_to: sourceSchema.optional().describe("Move the tone towards this source's."),
+      match_to: imageSource.optional().describe("Move the tone towards this source's."),
       strength: z.number().min(0).max(1).optional().describe("For match_to. Default 1."),
       snap_to_palette: z.boolean().optional(),
     }),

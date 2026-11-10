@@ -157,7 +157,11 @@ function checkSize(img: Rgba, what: string): void {
   }
 }
 
-/** Frame spec to frame numbers, against the sprite's frame count: the grammar in protocol.json (params.frames). */
+/**
+ * Frame spec to frame numbers, against the sprite's frame count: the grammar
+ * in protocol.json (params.frames). Tool inputs take a spec with
+ * tool_inputs.framesSpec (or framesInput).
+ */
 export function resolveFrames(spec: unknown, count: number, active: number, fallback: "active" | "all" = "active"): number[] {
   let out: number[];
   if (spec === undefined || spec === null || spec === "") out = fallback === "all" ? Array.from({ length: count }, (_, i) => i + 1) : [active];

@@ -7,10 +7,9 @@ import type { Rgba } from "./image.js";
 import { heightField } from "./normals.js";
 import { ambientOcclusion, antiAlias, applyOcclusion, makeRamp, outline, shadeFlat, type LightDir } from "./shading.js";
 import { findOutline } from "./style.js";
+import { framesInput } from "./tool_inputs.js";
 import { failure, text, type Tool } from "./tool.js";
 
-const framesSchema = z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional()
-  .describe("Frames: 3, [1,2] or '1-4'. Default: the active frame.");
 
 /** Only the pixels that differ from `before` (the rest transparent). */
 function changedOnly(before: Rgba, after: Rgba): Rgba {
@@ -57,7 +56,7 @@ export const SHADING_TOOLS: Tool[] = [
       "goes on a new 'AI: shaded <layer>' layer and the original is hidden, so it's easy to compare or undo.",
     input: z.object({
       layer: z.string().optional().describe("Layer name. Default: the active layer."),
-      frames: framesSchema,
+      frames: framesInput("the active frame"),
       light: z.enum(["top-left", "top", "top-right", "left", "right", "bottom-left", "bottom", "bottom-right"]).optional(),
       bands: z.number().int().min(2).max(5).optional().describe("Shade steps per color. Default 3."),
       rim: z.boolean().optional().describe("Add a rim light on the side away from the light."),
@@ -95,7 +94,7 @@ export const SHADING_TOOLS: Tool[] = [
       "outline pixel borders). The outline goes on a new 'AI: outline' layer above.",
     input: z.object({
       layer: z.string().optional(),
-      frames: framesSchema,
+      frames: framesInput("the active frame"),
       mode: z.enum(["outer", "inner"]).optional(),
       connectivity: z.union([z.literal(4), z.literal(8)]).optional(),
       color: z.string().optional().describe("'#rrggbb', 'darkest' (default) or 'selout'."),
@@ -128,7 +127,7 @@ export const SHADING_TOOLS: Tool[] = [
       "colors are palette colors. The added pixels go on an 'AI: anti-alias <layer>' layer above, so they can be toggled.",
     input: z.object({
       layer: z.string().optional(),
-      frames: framesSchema,
+      frames: framesInput("the active frame"),
       strength: z.number().min(0.2).max(1).optional().describe("How far toward the other color: 1 = halfway (default)."),
       snap_to_palette: z.boolean().optional().describe("Use the nearest sprite palette colors. Default true when the palette has colors."),
     }),
@@ -160,7 +159,7 @@ export const SHADING_TOOLS: Tool[] = [
       "as_mask writes a grayscale mask on a hidden 'AI: ao mask <layer>' layer (for engines or manual painting).",
     input: z.object({
       layer: z.string().optional(),
-      frames: framesSchema,
+      frames: framesInput("the active frame"),
       height_layer: z.string().optional().describe("A grayscale height layer (white = high)."),
       source: z.enum(["bevel", "luminance"]).optional().describe("Height from the shape when there's no height layer. Default bevel."),
       radius: z.number().int().min(1).max(8).optional().describe("How far around a pixel occludes it. Default 2."),

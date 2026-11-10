@@ -6,7 +6,7 @@ import { hex, mergeNear, tally } from "./color.js";
 import { documentOf, type Document } from "./document.js";
 import { readPng, trim, writePng, type Rgba } from "./image.js";
 import { detectGrid, resample } from "./pixel_grid.js";
-import { readPixels, sourceSchema, type Source } from "./pixel_tools.js";
+import { imageSource, readSource, sourceKind, type ImageSource } from "./tool_inputs.js";
 import {
   describeBackground, detectBackground, findSprites, frameImages, removeBackground, similarSized, tagsFromRows, type Frame, type Tag,
 } from "./sheet.js";
@@ -41,8 +41,8 @@ async function openAnimation(doc: Document, width: number, height: number, image
   return { title: result.title, palette };
 }
 
-/** Whether a source reads a PNG file (the rule readPixels follows). */
-const isFile = (src: Source) => !!src.path && src.source !== "sprite" && src.source !== "layer";
+/** Whether a source reads a PNG file. */
+const isFile = (src: ImageSource) => sourceKind(src) === "file";
 
 /** Sprite boxes as "x,y wxh", one line per row. */
 function listSprites(sprites: Frame[], max = 100): string {
@@ -183,7 +183,7 @@ export const RECREATE_TOOLS: Tool[] = [
       "transparent, one key color, or a checkerboard (a screenshot of a transparent image), and how much of the " +
       "image it covers. With remove, makes it transparent: a PNG is written to out; a sprite or layer goes onto a " +
       "new 'AI: no background' layer above it (the original layer is hidden). Only remove changes anything.",
-    input: sourceSchema.extend({
+    input: imageSource.extend({
       remove: z.boolean().optional().describe("Make the background transparent. Default false: only report it."),
       tolerance: z.number().int().min(0).max(64).optional().describe("Per-channel difference still counted as background. Default 8."),
       out: z.string().optional().describe("With remove on a PNG: where to write the result. Default: next to it, '-nobg'."),
@@ -192,7 +192,8 @@ export const RECREATE_TOOLS: Tool[] = [
     label: (a) => (a.remove ? "Remove background" : "Detect background"),
     async run(input, aseprite) {
       const doc = documentOf(aseprite);
-      const img = await readPixels(input, doc);
+      const read = await readSource(input, doc);
+      const img = read.image;
       const bg = detectBackground(img);
       const clean = removeBackground(img, input.tolerance ?? 8, bg);
       const total = img.width * img.height;
@@ -209,8 +210,10 @@ export const RECREATE_TOOLS: Tool[] = [
       } else {
         const info = await doc.info();
         const visible = info.layers.filter((l) => l.visible && !l.group);
-        const source = input.source === "layer" ? input.layer : visible.length === 1 ? visible[0].id : undefined;
-        const r = await doc.putImage(clean, { newLayer: "no background", above: source, hideSource: !!source, frame: input.frame, label: "Remove background" });
+        const kind = sourceKind(input);
+        const source = kind === "layer" ? input.layer : kind === "sprite" && visible.length === 1 ? visible[0].id : undefined;
+        // A selection's part goes back at its place; the layer under it stays shown.
+        const r = await doc.putImage(clean, { newLayer: "no background", above: source, hideSource: !!source, frame: read.frame ?? input.frame, x: read.x, y: read.y, label: "Remove background" });
         msg += ` Put it with a transparent background on '${r.name}'${source ? " (the original is hidden)" : ""}.`;
       }
       return { content: [text(msg)] };
@@ -226,7 +229,7 @@ export const RECREATE_TOOLS: Tool[] = [
       "as 'frames' cuts them into a new animated sprite, one frame each, bottom-aligned (rows become tags); as " +
       "'layers' puts each on its own 'AI: <name> <n>' layer at its place in the current sprite. Boxes are in the " +
       "image's pixels: for an upscaled screenshot, use fix_pixel_art or recreate_from_reference to get native pixels.",
-    input: sourceSchema.extend({
+    input: imageSource.extend({
       merge_distance: z.number().int().min(0).max(32).optional().describe("Join shapes this close (px). Default 2."),
       min_pixels: z.number().int().min(1).optional().describe("Drop specks smaller than this many pixels. Default 4."),
       as: z.enum(["list", "frames", "layers"]).optional().describe("'list' (default) only reports the boxes."),
@@ -237,7 +240,8 @@ export const RECREATE_TOOLS: Tool[] = [
     label: (a) => (a.as === "frames" ? "Cut sprites into frames" : a.as === "layers" ? "Cut sprites onto layers" : "Find sprites"),
     async run(input, aseprite) {
       const doc = documentOf(aseprite);
-      const img = await readPixels(input, doc);
+      const read = await readSource(input, doc);
+      const img = read.image;
       const bg = detectBackground(img);
       const clean = removeBackground(img, undefined, bg);
       const sprites = findSprites(clean, input.merge_distance ?? 2, input.min_pixels ?? 4);
@@ -257,7 +261,7 @@ export const RECREATE_TOOLS: Tool[] = [
         for (const [i, s] of sprites.entries()) {
           const cut = frameImages(clean, [s], "top-left");
           const r = await doc.putImage({ width: cut.width, height: cut.height, data: cut.images[0] },
-            { newLayer: `${base} ${i + 1}`, x: s.rect.x, y: s.rect.y, frame: input.frame, label: "Cut sprites onto layers" });
+            { newLayer: `${base} ${i + 1}`, x: s.rect.x + read.x, y: s.rect.y + read.y, frame: read.frame ?? input.frame, label: "Cut sprites onto layers" });
           names.push(r.name);
         }
         msg += `\nCut onto ${plural(names.length, "layer")}: ${names.length > 4 ? `${names[0]} ... ${names.at(-1)}` : names.join(", ")}.`;

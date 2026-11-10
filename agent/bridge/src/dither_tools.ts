@@ -5,7 +5,7 @@ import * as z from "zod/v4";
 import { hex, parseHex, type RGBA } from "./color.js";
 import { applyLut, applyMap, ditherGradient, ditherToPalette, paletteLut, rampMap, type Pattern } from "./dither.js";
 import { documentOf } from "./document.js";
-import { findPalette } from "./palettes.js";
+import { framesInput, resolvePalette } from "./tool_inputs.js";
 import { writePng, type Rgba } from "./image.js";
 import { failure, text, type Tool } from "./tool.js";
 
@@ -73,8 +73,8 @@ export const DITHER_TOOLS: Tool[] = [
       "known palette name, or hex colors. Result on an 'AI: dithered <layer>' layer, original hidden.",
     input: z.object({
       layer: z.string().optional(),
-      frames: z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional(),
-      palette: z.string().optional(),
+      frames: framesInput("the active frame"),
+      palette: z.string().optional().describe("'sprite' (default), or a palette name like 'PICO-8'."),
       colors: z.array(z.string()).optional(),
       pattern: z.enum(["bayer2", "bayer4", "checker"]).optional(),
       strength: z.number().min(0).max(1).optional().describe("1 = full dithering; lower keeps more flat areas."),
@@ -86,7 +86,7 @@ export const DITHER_TOOLS: Tool[] = [
       const info = await doc.info();
       const layer = input.layer ?? info.layer;
       const palette = input.colors?.length ? colorsOf(input.colors)
-        : input.palette && input.palette !== "sprite" ? findPalette(input.palette)?.colors : info.palette;
+        : await resolvePalette(input.palette ?? "sprite", doc);
       if (!palette?.length) return failure(`No palette${input.palette ? ` named ${input.palette}` : ""}.`);
       const frames = await doc.frames(input.frames);
       for (const f of frames) {
@@ -105,7 +105,7 @@ export const DITHER_TOOLS: Tool[] = [
       "goes on its own 'AI: <name>' layer for every frame.",
     input: z.object({
       layer: z.string().optional(),
-      frames: z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional().describe("Default: all frames."),
+      frames: framesInput("all frames"),
       variants: z.array(variantSchema).min(1),
     }),
     kind: "edit",

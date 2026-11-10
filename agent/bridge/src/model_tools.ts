@@ -1,10 +1,10 @@
 // 3D model to pixel sprites as a tool (#44).
 import * as z from "zod/v4";
-import { hex, type RGBA } from "./color.js";
+import { hex } from "./color.js";
 import { DIRECTIONS_4, DIRECTIONS_8 } from "./directions.js";
 import { documentOf, type AnimationFrame } from "./document.js";
 import { ELEVATIONS, fitFrame, loadModel, renderView, type View } from "./model3d.js";
-import { findPalette } from "./palettes.js";
+import { resolvePalette } from "./tool_inputs.js";
 import { snapToPalette, type Rgba } from "./image.js";
 import { encodeSnapshot } from "./png.js";
 import { outline } from "./shading.js";
@@ -64,11 +64,8 @@ export const MODEL_TOOLS: Tool[] = [
         : [{ name: "", times: [0] }];
       const poses = clips.map((c) => c.times.map((t) => model.triangles(c.name || undefined, t)));
       const fit = fitFrame(poses.flat(), views);
-      let palette: RGBA[] | undefined;
-      if (input.palette && input.palette !== "none") {
-        palette = input.palette === "sprite" ? (await documentOf(aseprite).info()).palette : findPalette(input.palette)?.colors;
-        if (!palette?.length) return failure(`No palette ${input.palette}.`);
-      }
+      const palette = await resolvePalette(input.palette, documentOf(aseprite));
+      if (palette && !palette.length) return failure(`No colors in the ${input.palette} palette.`);
       const finish = (data: Uint8Array): Rgba => {
         let img: Rgba = { width: size, height: size, data };
         if (palette) img = snapToPalette(img, palette);

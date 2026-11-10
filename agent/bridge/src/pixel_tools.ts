@@ -2,28 +2,12 @@
 // pixel art and rebuild it as a native-size sprite.
 import * as z from "zod/v4";
 import { hex, kMeans, mergeNear, tally, type Counted } from "./color.js";
-import { documentOf, type Document } from "./document.js";
-import { readPng, trim, type Rgba } from "./image.js";
+import { documentOf } from "./document.js";
+import { trim, type Rgba } from "./image.js";
 import { detectGrid, resample, type Grid } from "./pixel_grid.js";
 import { encodeSnapshot } from "./png.js";
+import { imageSource, readSource } from "./tool_inputs.js";
 import { failure, text, type Tool } from "./tool.js";
-
-
-/** One image to read: a PNG file (e.g. an attachment), the sprite, or a layer, in one frame. */
-export const sourceSchema = z.object({
-  source: z.enum(["file", "sprite", "layer"]).optional().describe("Default 'file' when a path is given, else 'sprite'."),
-  path: z.string().optional().describe("Image file (PNG), e.g. an attachment."),
-  layer: z.string().optional().describe("Layer name for source 'layer'."),
-  frame: z.number().int().min(1).optional().describe("Frame for sprite/layer. Default: active."),
-});
-export type Source = z.infer<typeof sourceSchema>;
-
-export async function readPixels(src: Source, doc: Document): Promise<Rgba> {
-  if (src.path && src.source !== "sprite" && src.source !== "layer") {
-    return readPng(src.path, "Only PNG files can be read; attach the image as PNG");
-  }
-  return doc.pixels(src.source === "layer" ? src.layer : undefined, src.frame);
-}
 
 function describe(g: Grid): string {
   if (g.cellX <= 1 && g.cellY <= 1) return "no grid: this already looks like native-resolution pixel art (or a photo)";
@@ -65,11 +49,11 @@ export const PIXEL_TOOLS: Tool[] = [
       "Find the pixel grid of upscaled or AI-generated pixel art (an image file such as an attachment, or the " +
       "sprite): the cell size in pixels (fractional when the scale is odd, e.g. 5.5) and where the grid starts. " +
       "Cell 1 means the image is already native pixel art.",
-    input: sourceSchema,
+    input: imageSource,
     kind: "read",
     label: () => "Detect pixel grid",
     async run(input, aseprite) {
-      const img = await readPixels(input, documentOf(aseprite));
+      const img = (await readSource(input, documentOf(aseprite))).image;
       const g = detectGrid(img);
       const size = g.cellX > 1 ? ` -> about ${Math.round(img.width / g.cellX)}x${Math.round(img.height / g.cellY)} px at native size` : "";
       return { content: [text(`${img.width}x${img.height} image: ${describe(g)}${size}.`)] };
@@ -83,7 +67,7 @@ export const PIXEL_TOOLS: Tool[] = [
       "cell/offset), take one color per cell (the cell's dominant color, not a blend), make alpha fully on or off, " +
       "merge colors that differ only by noise, optionally reduce to max_colors, and trim empty borders. Opens the " +
       "result as a new sprite and returns a preview.",
-    input: sourceSchema.extend({
+    input: imageSource.extend({
       cell: z.number().min(1).max(128).optional().describe("Cell size if detection is wrong."),
       offset_x: z.number().min(0).optional(),
       offset_y: z.number().min(0).optional(),
@@ -96,7 +80,7 @@ export const PIXEL_TOOLS: Tool[] = [
     label: () => "Fix pixel art",
     async run(input, aseprite) {
       const doc = documentOf(aseprite);
-      const img = await readPixels(input, doc);
+      const img = (await readSource(input, doc)).image;
       let g = detectGrid(img);
       if (input.cell) g = { cellX: input.cell, cellY: input.cell, offsetX: input.offset_x ?? 0, offsetY: input.offset_y ?? 0, confidence: 1 };
       if (g.cellX <= 1 && g.cellY <= 1) {

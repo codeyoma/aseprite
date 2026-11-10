@@ -7,6 +7,7 @@ import { documentOf, type AnimationFrame } from "./document.js";
 import { blank, readPng, snapToPalette, stamp, type Rgba } from "./image.js";
 import { NOT_PNG_SHEET } from "./sheet_tools.js";
 import { bitmapInk, bmfontInk, imageInk, loadFont, measureText, panel, parseBMFont, renderText, styleInk, type Ink, type PanelStyle } from "./ui.js";
+import { resolvePalette } from "./tool_inputs.js";
 import { failure, text, type Tool } from "./tool.js";
 
 const rgb = (h: string | undefined): [number, number, number] | undefined => {
@@ -129,7 +130,8 @@ export const UI_TOOLS: Tool[] = [
       }
       const doc = documentOf(aseprite);
       if (input.snap_to_palette !== false) {
-        const pal = (await doc.info().catch(() => ({ palette: [] as RGBA[] }))).palette;
+        // No sprite open: nothing to snap to.
+        const pal = (await resolvePalette("sprite", doc).catch(() => undefined)) ?? [];
         if (pal.length >= 2) frames = frames.map((f) => ({ ...f, image: snapToPalette(f.image, pal) }));
       }
       const made = await doc.createAnimation(input.width, input.height, frames, { title: name, tags });

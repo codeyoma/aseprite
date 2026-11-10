@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { loadFont, measureText, panel, renderText } from "../dist/ui.js";
 import { findTool, runTool } from "../dist/tools.js";
+import { fakeDocument } from "./helpers/fake_document.mjs";
 
 const colors = (img) => { const s = new Set(); for (let i = 0; i < img.data.length; i += 4) if (img.data[i + 3]) s.add(img.data.slice(i, i + 4).join()); return s; };
 
@@ -33,18 +34,14 @@ test("panels: border, rounded corners, 9-patch center", () => {
 });
 
 test("make_ui button: 4 tagged frames and a 9-patch slice", async () => {
-  const calls = [];
   const pico = ["#000000", "#1d2b53", "#29adff", "#fff1e8", "#83769c", "#c2c3c7"];
-  const fake = { async request(m, p) {
-    calls.push({ m, p });
-    if (m === "get_state") return { result: { activeFrame: 1, activeLayerId: "L1", activeSprite: { filename: "Sprite", width: 48, height: 16, frames: [100].map((durationMs) => ({ durationMs })), layers: [{ id: "L1", name: "L" }], tags: [], palette: { colors: pico } } } };
-    return { result: { title: p.title } };
-  } };
+  const fake = fakeDocument({ width: 48, height: 16, palette: pico, layers: [{ name: "L", frames: [new Uint8Array(48 * 16 * 4)] }] });
   const r = await runTool(findTool("make_ui"), { kind: "button", width: 48, height: 16, fill: "#29adff", label: "Play" }, fake);
-  const anim = calls.find((c) => c.m === "create_animation").p;
+  const sent = (m) => fake.calls.find((c) => c.method === m).params;
+  const anim = sent("create_animation");
   assert.equal(anim.frames.length, 4);
   assert.deepEqual(anim.tags.map((t) => t.name), ["normal", "hover", "pressed", "disabled"]);
-  const slice = calls.find((c) => c.m === "set_slice").p;
+  const slice = sent("set_slice");
   assert.deepEqual(slice.center, { x: 2, y: 2, w: 44, h: 12 });
   assert.notEqual(anim.frames[0].rgba, anim.frames[2].rgba, "pressed differs");
   // Every state, hover and disabled included, stays in the palette.

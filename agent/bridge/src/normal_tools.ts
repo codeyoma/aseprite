@@ -7,6 +7,7 @@ import { emissionMask, specularMask } from "./masks.js";
 import { light, normalMap } from "./normals.js";
 import { blank, writePng, type Rgba } from "./image.js";
 import { encodeSnapshot } from "./png.js";
+import { framesInput } from "./tool_inputs.js";
 import { text, type Tool } from "./tool.js";
 
 const lightSchema = z.object({
@@ -20,7 +21,6 @@ const DIRS: Record<string, [number, number, number]> = {
   "bottom-left": [-1, -1, 1], bottom: [0, -1, 1], "bottom-right": [1, -1, 1], front: [0, 0, 1],
 };
 
-const framesSchema = z.union([z.string(), z.number().int(), z.array(z.number().int())]);
 const hexList = z.array(z.string()).optional();
 
 /** The mask layers made by make_masks for a layer, when they exist. */
@@ -50,7 +50,7 @@ export const NORMAL_TOOLS: Tool[] = [
       "'AI: normal <layer>' layer, every frame you choose; paint fixes on it.",
     input: z.object({
       layer: z.string().optional(),
-      frames: framesSchema.optional().describe("Default: all frames."),
+      frames: framesInput("all frames"),
       source: z.enum(["bevel", "luminance", "height"]).optional(),
       height_layer: z.string().optional().describe("For source 'height': a grayscale layer (white = high)."),
       bevel: z.number().min(1).max(64).optional().describe("Bevel width in px."),
@@ -89,7 +89,7 @@ export const NORMAL_TOOLS: Tool[] = [
       "you choose; paint fixes on them. light_preview and export_normal_sheet use them.",
     input: z.object({
       layer: z.string().optional(),
-      frames: framesSchema.optional().describe("Default: all frames."),
+      frames: framesInput("all frames"),
       kind: z.enum(["emission", "specular", "both"]).optional().describe("Default both."),
       emission: z.object({
         colors: hexList.describe("These colors glow."),
@@ -186,7 +186,7 @@ export const NORMAL_TOOLS: Tool[] = [
     input: z.object({
       layer: z.string().optional(),
       normal_layer: z.string().optional(),
-      frames: framesSchema.optional().describe("Default: all."),
+      frames: framesInput("all frames"),
       dir: z.string(),
       name: z.string().optional(),
     }),
