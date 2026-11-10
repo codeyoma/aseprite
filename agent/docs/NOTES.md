@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Pixel FX skill (#73)
+- **How:** `skills/pixel-fx/SKILL.md` walks the agent through pick (`list_fx`, `preview_fx`, tuning palette, seed, options and light; a recipe through `fx_from_recipe` when the library has nothing, with a frost nova as the worked example), variations, apply (`add_fx`, or `fx_overlay` on the attack tag with `hit_frame` and then `hit_stop`), a timing table, a "you see / fix" table, and finish (`check_fx`, `check`, `export_for_engine` with the glow sheet). Its eval runs list, add, overlay, hit-stop and `check_fx` on a 6-frame attack; `pixel_fx_live.mjs` asks for a frost nova on a mage's attack.
+- **Why:** the FX tools (#68-#72) were usable one by one, but nothing told the agent the order, the timing conventions or how to fix a weak effect. The recipe example is ice because the library has none, so the live prompt exercises the recipe path. The eval uses `check_fx` because `check` runs in Lua, which the fake document does not have. Triggers are phrases ("slash effect", "magic effect") rather than bare words, because triggers match at word starts and "slash" or "magic" alone would fire on slash commands or the magic wand.
+- **Architecture:** no code changed: the skill is data over existing tools, its plugin copy is generated (`npm run gen`), and the eval runs on the fake and, through `eval_live.mjs`, on Aseprite.
+
 ## check_fx counts opaque colors; FX live fixtures carry a palette (#72 live)
 - **How:** the `check_fx` colors rule counts distinct colors at alpha >= `OPAQUE` only. The FX live fixtures set their own palette.
 - **Why:** soft glow fringes made every library effect fail the rule. The live tests depended on the user's default palette, which is currently 256 blacks.
