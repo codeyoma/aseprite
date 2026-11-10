@@ -10,6 +10,7 @@ tools: [color_stats, adjust_tone, remap_to_palette, palette_from_image]
 
 1. Identify what should change (a layer, or the sprite) and the reference: another layer, an attached image (`source: "file"`), or a named palette.
 2. Call `color_stats` with `compare_to` the reference. Tell the user the differences in plain words ("yours is darker and 30% more saturated, with warmer shadows").
+   `color_stats` also gives the hue mix, the outline color (or selout) and the ramps with their step counts: match those too when they differ (e.g. a 3-step ramp next to a 5-step one, a black outline next to a dark-hued one).
 3. Choose the fix:
    - Mood only (keep its own colors): `adjust_tone` with `match_to` the reference at full strength (the default). Use `strength` 0.5–0.8 only when the user asks for a subtler change, or for a second variation.
    - Same palette: `remap_to_palette` with the reference's colors (`palette_from_image` on the reference, then `colors`), or a named palette (`palette: "PICO-8"`). Ramps keep their order.

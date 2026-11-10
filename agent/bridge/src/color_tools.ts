@@ -6,10 +6,13 @@ import { PNG } from "pngjs";
 import { basename } from "node:path";
 import * as z from "zod/v4";
 import {
-  adjust, describeToneDifference, hex, matchPalettes, nearDuplicates, nearest, parseHex, quantize, ramps, remap,
+  adjust, describeToneDifference, hex, hueHistogram, matchPalettes, nearDuplicates, nearest, parseHex, quantize, ramps, remap,
   tally, toneStats, toneTowards, type Counted, type RGBA,
 } from "./color.js";
+import { documentOf } from "./document.js";
 import { findPalette, knownPalettes, parsePaletteFile } from "./palettes.js";
+import type { Rgba } from "./pixel_grid.js";
+import { findOutline } from "./style.js";
 import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
 
@@ -45,6 +48,19 @@ export async function gatherColors(src: Source, aseprite: AsepriteRequester): Pr
   });
   return (result.colors as { hex: string; count: number }[])
     .map((c) => ({ ...parseHex(c.hex)!, count: c.count }));
+}
+
+/** The source as one image for shape analysis: the file, or the layer (or sprite) in its first frame. */
+async function sourceImage(src: Source, aseprite: AsepriteRequester): Promise<Rgba | undefined> {
+  if (src.source === "file") {
+    if (!src.path) return undefined;
+    const png = PNG.sync.read(readFileSync(src.path));
+    return { width: png.width, height: png.height, data: new Uint8Array(png.data) };
+  }
+  if (src.source === "selection") return undefined;
+  const doc = documentOf(aseprite);
+  const [frame] = await doc.frames(src.frames ?? undefined);
+  return doc.pixels(src.source === "layer" || src.layer ? src.layer : undefined, frame);
 }
 
 function describeSource(s: Source): string {
@@ -138,17 +154,30 @@ export const COLOR_TOOLS: Tool[] = [
     name: "color_stats",
     title: "Compare tone",
     description:
-      "Tone statistics of a source (mean lightness, saturation, contrast, warmth, color count, darkest/lightest), and " +
+      "Tone statistics of a source (mean lightness, saturation, contrast, warmth, color count, darkest/lightest), its " +
+      "hue histogram, its outline color (the color around the shapes' edges, or selout) and its ramps with their step counts, and " +
       "with compare_to, how it differs from another source in plain words (e.g. 'darker overall, 20% more saturated').",
     input: sourceSchema.extend({ compare_to: sourceSchema.optional().describe("A second source to compare with.") }),
     kind: "read",
     label: () => "Compare tone",
     async run(input, aseprite) {
-      const a = toneStats(tally(await gatherColors(input, aseprite)));
+      const counted = tally(await gatherColors(input, aseprite));
+      const a = toneStats(counted);
       const fmt = (s: ReturnType<typeof toneStats>) =>
         `${s.colors} colors, lightness ${s.lightness.toFixed(2)}, saturation ${s.chroma.toFixed(3)}, contrast ${s.contrast.toFixed(2)}, ` +
         `warmth ${s.warmth.toFixed(2)}, darkest ${s.darkest}, lightest ${s.lightest}`;
       const lines = [`${describeSource(input)}: ${fmt(a)}`];
+      const hist = hueHistogram(counted);
+      lines.push(`Hues: ${[...hist.hues.slice(0, 6).map((h) => `${h.name} ${pct(h.share)}`), ...(hist.neutral > 0.005 ? [`neutral ${pct(hist.neutral)}`] : [])].join(", ") || "none"}`);
+      const groups = ramps(counted);
+      lines.push(`Ramps: ${groups.length} (${groups.map((g) => `${g.name} ${g.colors.length} step${g.colors.length === 1 ? "" : "s"}`).join(", ")})`);
+      const img = await sourceImage(input, aseprite).catch(() => undefined);
+      if (img) {
+        const o = findOutline(img);
+        lines.push(o.present
+          ? `Outline: ${o.kind === "selout" ? "selout (each edge color darker than the fill beside it)" : o.colors.join(", ")}, on ${pct(o.coverage)} of the edge`
+          : "Outline: none");
+      }
       if (input.compare_to) {
         const b = toneStats(tally(await gatherColors(input.compare_to, aseprite)));
         lines.push(`${describeSource(input.compare_to)}: ${fmt(b)}`);

@@ -226,6 +226,25 @@ export function hueName(h: number): string {
   return names.find(([max]) => h < max)?.[1] ?? "pink";
 }
 
+/**
+ * Which hues the pixels use: each named hue's share of all pixels, most
+ * used first, plus the share of neutral (gray-ish) pixels.
+ */
+export function hueHistogram(colors: Counted[]): { hues: { name: string; share: number }[]; neutral: number } {
+  const total = colors.reduce((s, c) => s + c.count, 0) || 1;
+  const by = new Map<string, number>();
+  let neutral = 0;
+  for (const c of colors) {
+    const { C, h } = toOklch(c);
+    if (C < NEUTRAL_CHROMA) neutral += c.count;
+    else by.set(hueName(h), (by.get(hueName(h)) ?? 0) + c.count);
+  }
+  return {
+    hues: [...by.entries()].map(([name, n]) => ({ name, share: n / total })).sort((a, b) => b.share - a.share),
+    neutral: neutral / total,
+  };
+}
+
 /** Pairs of colors closer than `threshold` (likely unintended duplicates). */
 export function nearDuplicates(colors: RGBA[], threshold = 0.025): [RGBA, RGBA, number][] {
   const out: [RGBA, RGBA, number][] = [];

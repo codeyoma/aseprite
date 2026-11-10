@@ -144,3 +144,30 @@ test("palette_from_image: min_share, ignore_alpha_below and save formats", async
   assert.deepEqual(save[1].path, join(dir, "p.pal"));
   assert.equal(save[1].colors.length, 3);
 });
+
+test("color_stats: hue histogram, ramps with steps, and the outline", async () => {
+  const { hueHistogram } = await import("../dist/color.js");
+  const h = hueHistogram([{ r: 220, g: 40, b: 40, a: 255, count: 30 }, { r: 40, g: 60, b: 220, a: 255, count: 50 }, { r: 128, g: 128, b: 128, a: 255, count: 20 }]);
+  assert.equal(h.hues[0].share, 0.5);
+  assert.equal(h.neutral, 0.2);
+  const { findTool, runTool } = await import("../dist/tools.js");
+  const { fakeDocument, rect } = await import("./helpers/fake_document.mjs");
+  // A green blob in two shades with a dark outline ring.
+  const W = 10, d = rect(W, W, [1, 1, 8, 8], [20, 30, 25]);
+  d.set(rect(W, W, [2, 2, 7, 7], [60, 170, 80]).filter((_, i) => true), 0);
+  for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4;
+    const ring = x === 1 || y === 1 || x === 8 || y === 8, inside = x > 1 && y > 1 && x < 8 && y < 8;
+    d.set(ring ? [20, 30, 25, 255] : inside ? (y < 5 ? [90, 200, 110, 255] : [60, 170, 80, 255]) : [0, 0, 0, 0], i);
+  }
+  const counts = new Map();
+  for (let i = 0; i < d.length; i += 4) if (d[i + 3]) { const k = [...d.subarray(i, i + 3)].map((v) => v.toString(16).padStart(2, "0")).join(""); counts.set(k, (counts.get(k) ?? 0) + 1); }
+  const fake = fakeDocument({ width: W, height: W, layers: [{ name: "Blob", frames: [d] }], extra: {
+    collect_colors: () => ({ colors: [...counts].map(([k, count]) => ({ hex: `#${k}`, count })) }),
+  } });
+  const r = await runTool(findTool("color_stats"), { source: "layer", layer: "Blob" }, fake);
+  const t = r.content[0].text;
+  assert.match(t, /Hues: green 50%, neutral 50%/);
+  assert.match(t, /Ramps: 2 \(green 2 steps, neutral 1 step\)/);
+  assert.match(t, /Outline: #141e19, on 100% of the edge/);
+});
