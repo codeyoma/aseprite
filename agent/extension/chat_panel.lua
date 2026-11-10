@@ -585,6 +585,58 @@ return function(deps)
     menu:showMenu()
   end
 
+  -- Attachments (#21): images that go with the next message.
+  local pending = {}
+  local function updateAttachments()
+    if not dlg then return end
+    local names = {}
+    for _, a in ipairs(pending) do names[#names + 1] = a.label end
+    dlg:modify{ id = "attachments", text = #names > 0 and ("Attached: " .. table.concat(names, ", ")) or "",
+                visible = #names > 0 }
+  end
+
+  -- kind: "selection" | "layer" | "frame", or { path = "..." } for an image file.
+  function Panel.attach(kind)
+    if not deps.attachments then return false end
+    Panel.open()
+    local a, err
+    if type(kind) == "table" then a, err = deps.attachments:file(kind.path)
+    else a, err = deps.attachments:make(kind) end
+    if not a then app.tip(err or "Could not attach that"); return false end
+    if #pending >= 8 then app.tip("At most 8 attachments per message"); return false end
+    pending[#pending + 1] = a
+    updateAttachments()
+    return true
+  end
+
+  function Panel.pendingAttachments()
+    local out = {}
+    for _, a in ipairs(pending) do out[#out + 1] = { label = a.label, path = a.path, uri = a.uri } end
+    return out
+  end
+
+  local function pickImageFile()
+    local d = Dialog{ title = "Attach image" }
+    d:file{ id = "path", label = "Image", open = true, filetypes = { "png", "jpg", "jpeg", "gif", "webp" } }
+    d:button{ id = "ok", text = "&Attach", focus = true }
+    d:button{ id = "cancel", text = "&Cancel" }
+    d:show()
+    if d.data.ok and d.data.path ~= "" then Panel.attach{ path = d.data.path } end
+  end
+
+  local function openAttachMenu()
+    local menu = Dialog()
+    menu:menuItem{ text = "Attach selection", onclick = function() Panel.attach("selection") end }
+    menu:menuItem{ text = "Attach active layer", onclick = function() Panel.attach("layer") end }
+    menu:menuItem{ text = "Attach active frame", onclick = function() Panel.attach("frame") end }
+    menu:menuItem{ text = "Attach image file...", onclick = pickImageFile }
+    if #pending > 0 then
+      menu:separator{}
+      menu:menuItem{ text = "Clear attachments", onclick = function() pending = {}; updateAttachments() end }
+    end
+    menu:showMenu()
+  end
+
   -- Typing "@" at the end of the prompt opens the picker.
   local function onPromptChange()
     if not dlg then return end
@@ -610,7 +662,16 @@ return function(deps)
     local expanded = deps.Conversation.expandMentions(prompt, mentions)
     mentions = {}
     lastPrompt = ""
-    conv:send(prompt, provider)
+    -- Attached images go as image blocks; the text says what each one is.
+    local attachments, shown = {}, prompt
+    for i, a in ipairs(pending) do
+      attachments[#attachments + 1] = { label = a.label, path = a.path }
+      expanded = expanded .. string.format("\n[Attached image %d: %s%s]", i, a.label, a.uri and (" (" .. a.uri .. ")") or "")
+      shown = shown .. "\nAttached: " .. a.label
+    end
+    pending = {}
+    updateAttachments()
+    conv:send(shown, provider)
     -- Record where this reply starts in the undo history (#22).
     local header = conv:entries()[#conv:entries()]
     currentTurn = deps.TurnHistory.begin(app.sprite)
@@ -633,6 +694,7 @@ return function(deps)
       if not ok then return fail(err or "Could not reach the bridge") end
       deps.request("chat.send", {
         prompt = expanded, state = state, provider = provider, sessionId = conv:conversationId(provider) or "",
+        attachments = #attachments > 0 and attachments or nil,
       }, function(_, error)
         if error then
           fail(error.message or tostring(error))
@@ -784,6 +846,8 @@ return function(deps)
     dlg:label{ id = "status", text = deps.isConnected() and "" or "Bridge not connected", hexpand = true,
                font = "system", fontsize = 6.5 }
     dlg:newrow()
+    dlg:label{ id = "attachments", text = "", hexpand = true, font = "system", fontsize = 6.5, visible = false }
+    dlg:newrow()
     -- Multi-line box that wraps and grows (this fork's dlg:textedit);
     -- stock Aseprite falls back to a single-line entry.
     local hasTextEdit = pcall(function()
@@ -805,6 +869,7 @@ return function(deps)
     end
     dlg:newrow()
     dlg:combobox{ id = "provider", options = providers, option = deps.preferences.provider or providers[1] }
+    dlg:button{ id = "attach", text = "+", onclick = openAttachMenu }
     dlg:button{ id = "mention", text = "@", onclick = openPicker }
     dlg:button{ id = "send", text = "&Send", onclick = send }
     dlg:button{ id = "stop", text = "S&top", enabled = false, onclick = function()

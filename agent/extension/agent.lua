@@ -55,6 +55,14 @@ function init(plugin)
     resolveUri = handlers.Uri.resolve,
     selectUri = handlers.Uri.select,
     TurnHistory = load("turn_history.lua"),
+    attachments = load("attachments.lua").new{
+      dir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "attachments"),
+      snapshot = handlers.snapshot, Uri = handlers.Uri,
+      writeImage = function(img, path)
+        app.fs.makeAllDirectories(app.fs.filePath(path))
+        img:saveAs(path)
+      end,
+    },
     capture = capture,
     ensureBridge = connection.ensureBridge,
     preferences = plugin.preferences,
@@ -82,6 +90,9 @@ function init(plugin)
     setPermissionAnswer = function(fn) Panel.permissionAnswer = fn end,
     -- Feeds a chat event to the panel as if the bridge sent it (tests).
     applyEvent = function(ev) Panel.onEvent(ev) end,
+    -- Attach "selection" | "layer" | "frame", or { path = "ref.png" } (#21).
+    attach = function(kind) return Panel.attach(kind) end,
+    pendingAttachments = function() return Panel.pendingAttachments() end,
     -- The newest before/after capture of an edit request (#23).
     lastCapture = function()
       local c = capture:last()
@@ -127,6 +138,18 @@ function init(plugin)
       app.tip("AI Agent disconnected")
     end,
   }
+
+  -- Attach to the chat from the menus and the timeline's context menus (#21).
+  local function attachCommand(id, title, group, kind)
+    plugin:newCommand{ id = id, title = title, group = group, onclick = function() Panel.attach(kind) end,
+      onenabled = function() return app.sprite ~= nil end }
+  end
+  attachCommand("AgentAttachSelection", "Attach Selection to Chat", "ai_agent_menu", "selection")
+  attachCommand("AgentAttachLayer", "Attach Active Layer to Chat", "ai_agent_menu", "layer")
+  attachCommand("AgentAttachFrame", "Attach Active Frame to Chat", "ai_agent_menu", "frame")
+  attachCommand("AgentAttachCel", "Attach to AI Chat", "cel_popup_properties", "layer")
+  attachCommand("AgentAttachLayerPopup", "Attach to AI Chat", "layer_popup_properties", "layer")
+  attachCommand("AgentAttachFramePopup", "Attach to AI Chat", "frame_popup_properties", "frame")
 
   if app.events then
     app.events:on("sitechange", function() Panel.refreshContext() end)

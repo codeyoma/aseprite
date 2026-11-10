@@ -81,3 +81,14 @@ test("permission requests go to the panel and back", async () => {
   methods["chat.permission"]({ requestId: sent.at(-1).params.requestId, optionId: "bogus" });
   assert.deepEqual(await rejected, { outcome: "selected", optionId: "deny" });
 });
+
+test("images go to the agent as ACP image blocks", async () => {
+  const { AcpRunner } = await import("../dist/acp.js");
+  const runner = new AcpRunner({ id: "claude", acp: { sessionMeta: () => ({}), env: () => ({}) } }, { url: "", token: "" }, "/", "", { onEvent() {}, onPermission: async () => ({ outcome: "cancelled" }) });
+  const sent = [];
+  runner["start"] = async () => {};
+  runner["agent"] = { request: async (method, params) => { sent.push({ method, params }); return method === "session/new" ? { sessionId: "s1" } : { stopReason: "end_turn" }; } };
+  await runner.prompt("what color?", undefined, [{ label: "selection", mimeType: "image/png", data: "AAA=" }]);
+  const prompt = sent.find((s) => s.method === "session/prompt").params.prompt;
+  assert.deepEqual(prompt, [{ type: "text", text: "what color?" }, { type: "image", mimeType: "image/png", data: "AAA=" }]);
+});

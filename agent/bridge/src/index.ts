@@ -7,6 +7,7 @@
 // Both modes connect to the Aseprite extension over WebSocket, serve MCP over
 // localhost HTTP for agents spawned by the chat panel, and run the chat.
 
+import { cleanAttachments } from "./attachments.js";
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { AsepriteLink, log } from "./aseprite.js";
@@ -24,6 +25,7 @@ async function main() {
 
   const endpoint = await startHttpEndpoint(link, newToken());
   const chat = new ChatRunner(link, endpoint);
+  cleanAttachments(); // rendered attachments older than a week
 
   for (const [method, handler] of Object.entries(chatMethods(chat, VERSION))) link.onRequest(method, handler);
 

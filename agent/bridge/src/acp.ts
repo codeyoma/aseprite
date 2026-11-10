@@ -11,6 +11,7 @@ import { client, ndJsonStream } from "@agentclientprotocol/sdk";
 import { log } from "./aseprite.js";
 import { MCP_SERVER_NAME, type AgentProvider } from "./providers/agent_provider.js";
 import { AcpMapper, type AcpEvent } from "./providers/acp_mapper.js";
+import type { ImageBlock } from "./attachments.js";
 
 export interface AcpEndpoint {
   url: string;
@@ -157,13 +158,17 @@ export class AcpRunner {
   }
 
   /** Runs one message. Resolves when the turn ends. */
-  async prompt(message: string, conversationId?: string): Promise<{ conversationId: string; stopReason: string }> {
+  async prompt(message: string, conversationId?: string, images: ImageBlock[] = []): Promise<{ conversationId: string; stopReason: string }> {
     await this.start();
     const sessionId = await this.session(conversationId);
     this.mapper = new AcpMapper();
     this.current = sessionId;
     try {
-      const res = await this.agent.request("session/prompt", { sessionId, prompt: [{ type: "text", text: message }] });
+      const prompt = [
+        { type: "text", text: message },
+        ...images.map((i) => ({ type: "image", mimeType: i.mimeType, data: i.data })),
+      ];
+      const res = await this.agent.request("session/prompt", { sessionId, prompt });
       for (const ev of this.mapper.flush()) this.handlers.onEvent(ev);
       return { conversationId: sessionId, stopReason: res?.stopReason ?? "end_turn" };
     } finally {

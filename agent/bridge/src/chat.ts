@@ -11,6 +11,7 @@ import { log } from "./aseprite.js";
 import type { HttpEndpoint } from "./http.js";
 import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type ProviderId } from "./providers/index.js";
 import { sessionDir } from "./session.js";
+import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
 import { acpCommand, AcpRunner, type PermissionOutcome, type PermissionRequest } from "./acp.js";
 import type { AcpEvent, PlanEntry } from "./providers/acp_mapper.js";
@@ -150,7 +151,7 @@ export class ChatRunner {
     }
   }
 
-  private sendAcp(prompt: string, state: string, provider: AgentProvider): void {
+  private sendAcp(prompt: string, state: string, provider: AgentProvider, images: ImageBlock[]): void {
     let runner = this.acpRunners.get(provider.id);
     if (!runner) {
       const record = this.recordDir
@@ -171,7 +172,7 @@ export class ChatRunner {
     log(`chat: starting ${provider.id} (acp)`);
     this.emit({ type: "status", text: `${provider.id} is working...` });
     runner
-      .prompt(composeMessage(prompt, state), this.conversations[provider.id])
+      .prompt(composeMessage(prompt, state), this.conversations[provider.id], images)
       .then(({ conversationId, stopReason }) => {
         if (this.conversations[provider.id] !== conversationId) {
           this.conversations[provider.id] = conversationId;
@@ -212,11 +213,13 @@ export class ChatRunner {
     return true;
   }
 
-  send(prompt: string, state: string, provider: AgentProvider, conversationId?: string): void {
+  send(prompt: string, state: string, provider: AgentProvider, conversationId?: string, images: ImageBlock[] = []): void {
     if (this.busy) throw new Error("The agent is still working. Stop it first.");
     if (conversationId) this.conversations[provider.id] = conversationId;
     else delete this.conversations[provider.id];
-    if (this.runtimeFor(provider) === "acp") return this.sendAcp(prompt, state, provider);
+    if (this.runtimeFor(provider) === "acp") return this.sendAcp(prompt, state, provider, images);
+    // The stream-json runtime sends text only.
+    if (images.length) prompt += `\n\n(${images.length} attached image(s) could not be sent: the stream runtime is text only.)`;
     const bin = which(provider.executable);
     if (!bin) throw new Error(`${provider.executable} CLI not found on PATH`);
 
@@ -291,10 +294,11 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
     "chat.info": () => ({ providers: chat.providers(), busy: chat.busy, version }),
     // `state` is the extension's <aseprite-state> block; `context` is the
     // one-line summary older extensions send.
-    "chat.send": (p: { prompt: string; state?: string; context?: string; provider?: string; sessionId?: string }) => {
+    // `attachments` are image files to show the agent (#21).
+    "chat.send": (p: { prompt: string; state?: string; context?: string; provider?: string; sessionId?: string; attachments?: Attachment[] }) => {
       if (!p.prompt?.trim()) throw new Error("Empty prompt");
       const state = p.state ?? (p.context ? `[Context] ${p.context}` : "");
-      chat.send(p.prompt, state, providerFor(p.provider), p.sessionId || undefined);
+      chat.send(p.prompt, state, providerFor(p.provider), p.sessionId || undefined, loadAttachments(p.attachments));
       return { started: true };
     },
     "chat.permission": (p: { requestId: string; optionId?: string | null }) => ({
