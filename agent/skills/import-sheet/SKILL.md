@@ -17,3 +17,5 @@ tools: [import_sheet, snapshot, apply_timeline_text]
 3. Name tags from the user's words ("row 1 is idle, row 2 is walk" → `row_tags: ["idle", "walk"]`).
 4. Check the result: the frame count and size in the reply, and `snapshot` of a frame or two. If frames are cut wrong, adjust and import again (the import opens a new sprite each time).
 5. Set timing if the user gave it (`apply_timeline_text`), and reply with frames, size and tags.
+
+Then: `retime-animation`, then `export-game`.

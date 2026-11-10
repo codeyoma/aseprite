@@ -51,3 +51,5 @@ Shapes, ramps and scale: `rule:vfx.shape`, `rule:vfx.color`, `rule:vfx.scale`.
 2. `check_fx` (spill, one-shot-end, loop-seam, colors) and fix what it reports; then `check` for the sprite as a whole (glow layers are skipped there).
 3. When the user wants it in a game: `export_for_engine` with `pivot` left out (the effect's origin is the pivot) and `glow: "sheet"`, so the light ships as `<name>_glow.png` for additive drawing; `meta.fx` carries fps, windup and hit-stops.
 4. Reply with the effect (id or recipe), where and on which frames it sits, the hit frame and freeze, and what the checks said.
+
+Then: `export-game`.

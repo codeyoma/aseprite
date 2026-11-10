@@ -17,3 +17,5 @@ Sizes, states and bevels follow `read_guide("rules/ui")`; cite `rule:ui.panels`,
    Other fonts: a BMFont `.fnt` path (its page PNGs next to it), a `.ttf`/`.otf` path with `size` (pixel fonts look right only at their design size, often 8 or 16), or an installed font as `system:<name>`. Text is always drawn without anti-aliasing.
 5. Bars (health, mana): `write_pixels` the `rule:ui.tmpl.bar` template in the game's colors (`rule:ui.bars`), or ask whether a 9-patch panel plus a fill is enough.
 6. Icons: `rule:ui.icons`. `snapshot` everything, go through `rule:ui.review`, and reply with the sizes and slice names for the engine.
+
+Then: `export-game`.

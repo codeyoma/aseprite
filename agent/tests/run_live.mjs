@@ -36,11 +36,13 @@ const root = join(here, "..", "..");
 // 4-color reference PNG; name:value replaces the plain ones in order. Tests that don't take a provider run once.
 const ARGS = {
   export: ["@tmp", "godot"], masks_cutout: ["@tmp"], model: ["@tmp"], normals: ["@tmp"], recreate: ["@tmp"],
-  sheet: ["@tmp"], tileset: ["@tmp"], voxels: ["@tmp"], fx_export: ["@tmp"], color_skills: ["@ref"],
+  sheet: ["@tmp"], studio: ["@tmp"], tileset: ["@tmp"], voxels: ["@tmp"], fx_export: ["@tmp"], color_skills: ["@ref"],
 };
 const NO_PROVIDER = new Set(["permission", "daemon", "eval", "fx_export", "fx_recipe", "check_expect", "lospec"]);
 // Environment some tests need; "@tmp" is a fresh scratch folder.
 const ENV = { commands: { ASEPRITE_AGENT_COMMANDS: "@tmp" } };
+// Tests that need longer than --timeout (minutes): studio runs a whole chain in one turn.
+const MIN_MINUTES = { studio: 45 };
 const NOT_IN_ALL = new Set(["developer", "developer_build", "daemon", "chat", "pixel_snap", "eval"]);
 // Tests that use no model (the rest are agent tests).
 const TOOL = new Set(["eval"]);
@@ -86,13 +88,13 @@ async function restartAseprite() {
   await new Promise((r) => setTimeout(r, 8000));
 }
 
-function run(script, args, env = {}) {
+function run(script, args, env = {}, limit = minutes) {
   return new Promise((resolve) => {
     const p = spawn(process.execPath, [script, ...args], { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } });
     let out = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (out += d));
-    const timer = setTimeout(() => { p.kill("SIGTERM"); out += "\nTIMEOUT"; }, minutes * 60_000);
+    const timer = setTimeout(() => { p.kill("SIGTERM"); out += "\nTIMEOUT"; }, limit * 60_000);
     p.on("close", (code) => { clearTimeout(timer); resolve({ code, out }); });
   });
 }
@@ -112,7 +114,7 @@ for (const spec of names) {
     const args = [...base.map(expand), ...(provider ? [provider] : [])];
     const t0 = Date.now();
     const env = Object.fromEntries(Object.entries(ENV[name] ?? {}).map(([k, v]) => [k, expand(v)]));
-    const { code, out } = await run(script, args, env);
+    const { code, out } = await run(script, args, env, Math.max(minutes, MIN_MINUTES[name] ?? 0));
     const lines = out.split("\n").filter((l) => /^(PASS|FAIL|SOFT-PASS|SOFT-FAIL|SKIP)\b|^SOFT \d|TEST (PASSED|FAILED)|TIMEOUT|^Error|^WARNING/.test(l));
     const ok = code === 0 && !lines.some((l) => /^FAIL|TIMEOUT/.test(l));
     const softFails = lines.filter((l) => /^SOFT-FAIL /.test(l)).map((l) => l.slice(10).replace(/ [[{"].*$/, ""));

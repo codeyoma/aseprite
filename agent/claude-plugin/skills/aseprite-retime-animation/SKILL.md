@@ -13,3 +13,5 @@ tools: [get_timeline_text, apply_timeline_text]
 3. If the change removes frames or tags, call `apply_timeline_text` with `plan: true` first and tell the user what will change.
 4. Apply it with one `apply_timeline_text` call.
 5. If frames were added, they copy the last frame: say so, and offer to draw them.
+
+Then: `export-game`.

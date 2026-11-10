@@ -12,3 +12,5 @@ tools: [execute_lua, propose_variations]
 2. Build each candidate in `execute_lua` with `variationLayer(task, i)` for i = 1..n, using the sprite's palette. Keep them the same size and position so they compare well.
 3. Call `propose_variations(task)`. The user keeps one in the panel or discards them; don't pick for them.
 4. Reply with one line per version saying how it differs.
+
+Then: the kept version goes on with `shade-sprite` or `review`.

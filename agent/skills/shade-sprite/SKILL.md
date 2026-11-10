@@ -15,3 +15,5 @@ tools: [make_ramp, shade_sprite, outline_sprite, anti_alias, ambient_occlusion, 
 5. Finishing touches when asked or when it clearly helps: `ambient_occlusion` darkens creases and where parts meet (from a bevel of the shape, or a height layer the user painted); `anti_alias` softens jagged steps between line art and fill with in-between colors from the palette. Both go on their own `AI:` layers, so the user can toggle them.
 6. `snapshot` and look: if the light reads wrong (e.g. a flat-looking blob), try `whole_shape` or a different number of bands, and show the user the better one (or make variations).
 7. Run `check`; reply with the light direction, bands, ramps and outline you used.
+
+Then: `review`, or `animate` when it should move.

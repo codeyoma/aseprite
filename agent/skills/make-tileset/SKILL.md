@@ -20,3 +20,5 @@ tools: [read_guide, make_autotile, seamless_check, make_seamless, execute_lua, s
 3. Call `make_autotile` (`kind: 47` for full blob terrain, `16` for simpler side-only sets). It opens the set and a preview map on a tilemap layer whose tileset is the set, so the user can paint more terrain with it.
 4. Look at the preview (`snapshot`) and go through `rule:tile.review`: seams in the middle mean the fill doesn't match between pieces; broken corners mean the island or inner tile's corners are off. Fix the template and run it again.
 5. Export when asked: `export_dir` writes the PNG, a Godot 4 `.tres` (terrain set with peering bits), a Tiled `.tsx` (wang set) and a JSON bitmask map. Tell the user where they went and how to load them.
+
+Then: `review`.

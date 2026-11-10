@@ -21,3 +21,5 @@ Work only from images the user attached; don't look for art on the web. Say once
 1. Get the rules with `style_summary` (on the attachment's path, or on the recreated sprite).
 2. Draw on a new layer in a new sprite of about the same size: set the reference's colors as the palette first, follow the outline and shading rules.
 3. Afterwards, `remap_to_palette` with `palette: "sprite"` so no stray colors remain, `check`, and `snapshot`. Compare with the reference and say how closely it follows the rules.
+
+Then: `check-sprite`, then `review`.

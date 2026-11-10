@@ -13,3 +13,5 @@ tools: [render_model, snapshot, check]
 - Animations made from moving parts (glTF node transforms) become frames, with one tag per clip and direction, like `walk_S` or `walk_NE`. Pick a clip with `animation`, and set `fps` (8 to 12 suits pixel art). Skinned (bone) deformation is not applied: those models render in their rest pose, and the reply says so.
 - Keep the defaults for pixel art: 3 toon bands, a darkest-color outline, and every frame at one shared scale on one ground line. Give `palette` ('sprite' or a name like 'PICO-8') to match a game's palette.
 - After rendering, `snapshot` the result. Small renders lose detail, so suggest a hand clean-up pass: fix eyes and faces, and remove single stray pixels. `check` finds orphan pixels and jitter.
+
+Then: `check-sprite` for the clean-up pass, then `export-game`.

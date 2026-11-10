@@ -17,3 +17,5 @@ tools: [color_stats, adjust_tone, remap_to_palette, palette_from_image]
    - Both: adjust the tone first, then remap.
 4. When taste matters, make two versions as variations (duplicate the layer with `variationLayer`, apply different strengths, `propose_variations`).
 5. Run `color_stats` again with `compare_to`. If it still reports a clear difference (e.g. more than 30% in saturation), apply `adjust_tone` once more. Report what's left of the difference and `snapshot` the result.
+
+Then: `check-sprite`.

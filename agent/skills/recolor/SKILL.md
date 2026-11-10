@@ -13,3 +13,5 @@ tools: [palette_from_image, make_ramp, palette_swap, export_palette_lut, snapsho
 3. Call `palette_swap` with one variant per version: `{ name: "red team", from: [the blues], to: [the reds] }`. Leave skin, outline and other parts alone unless asked.
 4. `snapshot` each variant layer (hide the others) and check the shading still reads; reply with the variants and their ramps.
 5. For games that swap palettes in a shader, `export_palette_lut` writes an index map, a lookup table (one row per variant) and a Godot shader.
+
+Then: `export-game`.

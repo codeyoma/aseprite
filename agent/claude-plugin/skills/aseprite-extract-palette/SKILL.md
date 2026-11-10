@@ -13,3 +13,5 @@ tools: [palette_from_image, remap_to_palette]
 3. Explain the result briefly: how many colors, the ramps (e.g. "a 4-step blue ramp and 3 skin tones"), near-duplicates worth merging, and the closest palette among the available ones (say "closest among available palettes", with its coverage).
 4. Do what the user wants with it, in the same call or a second one: `set_palette: true`, `swatches: true` (a swatch strip on an `AI: palette` layer), or `save` with a path (the extension picks the format: `.gpl` for GIMP and most editors, `.hex` for Lospec, `.pal`, `.act`, `.col`, or `.aseprite`). For a photo or a painted image, `min_share: 0.002` drops anti-aliasing and noise colors before reducing; `ignore_alpha_below` skips soft edges.
 5. Offer the next step: remap a sprite to this palette or to the closest known one (`remap_to_palette`).
+
+Then: `match-tone` to remap a sprite to it, or `recolor` for variants.

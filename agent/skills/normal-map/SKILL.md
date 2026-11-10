@@ -19,3 +19,5 @@ tools: [normal_map, make_masks, light_preview, export_normal_sheet, snapshot]
    Skip it for matte sprites. Tell the user which pixels were picked; they can paint fixes on the mask layers.
 4. Check with `light_preview` from two or three sides (and a point light near an edge). Flat areas that should curve need a wider `bevel` or a painted height layer; inverted shading means the wrong convention. The preview uses the masks when they exist: glow stays lit on the dark side, shiny parts get a highlight.
 5. Export with `export_normal_sheet` (<name>.png and <name>_n.png in the same layout, plus <name>_e.png and <name>_s.png when the masks exist) and tell the user how to assign it: in Godot, a CanvasTexture with the normal map on the Sprite2D; in Unity, a secondary texture `_NormalMap` on the sprite.
+
+Then: `export-game` for the color sheet and its animations.

@@ -13,3 +13,5 @@ tools: [check, execute_lua, snapshot]
 3. Leave warnings that look deliberate (a single highlight pixel, a held frame) and say why.
 4. Run `check` again and `snapshot` the result.
 5. Reply with what you fixed and what you left, in two or three sentences.
+
+Then: `review` for sizable work, or `export-game`.

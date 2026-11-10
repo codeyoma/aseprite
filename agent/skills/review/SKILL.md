@@ -31,4 +31,6 @@ Stop after three rounds, or after two rounds in a row that the comparison reject
 ## 3. Report
 For each round: the finding you fixed, what you changed, the guard's numbers and which version `ab_compare` kept. Then the last score and the findings you left. Do not edit after the last critique: anything changed afterwards has not been judged.
 
+Then: `export-game` when the work is for a game.
+
 Adapted from aseprite-ai-artist's pixel-critic agent and studio skill, step 8 (MIT, https://github.com/with-pebbly/aseprite-ai-artist).

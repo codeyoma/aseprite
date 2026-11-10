@@ -16,3 +16,5 @@ tools: [read_guide, direction_plan, mirror_direction, spawn_agents, execute_lua,
 6. `snapshot` one frame of each direction side by side and check that they read as the same character turning; reply with the tag list.
 
 Isometric: the 4 directions are the diagonals (`rule:iso.characters`). `iso_project` turns a top-down tile into a 2:1 diamond and `iso_grid` adds a guide layer; redraw the edges as clean 2:1 lines (`rule:iso.line`, `rule:iso.convert`).
+
+Then: `animate` each direction, or `export-game`.
