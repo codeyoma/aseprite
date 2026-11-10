@@ -1,0 +1,13 @@
+{
+  "name": "aseprite-agent",
+  "version": "0.0.1",
+  "description": "MCP server that lets Claude Code or Codex control Aseprite.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "aseprite-agent": "dist/index.js" },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "engines": { "node": ">=20" }
+}
