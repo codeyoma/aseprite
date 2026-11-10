@@ -67,14 +67,22 @@ export function fixtureLua(fake) {
     L.push("spr:setPalette(pal)");
   }
   // New layers stack on top, so bottom first; the default layer goes at the end.
+  // Groups nest (layer.parent); cels come from fake.image at sprite size.
   L.push("local first = spr.layers[1]", "local L = {}");
-  s.layers.forEach((l, i) => {
-    L.push(`L[${i + 1}] = ${l.group ? "spr:newGroup()" : "spr:newLayer()"} L[${i + 1}].name = ${JSON.stringify(l.name)}`);
-    if (l.visible === false) L.push(`L[${i + 1}].isVisible = false`);
-    if (!l.group) l.cels.forEach((d, f) => {
-      if (d) L.push(`spr:newCel(L[${i + 1}], ${f + 1}, img("${hexOf(d)}"), Point(0, 0))`);
+  const ids = new Map();
+  const emit = (list, parent) => list.forEach((l) => {
+    const i = ids.size + 1;
+    ids.set(l, i);
+    L.push(`L[${i}] = ${l.group ? "spr:newGroup()" : "spr:newLayer()"} L[${i}].name = ${JSON.stringify(l.name)}`);
+    if (parent) L.push(`L[${i}].parent = L[${parent}]`);
+    if (l.visible === false) L.push(`L[${i}].isVisible = false`);
+    if (l.group) emit(l.layers ?? [], i);
+    else l.cels.forEach((c, f) => {
+      const d = c && fake.image(l, f + 1, s);
+      if (d) L.push(`spr:newCel(L[${i}], ${f + 1}, img("${hexOf(d)}"), Point(0, 0))`);
     });
   });
+  emit(s.layers, 0);
   if (s.layers.length) L.push("spr:deleteLayer(first)");
   for (const t of s.tags ?? []) L.push(`do local t = spr:newTag(${t.from}, ${t.to}) t.name = ${JSON.stringify(t.name)} end`);
   for (const sl of s.slices ?? []) {
@@ -84,8 +92,7 @@ export function fixtureLua(fake) {
   }
   if (s.selection) L.push(`spr.selection = Selection(Rectangle(${s.selection.x}, ${s.selection.y}, ${s.selection.width}, ${s.selection.height}))`);
   if (s.title) L.push(`spr.filename = ${JSON.stringify(s.title)}`);
-  const active = layer ? s.layers.indexOf(layer) : -1;
-  if (active >= 0) L.push(`app.layer = L[${active + 1}]`);
+  if (layer && ids.has(layer)) L.push(`app.layer = L[${ids.get(layer)}]`);
   L.push(`app.frame = spr.frames[${frame}]`);
   if (s.colorMode && s.colorMode !== "rgb") L.push(`app.command.ChangePixelFormat{ format = ${JSON.stringify(s.colorMode)} }`);
   L.push(`spr.properties("${MARK}").fixture = true`, "return true");
@@ -161,6 +168,11 @@ export async function liveDocument(c, lua) {
     sprites,
     active,
     cel(name, f = 1) { return active.sprite.layers.find((l) => l.name === name)?.cels[f - 1]; },
+    image(layer, f = 1, s = active.sprite) {
+      const l = typeof layer === "string" ? s.layers.find((x) => x.name === layer) : layer;
+      return l?.cels[f - 1];
+    },
+    images(layer, s = active.sprite) { return s.durations.map((_, i) => this.image(layer, i + 1, s)); },
     layerNames() { return active.sprite.layers.map((l) => l.name); },
   };
 }
