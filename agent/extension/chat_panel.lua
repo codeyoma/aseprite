@@ -4,17 +4,22 @@
 --
 -- Loaded by agent.lua: `local Panel = dofile(path)(deps)` where deps has
 --   request(method, params, callback), isConnected(), contextString(), stateBlock(),
---   mentionTargets(), resolveUri(uri), selectUri(uri), TurnHistory (turn_history.lua),
---   ensureBridge(callback), preferences, Conversation (conversation.lua),
---   optionally Composer (composer.lua; loaded from this folder when absent).
+--   mentionTargets(), resolveUri(uri), selectUri(uri), ensureBridge(callback),
+--   preferences, Conversation (conversation.lua, for its text helpers),
+--   turns (a Turn controller, turns.lua), optionally prompter (prompter.lua's
+--   interface; app.alert / app.tip when absent) and Composer (composer.lua;
+--   loaded from this folder when absent).
 --
 -- The draft (prompt text, mentions, Attachments, the skill chip, the /
 -- picker) and what Enter does with it live in the Composer; this file
 -- reads the prompt box, asks the Composer, and carries out its outcome.
 --
 -- The conversation itself (entries, timings, tool status, conversation ids)
--- lives in the Conversation module; this file only draws it and keeps view
--- state (expanded rows, layout caches, scroll).
+-- lives in the Conversation module, and each reply's lifecycle (captures,
+-- finishing, revert/restore, changes since the last reply) in the Turn
+-- controller (turns.lua); this file only draws them and keeps view state
+-- (expanded rows, layout caches, scroll). Questions and tips go through
+-- the Prompter (prompter.lua), so tests can answer them.
 --
 -- Conversation layout:
 --   user messages      right-aligned bubbles
@@ -26,24 +31,24 @@
 -- The input box's hint text.
 local PLACEHOLDER = "Draw, edit or animate..."
 
--- composer.lua sits next to this file.
+-- composer.lua and prompter.lua sit next to this file.
 local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
 local function loadComposer() return dofile(here .. "composer.lua") end
+local Prompter = dofile(here .. "prompter.lua")
 
 return function(deps)
   local Panel = {}
 
   local dlg = nil
-  local conv = deps.Conversation.new{ clock = os.time }
+  local turns = assert(deps.turns, "turns required: turns.lua")
+  local conv = turns.conversation
+  local prompter = deps.prompter or Prompter.app()
   local expanded = setmetatable({}, { __mode = "k" })   -- entry -> true
   local caches = setmetatable({}, { __mode = "k" })     -- entry -> wrapped lines per field
   local scrollPx = 0          -- distance scrolled up from the bottom, in pixels
   local hitRows = {}          -- clickable rows from the last paint: { y0, y1, entry }
   local hitLinks = {}         -- links drawn in the last paint: { x0, y0, x1, y1, uri }
-  local hitButtons = {}       -- Revert/Restore buttons: { x0, y0, x1, y1, action }
-  local turns = setmetatable({}, { __mode = "k" })   -- header entry -> Turn History record
-  local currentTurn = nil     -- the running turn's record
-  local lastTurn = nil        -- the last finished turn, for "changes since your last reply"
+  local hitButtons = {}       -- buttons: { x0, y0, x1, y1, action, entry, index }
   local contentH, viewH = 0, 0
   -- The draft: prompt, mentions, Attachments, the skill chip and the /
   -- picker (#35), whose matches show at the bottom of the log.
@@ -52,9 +57,7 @@ return function(deps)
     selectionEmpty = function() return not app.sprite or app.sprite.selection.isEmpty end,
     stateBlock = function() return deps.stateBlock() end,
     -- What changed since the agent's last reply (#19), if anything.
-    changes = function()
-      return lastTurn and lastTurn.sprite == app.sprite and deps.TurnHistory.changesSince(lastTurn) or nil
-    end,
+    changes = function() return turns:changesSince() end,
     expandMentions = deps.Conversation.expandMentions,
   }
   local hitChip = nil          -- where the chip is drawn (click removes it)
@@ -345,8 +348,7 @@ return function(deps)
         end, nil, u * 4)
 
       elseif k == "header" then
-        local turn = turns[e]
-        local status = turn and turn.finish and deps.TurnHistory.status(turn) or nil
+        local status, turnAction = turns:view(e)
         turnUndone = (status == "undone")
         addRow(lh, function(y)
           local d = math.floor(lh * 0.55)
@@ -357,12 +359,8 @@ return function(deps)
           gc.color = C.text
           gc:fillText(e.text, pad + d + u * 2, y)
           -- Revert / Restore for the whole reply (#22).
-          local action, label
-          if status == "done" or status == "partly undone" then
-            if deps.TurnHistory.canRevert(turn) then action, label = "revert", "Revert" end
-          elseif status == "undone" then
-            action, label = "restore", "Restore"
-          end
+          local action = turnAction
+          local label = (action == "revert" and "Revert") or (action == "restore" and "Restore") or nil
           local x = w - pad
           if label then
             local bw = gc:measureText(label).width + u * 4
@@ -373,7 +371,7 @@ return function(deps)
             gc:fill()
             gc.color = C.text
             gc:fillText(label, x + u * 2, y)
-            hitButtons[#hitButtons + 1] = { x0 = x, y0 = y - u // 2, x1 = x + bw, y1 = y + lh + u // 2, turn = turn, action = action }
+            hitButtons[#hitButtons + 1] = { x0 = x, y0 = y - u // 2, x1 = x + bw, y1 = y + lh + u // 2, entry = e, action = action }
           end
           if status == "undone" or status == "partly undone" then
             local note = status == "undone" and "reverted" or "partly undone"
@@ -690,24 +688,11 @@ return function(deps)
   function Panel.onEvent(ev)
     -- The agent may have changed the document; keep the context line current.
     if ev.type == "tool_result" or ev.type == "done" or ev.type == "error" then refreshContext() end
-    local r = conv:apply(ev)
+    -- The Turn controller claims edit steps' captures and finishes the turn.
+    local r = turns:apply(ev)
     if r.status then updateStatus(r.status) end
-    -- Attach the before/after capture to each successful edit step (#23).
-    if ev.type == "tool_result" and ev.ok and deps.capture and currentTurn then
-      for i = #conv:entries(), 1, -1 do
-        local e = conv:entries()[i]
-        if e.kind == "tool" and e.id == ev.id then
-          if e.toolKind == "edit" and not e.capture then e.capture = deps.capture:claim(currentTurn.captureSeq) end
-          break
-        end
-      end
-    end
     if r.permission then Panel.askPermission(r.permission) end
     if r.build then Panel.onBuild(r.build) end
-    if r.turnEnded and currentTurn then
-      deps.TurnHistory.finish(currentTurn, app.sprite)
-      lastTurn, currentTurn = currentTurn, nil
-    end
     if r.turnEnded then
       updateStatus("")
       syncBusy()
@@ -744,7 +729,7 @@ return function(deps)
   -- The @ picker: selection, active layer/cel, layers, tags, frames, palette, slices.
   local function openPicker()
     local targets = deps.mentionTargets()
-    if #targets == 0 then app.tip("Open a sprite to mention its layers, frames or colors"); return end
+    if #targets == 0 then prompter.tip("Open a sprite to mention its layers, frames or colors"); return end
     local menu = Dialog()
     local group = nil
     for _, t in ipairs(targets) do
@@ -772,9 +757,9 @@ return function(deps)
     local a, err
     if type(kind) == "table" then a, err = deps.attachments:file(kind.path)
     else a, err = deps.attachments:make(kind) end
-    if not a then app.tip(err or "Could not attach that"); return false end
+    if not a then prompter.tip(err or "Could not attach that"); return false end
     local ok, why = composer:addAttachment(a)
-    if not ok then app.tip(why); return false end
+    if not ok then prompter.tip(why); return false end
     updateAttachments()
     return true
   end
@@ -824,7 +809,7 @@ return function(deps)
   -- Shows a pick: the new prompt, and tips for what the skill needs.
   local function showPick(r)
     if dlg then dlg:modify{ id = "prompt", text = r.text } end
-    for _, tip in ipairs(r.tips) do app.tip(tip) end
+    for _, tip in ipairs(r.tips) do prompter.tip(tip) end
   end
 
   -- Picking a match: a skill becomes the chip, a saved command "/name ".
@@ -883,20 +868,15 @@ return function(deps)
     deps.preferences.mode = p.mode:sub(1, 1):upper() .. p.mode:sub(2)
     deps.preferences.provider = p.provider
     updateAttachments()
-    conv:send(r.shown, p.provider, p.mode, r.skillTitle)
-    -- Record where this reply starts in the undo history (#22).
-    local header = conv:entries()[#conv:entries()]
-    currentTurn = deps.TurnHistory.begin(app.sprite)
-    currentTurn.captureSeq = deps.capture and deps.capture:seq() or 0
-    turns[header] = currentTurn
+    -- The message, and where this reply starts in the undo history (#22).
+    turns:start(app.sprite, { text = r.shown, provider = p.provider, mode = p.mode, skill = r.skillTitle })
     dlg:modify{ id = "prompt", text = "" }
     syncBusy()
     changed()
     updateStatus("Connecting...")
 
     local function fail(text)
-      conv:fail(text)
-      if currentTurn then deps.TurnHistory.finish(currentTurn, app.sprite); currentTurn = nil end
+      turns:fail(text)
       syncBusy()
       updateStatus("")
       changed()
@@ -920,14 +900,7 @@ return function(deps)
     end)
   end
 
-  local function confirmDeveloper()
-    if Panel.confirmDeveloper then return Panel.confirmDeveloper() end
-    return app.alert{ title = "Developer mode", text = {
-      "In Developer mode the agent edits this Aseprite fork's source code",
-      "and can run commands in the repository (it asks you first).",
-      "Its changes go on a dev/ branch; Rebuild & Relaunch applies them.",
-    }, buttons = { "Turn on", "Cancel" } } == 1
-  end
+  local function confirmDeveloper() return prompter.ask(Prompter.developerQuestion()) == 1 end
 
   -- Enter, Send, Panel.submit: asks the Composer what to do with the draft.
   -- providerOverride / modeOverride come from Panel.submit (scripts, Apply
@@ -947,7 +920,7 @@ return function(deps)
       ctx.developerConfirmed = true
       r = composer:decide(ctx)
     end
-    if r.kind == "tip" then app.tip(r.message); dlg:repaint()
+    if r.kind == "tip" then prompter.tip(r.message); dlg:repaint()
     elseif r.kind == "command" then runSlashCommand(r)
     elseif r.kind == "pick" then showPick(r); dlg:repaint()
     elseif r.kind == "send" then startTurn(r)
@@ -981,8 +954,22 @@ return function(deps)
     if dlg then dlg:repaint() end   -- undo/redo changes the replies' state
   end
 
-  -- Revert or restore a reply (#22). Reverting over later edits asks first.
-  function Panel.turnAction(turn, action, entry, index)
+  -- Revert or restore a reply (#22): header is the reply's header entry, nil
+  -- for the last reply. Reverting over later edits asks first, unless force.
+  function Panel.replyAction(header, action, force)
+    local ok, why, needsForce = turns:action(header, action, force)
+    if needsForce and prompter.ask(Prompter.revertQuestion()) == 1 then
+      ok, why = turns:action(header, action, true)
+    end
+    if not ok and why then prompter.tip(why) end
+    refreshContext()
+    if dlg then dlg:repaint() end
+    return ok and true or false
+  end
+
+  -- A button in the log: Revert/Restore, Developer mode, variations, Apply plan.
+  function Panel.buttonAction(action, entry, index)
+    if action == "revert" or action == "restore" then return Panel.replyAction(entry, action) end
     if action == "dev_apply" then return Panel.applyDevChanges() end
     if action == "dev_discard" then return Panel.discardDevChanges() end
     if action == "pick_variation" or action == "discard_variations" then
@@ -996,7 +983,7 @@ return function(deps)
         ok, why = V.discard(entry.task)
         if ok then entry.resolved = "Discarded" end
       end
-      if not ok and why then app.tip(why) end
+      if not ok and why then prompter.tip(why) end
       refreshContext()
       if dlg then dlg:repaint() end
       return ok and true or false
@@ -1007,48 +994,18 @@ return function(deps)
       Panel.submit("Carry out the plan above.", nil, "agent")
       return true
     end
-    local TH = deps.TurnHistory
-    local ok, why
-    if action == "restore" then
-      ok, why = TH.restore(turn)
-    else
-      ok, why = TH.revert(turn)
-      if not ok and TH.hasLaterEdits(turn) then
-        local answer = app.alert{ title = "Revert reply",
-          text = { "You edited the sprite after this reply.", "Reverting also undoes those edits (they stay redoable)." },
-          buttons = { "Revert anyway", "Cancel" } }
-        if answer == 1 then ok, why = TH.revert(turn, true) end
-      end
-    end
-    if not ok and why then app.tip(why) end
-    refreshContext()
-    if dlg then dlg:repaint() end
-    return ok
+    return false
   end
 
   -- A permission request from the agent (ACP): ask, then answer the bridge.
-  -- Tests can set Panel.permissionAnswer to a function(request) -> option index.
   function Panel.askPermission(req)
     local options = req.options or {}
-    local labels = {}
-    for i, o in ipairs(options) do labels[i] = o.name or o.optionId end
-    if #labels == 0 then labels = { "OK" } end
-    local index
-    if Panel.permissionAnswer then
-      index = Panel.permissionAnswer(req)
-    else
-      index = app.alert{ title = "AI Agent asks permission", text = { "The agent wants to use:", req.text or "a tool" }, buttons = labels }
-    end
-    local chosen = options[index]
+    local chosen = options[prompter.ask(Prompter.permissionQuestion(req))]
     deps.request("chat.permission", { requestId = req.requestId, optionId = chosen and chosen.optionId or "" }, function() end)
     conv:recordPermission(req.text, chosen and (chosen.name or chosen.optionId) or "rejected")
     changed()
   end
 
-  -- The most recent reply's record, and actions on it (tests, other scripts).
-  function Panel.lastTurn() return lastTurn end
-
-  -- Entries as plain records (for tests and other scripts).
   ---------------------------------------------------------------------------
   -- Developer mode (#28)
   ---------------------------------------------------------------------------
@@ -1057,32 +1014,19 @@ return function(deps)
   -- fork's build again once Aseprite has quit, then quits.
   function Panel.relaunch()
     deps.request("dev.relaunch", {}, function(_, err)
-      if err then app.alert{ title = "Relaunch", text = err.message or tostring(err) }; return end
+      if err then prompter.ask(Prompter.notice("Relaunch", err.message or tostring(err))); return end
       deps.saveForRelaunch(conv:serialize())
       app.exit()
     end)
   end
 
   -- Shows what changed; rebuilds when C++ changed, then relaunches.
-  -- Tests can set Panel.confirmApply to function(status) -> bool.
   function Panel.applyDevChanges()
     deps.request("dev.status", {}, function(st, err)
-      if err then app.tip(err.message or "Developer mode is not available"); return end
-      if #st.files == 0 then app.tip("The agent hasn't changed anything yet"); return end
-      if st.uncommitted and #st.uncommitted > 0 then
-        app.tip("The agent hasn't committed " .. #st.uncommitted .. " file(s) yet; ask it to commit, then apply")
-        return
-      end
-      local lines = { "Branch " .. st.branch .. ": " .. #st.files .. " file(s) changed",
-        "Applying moves your " .. (st.base or "branch") .. " branch to the agent's commits." }
-      for i = 1, math.min(#st.files, 10) do lines[#lines + 1] = "  " .. st.files[i] end
-      if #st.files > 10 then lines[#lines + 1] = "  ..." end
-      lines[#lines + 1] = st.needsBuild and "C++ changed: Aseprite will be rebuilt, then restarted." or "Only scripts changed: Aseprite will restart."
-      local go
-      if Panel.confirmApply then go = Panel.confirmApply(st)
-      else go = app.alert{ title = "Apply the agent's changes", text = lines,
-        buttons = { st.needsBuild and "Rebuild && Relaunch" or "Relaunch", "Cancel" } } == 1 end
-      if not go then return end
+      if err then prompter.tip(err.message or "Developer mode is not available"); return end
+      local question, tip = Prompter.applyQuestion(st)
+      if not question then prompter.tip(tip); return end
+      if prompter.ask(question) ~= 1 then return end
       -- The agent works in its own worktree: bring its commits into the
       -- user's checkout first, then build or relaunch from there.
       deps.request("dev.apply", {}, function(applied, e1)
@@ -1090,7 +1034,7 @@ return function(deps)
           -- In the log too, so the agent (and tests) can see why.
           conv:note("error", "Couldn't apply: " .. (e1.message or tostring(e1)))
           changed()
-          app.alert{ title = "Apply the agent's changes", text = e1.message or tostring(e1) }
+          prompter.ask(Prompter.notice("Apply the agent's changes", e1.message or tostring(e1)))
           return
         end
         if applied and applied.commits and applied.commits > 0 then
@@ -1117,18 +1061,9 @@ return function(deps)
   end
 
   function Panel.discardDevChanges()
-    local yes
-    if Panel.confirmApply then yes = Panel.confirmApply({ discard = true })
-    else
-      yes = app.alert{ title = "Discard the agent's changes", text = {
-        "The agent's worktree is removed; its uncommitted changes go into a git stash",
-        "(git stash pop brings them back) and the commits stay on its dev/ branch.",
-        "If you already applied them, your branch goes back to where it was.",
-      }, buttons = { "Discard", "Cancel" } } == 1
-    end
-    if not yes then return false end
+    if prompter.ask(Prompter.discardQuestion()) ~= 1 then return false end
     deps.request("dev.discard", {}, function(r, err)
-      if err then app.alert{ title = "Discard", text = err.message or tostring(err) }; return end
+      if err then prompter.ask(Prompter.notice("Discard", err.message or tostring(err))); return end
       conv:note("status", "Discarded the agent's work (" .. (r.stash or "nothing uncommitted") .. ")"
         .. (r.reverted and ("; " .. r.branch .. " is back where it was") or "") .. ".")
       changed()
@@ -1158,11 +1093,11 @@ return function(deps)
       d:newrow()
       d:button{ text = "Run", enabled = c.enabled ~= false, onclick = function()
         local r = S:run(c.name, {})
-        if not r.ok then app.alert{ title = c.title, text = tostring(r.error) } end
+        if not r.ok then prompter.ask(Prompter.notice(c.title, tostring(r.error))) end
       end }
       d:button{ text = c.enabled == false and "Enable" or "Disable", onclick = function()
         deps.request("commands.setEnabled", { name = c.name, enabled = c.enabled == false }, function(_, err)
-          if err then app.tip(err.message or "Could not change it") else S:reload() end
+          if err then prompter.tip(err.message or "Could not change it") else S:reload() end
         end)
         d:close()
       end }
@@ -1176,8 +1111,8 @@ return function(deps)
       end }
       d:button{ text = "Revert", onclick = function()
         deps.request("commands.revert", { name = c.name }, function(result, err)
-          if err then app.tip(err.message or "Nothing to revert to")
-          else app.tip("Restored /" .. c.name .. " from " .. tostring(result.restored)); S:reload() end
+          if err then prompter.tip(err.message or "Nothing to revert to")
+          else prompter.tip("Restored /" .. c.name .. " from " .. tostring(result.restored)); S:reload() end
         end)
       end }
     end
@@ -1198,7 +1133,7 @@ return function(deps)
     local list = conv:entries()
     for i = #list, 1, -1 do
       if list[i].kind == "variations" and not list[i].resolved then
-        return Panel.turnAction(nil, index and "pick_variation" or "discard_variations", list[i], index)
+        return Panel.buttonAction(index and "pick_variation" or "discard_variations", list[i], index)
       end
     end
     return false
@@ -1207,7 +1142,7 @@ return function(deps)
   function Panel.applyLastPlan()
     local list = conv:entries()
     for i = #list, 1, -1 do
-      if list[i].kind == "worked" and list[i].applyPlan then return Panel.turnAction(nil, "apply_plan", list[i]) end
+      if list[i].kind == "worked" and list[i].applyPlan then return Panel.buttonAction("apply_plan", list[i]) end
     end
     return false
   end
@@ -1269,13 +1204,13 @@ return function(deps)
         end
         for _, b in ipairs(hitButtons) do
           if ev.x >= b.x0 and ev.x <= b.x1 and ev.y >= b.y0 and ev.y <= b.y1 then
-            Panel.turnAction(b.turn, b.action, b.entry, b.index)
+            Panel.buttonAction(b.action, b.entry, b.index)
             return
           end
         end
         for _, l in ipairs(hitLinks) do
           if ev.x >= l.x0 and ev.x <= l.x1 and ev.y >= l.y0 and ev.y <= l.y1 then
-            if not deps.selectUri(l.uri) then app.tip("That no longer exists") end
+            if not deps.selectUri(l.uri) then prompter.tip("That no longer exists") end
             return
           end
         end

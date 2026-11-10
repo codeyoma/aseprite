@@ -3,7 +3,9 @@
 --   document_handlers.lua  what the bridge can ask of Aseprite (no transport)
 --   document_view.lua      how the document is described (State block, URIs)
 --   bridge_connection.lua  session file, WebSocket, handshake, reconnects
---   chat_panel.lua         the AI Agent chat panel (with conversation.lua)
+--   chat_panel.lua         the AI Agent chat panel (with composer.lua)
+--   turns.lua              the Turn controller (conversation.lua, turn_history.lua)
+--   prompter.lua           how the panel asks the user (app.alert, or scripted answers)
 --
 -- protocol.json is the wire protocol shared with the bridge.
 
@@ -98,8 +100,23 @@ function init(plugin)
     openSocket = function(args) return WebSocket(args) end,
   }
 
+  local Conversation = load("conversation.lua")
+  local turns = load("turns.lua").new{ Conversation = Conversation, clock = os.time,
+    history = load("turn_history.lua"), capture = capture, sprite = function() return app.sprite end }
+  -- Scripted answers (tests): question id ("permission", "developer",
+  -- "apply", "discard", "revert"; "*" for any) -> function(question) -> button
+  -- index or true/false. Unanswered questions show the usual alert.
+  local Prompter = load("prompter.lua")
+  local answers = {}
+  local prompter = Prompter.scripted(function(q)
+    local fn = answers[q.id] or answers["*"]
+    if fn then return fn(q) end
+  end, Prompter.app())
+
   Panel = load("chat_panel.lua"){
-    Conversation = load("conversation.lua"),
+    Conversation = Conversation,
+    turns = turns,
+    prompter = prompter,
     request = connection.request,
     isConnected = connection.isConnected,
     contextString = view.contextString,
@@ -107,7 +124,6 @@ function init(plugin)
     mentionTargets = view.Uri.targets,
     resolveUri = view.Uri.resolve,
     selectUri = view.Uri.select,
-    TurnHistory = load("turn_history.lua"),
     savedCommands = saved,
     saveForRelaunch = function(conversation) saveForRelaunch(conversation) end,
     variations = handlers.variations,
@@ -119,7 +135,6 @@ function init(plugin)
         img:saveAs(path)
       end,
     },
-    capture = capture,
     ensureBridge = connection.ensureBridge,
     preferences = plugin.preferences,
   }
@@ -127,9 +142,17 @@ function init(plugin)
   -- Scripting API for other scripts: AsepriteAgent.chat("make it blue")
   AsepriteAgent = {
     chat = function(prompt, provider, mode) Panel.submit(prompt, provider, mode) end,
-    -- Developer mode (#28) test hooks: answer the confirmations, apply or discard.
-    setDeveloperAnswers = function(fn) Panel.confirmDeveloper = fn and function() return fn("developer") end or nil
-      Panel.confirmApply = fn end,
+    -- Answers every question with fn(question) -> button index (nil: ask as usual).
+    setAnswers = function(fn) answers["*"] = fn end,
+    -- Developer mode (#28) test hooks: fn("developer"), fn(status) or
+    -- fn({ discard = true }) -> true to go ahead; nil clears them.
+    setDeveloperAnswers = function(fn)
+      answers.developer = fn and function() return fn("developer") and 1 or 0 end or nil
+      answers.apply = fn and function(q) return fn(q.status) and 1 or 0 end or nil
+      answers.discard = fn and function() return fn({ discard = true }) and 1 or 0 end or nil
+    end,
+    -- fn(request) -> option index for the agent's permission requests; nil clears it.
+    setPermissionAnswer = function(fn) answers.permission = fn and function(q) return fn(q.request) end or nil end,
     applyDevChanges = function() return Panel.applyDevChanges() end,
     discardDevChanges = function() return Panel.discardDevChanges() end,
     -- Runs a saved command like the menu does (#26).
@@ -165,14 +188,8 @@ function init(plugin)
     setPrompt = function(text) Panel.setPrompt(text) end,
     expandAll = function(state) Panel.expandAll(state) end,
     mention = function(name, uri) Panel.mention(name, uri) end,
-    revertLast = function(force)
-      local t = Panel.lastTurn()
-      if not t then return false end
-      if force then return load("turn_history.lua").revert(t, true) end
-      return Panel.turnAction(t, "revert")
-    end,
-    restoreLast = function() local t = Panel.lastTurn(); return t and Panel.turnAction(t, "restore") end,
-    setPermissionAnswer = function(fn) Panel.permissionAnswer = fn end,
+    revertLast = function(force) return Panel.replyAction(nil, "revert", force) end,
+    restoreLast = function() return Panel.replyAction(nil, "restore") end,
     -- Feeds a chat event to the panel as if the bridge sent it (tests).
     applyEvent = function(ev) Panel.onEvent(ev) end,
     -- Attach "selection" | "layer" | "frame", or { path = "ref.png" } (#21).
@@ -184,7 +201,7 @@ function init(plugin)
       return c and { seq = c.seq, method = c.method, changed = c.changed, claimed = c.claimed or false } or nil
     end,
     stop = function() connection.request("chat.stop", {}, function() end) end,
-    lastTurnStatus = function() local t = Panel.lastTurn(); return t and load("turn_history.lua").status(t) end,
+    lastTurnStatus = function() return (turns:view(nil)) end,
   }
 
   plugin:newMenuGroup{
