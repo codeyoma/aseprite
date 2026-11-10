@@ -29,6 +29,7 @@ E="$HOME/Library/Application Support/Aseprite/extensions/aseprite-agent"
 mkdir -p "$E"
 ln -sf "$PWD/agent/extension/package.json" "$E/package.json"
 ln -sf "$PWD/agent/extension/agent.lua" "$E/agent.lua"
+ln -sf "$PWD/agent/extension/chat_panel.lua" "$E/chat_panel.lua"
 ```
 
 On first use, Aseprite shows a Security dialog for `agent.lua` (reading `~/.aseprite-agent/session.json`). Tick "Give full trust to this script" and click "Give Script Full Access".
@@ -71,4 +72,10 @@ End to end, with Aseprite open:
 
 ```bash
 node agent/tests/mcp_smoke.mjs
+node agent/tests/chat_live.mjs claude "Add a layer named Shadow"   # in-app chat, uses your Claude login
+node agent/tests/chat_live.mjs codex "Rename it to Glow"           # same with Codex
+node agent/tests/daemon_live.mjs                                   # panel starts a background bridge
+node agent/demos/run_demos.mjs                                     # regenerates the README demos
 ```
+
+Background clicks and typing do not reach Aseprite's custom UI, so the live tests drive the panel through `AsepriteAgent.chat()` instead.

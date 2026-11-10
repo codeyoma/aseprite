@@ -19,6 +19,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@modelcontextprotocol/node": "^2.1.2",
     "@modelcontextprotocol/server": "^2.4.0",
     "pngjs": "^7.0.0",
     "ws": "^8.22.2",

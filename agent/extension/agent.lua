@@ -36,6 +36,10 @@ local function readSession()
   f:close()
   local ok, obj = pcall(json.decode, text)
   if not ok or not obj or not obj.port or not obj.token then return nil end
+  if obj.bridgePath and pluginRef then
+    -- Remember where the bridge lives so the chat panel can start it later.
+    pluginRef.preferences.bridgePath = tostring(obj.bridgePath)
+  end
   return { port = math.tointeger(obj.port), token = tostring(obj.token) }
 end
 
@@ -360,6 +364,23 @@ local function send(obj)
   if ws then ws:sendText(json.encode(obj)) end
 end
 
+-- Requests this extension sends to the bridge (chat). String ids keep them
+-- apart from the bridge's numeric request ids.
+local pendingLocal = {}
+local nextLocalId = 1
+local function requestBridge(method, params, callback)
+  if not connected then
+    if callback then callback(nil, { message = "Bridge not connected" }) end
+    return
+  end
+  local id = "x" .. nextLocalId
+  nextLocalId = nextLocalId + 1
+  pendingLocal[id] = callback or function() end
+  send({ jsonrpc = "2.0", id = id, method = method, params = params or {} })
+end
+
+local Panel = nil  -- chat panel, loaded in init()
+
 local handlers = {}
 
 handlers.ping = function()
@@ -668,12 +689,26 @@ local function onReceive(mt, data, err)
     if msg.method == "welcome" then
       connected = true
       app.tip("AI Agent connected")
+      if Panel then Panel.onConnectionChange(true) end
+    elseif msg.method == "chat.event" then
+      if Panel then Panel.onEvent(msg.params) end
     elseif msg.method then
       handleRequest(msg)
+    elseif type(msg.id) == "string" and pendingLocal[msg.id] then
+      local cb = pendingLocal[msg.id]
+      pendingLocal[msg.id] = nil
+      cb(msg.result, msg.error)
     end
   elseif mt == WebSocketMessageType.CLOSE or mt == WebSocketMessageType.ERROR then
-    if connected then app.tip("AI Agent disconnected") end
+    if connected then
+      app.tip("AI Agent disconnected")
+      if Panel then Panel.onConnectionChange(false) end
+    end
     connected = false
+    for id, cb in pairs(pendingLocal) do
+      pendingLocal[id] = nil
+      cb(nil, { message = "Bridge disconnected" })
+    end
   end
 end
 
@@ -707,16 +742,105 @@ connect = function(quiet)
 end
 
 ---------------------------------------------------------------------------
+-- Chat support
+---------------------------------------------------------------------------
+
+-- One-line description of what the user is working on, sent with prompts.
+local function contextString()
+  local ok, ctx = pcall(handlers.get_context)
+  if not ok or not ctx.sprite then return "no sprite open" end
+  local s = ctx.sprite
+  local name = app.fs.fileName(s.filename ~= "" and s.filename or "Sprite")
+  local parts = { string.format("sprite %s %dx%d %s, %d frame(s)", name, s.width, s.height, s.colorMode, s.frameCount) }
+  if ctx.layer then parts[#parts + 1] = "layer " .. ctx.layer.path end
+  if ctx.frame then parts[#parts + 1] = "frame " .. ctx.frame end
+  if ctx.tag then parts[#parts + 1] = "tag " .. ctx.tag end
+  local r = ctx.timelineRange
+  if r and r.type ~= "empty" then
+    local frames = #r.frames > 0 and (r.frames[1] .. "-" .. r.frames[#r.frames]) or "-"
+    parts[#parts + 1] = string.format("timeline selection: %s, layers [%s], frames %s", r.type, table.concat(r.layers, ", "), frames)
+  end
+  if ctx.selection then
+    local b = ctx.selection
+    parts[#parts + 1] = string.format("pixel selection x=%d y=%d %dx%d", b.x, b.y, b.width, b.height)
+  end
+  return table.concat(parts, "; ")
+end
+
+local function shellQuote(s)
+  return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
+end
+
+-- Make sure a bridge is connected; start a background bridge if none runs.
+local function ensureBridge(callback)
+  if connected then return callback(true) end
+
+  if not readSession() then
+    local bridgePath = pluginRef.preferences.bridgePath
+    if not bridgePath or not app.fs.isFile(bridgePath) then
+      return callback(false, "No bridge found. Run `claude` (or Codex) once with the aseprite MCP server so Aseprite learns where the bridge is.")
+    end
+    local logFile = app.fs.joinPath(homeDir(), ".aseprite-agent", "daemon.log")
+    -- A login shell gives the bridge the user's PATH (node, claude, codex).
+    local inner = "nohup node " .. shellQuote(bridgePath) .. " --daemon > " .. shellQuote(logFile) .. " 2>&1 &"
+    os.execute("/bin/zsh -lc " .. shellQuote(inner))
+  end
+  connect(true)
+
+  local waited = 0
+  local timer
+  timer = Timer{
+    interval = 0.25,
+    ontick = function()
+      waited = waited + 0.25
+      if connected then
+        timer:stop()
+        callback(true)
+      elseif waited >= 15 then
+        timer:stop()
+        callback(false, "The bridge did not start. See ~/.aseprite-agent/daemon.log")
+      elseif waited % 2 == 0 and not ws then
+        connect(true)
+      end
+    end,
+  }
+  timer:start()
+end
+
+---------------------------------------------------------------------------
 -- Plugin entry points
 ---------------------------------------------------------------------------
 
 function init(plugin)
   pluginRef = plugin
 
+  Panel = dofile(app.fs.joinPath(plugin.path, "chat_panel.lua")){
+    request = requestBridge,
+    isConnected = function() return connected end,
+    contextString = contextString,
+    ensureBridge = ensureBridge,
+    preferences = plugin.preferences,
+  }
+
+  -- Scripting API for other scripts: AsepriteAgent.chat("make it blue")
+  AsepriteAgent = {
+    chat = function(prompt, provider) Panel.submit(prompt, provider) end,
+    isBusy = function() return Panel.isBusy() end,
+    entries = function() return Panel.entries() end,
+    openPanel = function() Panel.open() end,
+  }
+
   plugin:newMenuGroup{
     id = "ai_agent_menu",
     title = "AI Agent",
     group = "file_scripts",
+  }
+
+  plugin:newCommand{
+    id = "AgentChat",
+    title = "Open Chat Panel",
+    group = "ai_agent_menu",
+    onclick = function() Panel.open() end,
   }
 
   plugin:newCommand{
@@ -739,6 +863,10 @@ function init(plugin)
       app.tip("AI Agent disconnected")
     end,
   }
+
+  if app.events then
+    app.events:on("sitechange", function() Panel.refreshContext() end)
+  end
 
   -- Auto-connect by default; the menu's Disconnect turns it off.
   if plugin.preferences.autoconnect ~= false then

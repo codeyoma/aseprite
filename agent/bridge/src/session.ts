@@ -8,6 +8,9 @@ export interface Session {
   token: string;
   pid: number;
   startedAt: string;
+  /** Absolute path of the bridge entry script, so Aseprite can start a daemon. */
+  bridgePath?: string;
+  [key: string]: unknown;
 }
 
 export const sessionDir = join(homedir(), ".aseprite-agent");

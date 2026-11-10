@@ -40,6 +40,9 @@ export class AsepriteLink extends EventEmitter {
   private awaitingBinary?: { id: number; result: any };
   private readonly token = newToken();
   private republishTimer?: NodeJS.Timeout;
+  private inbound = new Map<string, (params: any) => Promise<unknown> | unknown>();
+  /** Extra fields published in the session file (e.g. bridgePath). */
+  sessionExtra: Record<string, unknown> = {};
   asepriteVersion?: string;
 
   get connected(): boolean {
@@ -65,7 +68,13 @@ export class AsepriteLink extends EventEmitter {
     const actualPort = (this.wss.address() as AddressInfo).port;
     this.wss.on("connection", (socket) => this.onConnection(socket));
 
-    const session: Session = { port: actualPort, token: this.token, pid: process.pid, startedAt: new Date().toISOString() };
+    const session: Session = {
+      port: actualPort,
+      token: this.token,
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+      ...this.sessionExtra,
+    };
     writeSession(session);
     this.republishTimer = keepSessionPublished(session);
     return actualPort;
@@ -146,6 +155,11 @@ export class AsepriteLink extends EventEmitter {
     } catch {
       return;
     }
+    // A request or notification initiated by the extension (e.g. chat).
+    if (typeof msg?.method === "string") {
+      void this.handleInbound(msg);
+      return;
+    }
     if (typeof msg?.id !== "number") return;
 
     if (msg.error) {
@@ -161,6 +175,31 @@ export class AsepriteLink extends EventEmitter {
       return;
     }
     this.settle(msg.id, { result: msg.result });
+  }
+
+  /** Handle a request the extension sends to the bridge. */
+  onRequest(method: string, handler: (params: any) => Promise<unknown> | unknown): void {
+    this.inbound.set(method, handler);
+  }
+
+  /** Send a notification to the extension (no reply expected). */
+  notify(method: string, params: Record<string, unknown>): void {
+    if (this.connected) this.client!.send(JSON.stringify({ jsonrpc: "2.0", method, params }));
+  }
+
+  private async handleInbound(msg: any): Promise<void> {
+    const handler = this.inbound.get(msg.method);
+    const reply = (body: Record<string, unknown>) => {
+      if (msg.id !== undefined && this.client?.readyState === WebSocket.OPEN) {
+        this.client.send(JSON.stringify({ jsonrpc: "2.0", id: msg.id, ...body }));
+      }
+    };
+    if (!handler) return reply({ error: { code: -32601, message: `Unknown method: ${msg.method}` } });
+    try {
+      reply({ result: (await handler(msg.params ?? {})) ?? null });
+    } catch (err) {
+      reply({ error: { code: -32000, message: err instanceof Error ? err.message : String(err) } });
+    }
   }
 
   private settle(id: number, reply: Reply): void {

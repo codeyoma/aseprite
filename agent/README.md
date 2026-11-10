@@ -40,6 +40,16 @@ agent/extension/  (Aseprite Lua extension)
 - Node.js 20 or later.
 - Claude Code or Codex CLI.
 
+## Chat panel inside Aseprite
+
+**File > Scripts > AI Agent > Open Chat Panel** opens a panel where you type requests, like pen.dev's chat. Choose `claude` or `codex`; the bridge runs that CLI with your own login, shows each tool call as it happens, and keeps the conversation going until you click **New chat**. Every message includes what you have selected (layer, frame, timeline range, pixel selection), so "this layer" and "the selected frames" work.
+
+![chat panel](demos/output/7-chat-panel.png)
+
+If no agent session is running, the panel starts a background bridge (`node agent/bridge/dist/index.js --daemon`) on the first message. Aseprite learns the bridge's location the first time any bridge connects, so run `claude` once from this repository first. Other scripts can use it too: `AsepriteAgent.chat("make it blue")`.
+
+The panel's agent can only use the Aseprite tools: Claude runs with `--tools "" --strict-mcp-config --allowedTools mcp__aseprite`, and Codex gets only the `aseprite` MCP server with its tools pre-approved.
+
 ## Demos
 
 Produced by [demos/run_demos.mjs](demos/run_demos.mjs), which calls the same MCP tools an agent uses, against a live Aseprite.
