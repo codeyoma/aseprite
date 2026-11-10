@@ -40,6 +40,32 @@ agent/extension/  (Aseprite Lua extension)
 - Node.js 20 or later.
 - Claude Code or Codex CLI.
 
+## Setup
+
+1. Build Aseprite and the bridge, and install the extension: see [docs/BUILD-macos.md](docs/BUILD-macos.md).
+2. Connect your agent.
+   - **Claude Code:** the repository root has a `.mcp.json` that starts the bridge. Run `claude` from the repository root and approve the `aseprite` server. From another folder:
+     ```bash
+     claude mcp add aseprite -- node /path/to/aseprite/agent/bridge/dist/index.js
+     ```
+   - **Codex:** add to `~/.codex/config.toml`:
+     ```toml
+     [mcp_servers.aseprite]
+     command = "node"
+     args = ["/path/to/aseprite/agent/bridge/dist/index.js"]
+     ```
+3. Open Aseprite. The extension connects to the bridge automatically (File > Scripts > AI Agent > Connect / Disconnect).
+4. Ask: "Make a 32×32 sprite with a red circle on a layer called Body."
+
+## Tools
+
+| Tool | What it does |
+|---|---|
+| `get_state` | Open sprites; layers, frames, tags, palette, selection, active tool and colors |
+| `execute_lua` | Runs Lua in Aseprite as one undo step; rolls back on error |
+| `snapshot` | PNG of the sprite or a layer, upscaled so pixels are visible |
+| `undo` / `redo` | Steps back and forward through the history |
+
 ## Security
 
 `execute_lua` runs arbitrary Lua inside Aseprite, which can read and write files. The bridge listens on `127.0.0.1` only and requires a token. Keep Aseprite's script security prompts enabled.
