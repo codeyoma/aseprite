@@ -5,7 +5,12 @@
 -- Loaded by agent.lua: `local Panel = dofile(path)(deps)` where deps has
 --   request(method, params, callback), isConnected(), contextString(), stateBlock(),
 --   mentionTargets(), resolveUri(uri), selectUri(uri), TurnHistory (turn_history.lua),
---   ensureBridge(callback), preferences, Conversation (conversation.lua).
+--   ensureBridge(callback), preferences, Conversation (conversation.lua),
+--   optionally Composer (composer.lua; loaded from this folder when absent).
+--
+-- The draft (prompt text, mentions, Attachments, the skill chip, the /
+-- picker) and what Enter does with it live in the Composer; this file
+-- reads the prompt box, asks the Composer, and carries out its outcome.
 --
 -- The conversation itself (entries, timings, tool status, conversation ids)
 -- lives in the Conversation module; this file only draws it and keeps view
@@ -21,6 +26,10 @@
 -- The input box's hint text.
 local PLACEHOLDER = "Draw, edit or animate..."
 
+-- composer.lua sits next to this file.
+local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
+local function loadComposer() return dofile(here .. "composer.lua") end
+
 return function(deps)
   local Panel = {}
 
@@ -35,14 +44,19 @@ return function(deps)
   local turns = setmetatable({}, { __mode = "k" })   -- header entry -> Turn History record
   local currentTurn = nil     -- the running turn's record
   local lastTurn = nil        -- the last finished turn, for "changes since your last reply"
-  local mentions = {}         -- @[label] -> aseprite:// URI for the draft being typed
-  local lastPrompt = ""
   local contentH, viewH = 0, 0
-  -- The / picker (#35): the Skill Catalog from the bridge, and the matches
-  -- shown at the bottom of the log while the prompt is "/query".
-  local catalogRows = {}
-  local suggest = nil          -- { items = { { kind, name, title, source, description, needs } }, index }
-  local pickedSkill = nil      -- the skill picked in the / picker, shown as a chip above the prompt
+  -- The draft: prompt, mentions, Attachments, the skill chip and the /
+  -- picker (#35), whose matches show at the bottom of the log.
+  local composer = (deps.Composer or loadComposer()).new{
+    commands = function() return deps.savedCommands and deps.savedCommands:load() or {} end,
+    selectionEmpty = function() return not app.sprite or app.sprite.selection.isEmpty end,
+    stateBlock = function() return deps.stateBlock() end,
+    -- What changed since the agent's last reply (#19), if anything.
+    changes = function()
+      return lastTurn and lastTurn.sprite == app.sprite and deps.TurnHistory.changesSince(lastTurn) or nil
+    end,
+    expandMentions = deps.Conversation.expandMentions,
+  }
   local hitChip = nil          -- where the chip is drawn (click removes it)
 
   -- The text without its last character. Whole UTF-8 characters: cutting a
@@ -579,23 +593,24 @@ return function(deps)
     -- Skill and command matches over the bottom of the log, just above the input.
     hitSuggest = {}
     hitChip = nil
-    if suggest and #suggest.items > 0 then
+    local items, index, pickedSkill = composer:suggestions(), composer:suggestionIndex(), composer:pickedSkill()
+    if #items > 0 then
       local lh = gc:measureText("Ag").height
       local u = math.max(2, lh // 3)
       local rowH = lh * 2 + u * 2
-      local n = math.min(#suggest.items, 6)
+      local n = math.min(#items, 6)
       -- Up/Down move the highlight; the list scrolls to keep it in view.
-      local first = math.max(1, math.min(suggest.index - n + 1, #suggest.items - n + 1))
-      if suggest.index < first then first = suggest.index end
+      local first = math.max(1, math.min(index - n + 1, #items - n + 1))
+      if index < first then first = index end
       local boxH = n * rowH + u * 2
       local top = h - boxH
       gc.color = C.bubble
       gc:fillRect(Rectangle(0, top, w, boxH))
       for i = 1, n do
         local k = first + i - 1
-        local it = suggest.items[k]
+        local it = items[k]
         local ry = top + u + (i - 1) * rowH
-        if k == suggest.index then   -- Enter picks the highlighted match
+        if k == index then   -- Enter picks the highlighted match
           gc.color = C.highlight
           gc:fillRect(Rectangle(0, ry, w, rowH))
           gc.color = C.accent
@@ -618,9 +633,9 @@ return function(deps)
         gc:fillText(desc, x, ry + u + lh)
         hitSuggest[#hitSuggest + 1] = { y0 = ry, y1 = ry + rowH, item = it }
       end
-      if #suggest.items > n then
+      if #items > n then
         gc.color = C.faint
-        local more = string.format("%d/%d", suggest.index, #suggest.items)
+        local more = string.format("%d/%d", index, #items)
         gc:fillText(more, w - gc:measureText(more).width - u * 3, top + u)
       end
     elseif pickedSkill then
@@ -723,13 +738,7 @@ return function(deps)
   -- Inserts a mention token for a picker choice, replacing a typed "@".
   local function insertMention(target)
     if not dlg then return end
-    local text = dlg.data.prompt or ""
-    if text:sub(-1) == "@" then text = text:sub(1, -2) end
-    local sep = (text == "" or text:match("%s$")) and "" or " "
-    mentions[target.name] = target.uri
-    text = text .. sep .. "@[" .. target.name .. "] "
-    lastPrompt = text
-    dlg:modify{ id = "prompt", text = text }
+    dlg:modify{ id = "prompt", text = composer:insertMention(target, dlg.data.prompt or "") }
   end
 
   -- The @ picker: selection, active layer/cel, layers, tags, frames, palette, slices.
@@ -749,12 +758,9 @@ return function(deps)
   end
 
   -- Attachments (#21): images that go with the next message.
-  local pending = {}
-  local imageSent = false    -- this conversation already has an image (skills that need one)
   local function updateAttachments()
     if not dlg then return end
-    local names = {}
-    for _, a in ipairs(pending) do names[#names + 1] = a.label end
+    local names = composer:attachmentLabels()
     dlg:modify{ id = "attachments", text = #names > 0 and ("Attached: " .. table.concat(names, ", ")) or "",
                 visible = #names > 0 }
   end
@@ -767,17 +773,13 @@ return function(deps)
     if type(kind) == "table" then a, err = deps.attachments:file(kind.path)
     else a, err = deps.attachments:make(kind) end
     if not a then app.tip(err or "Could not attach that"); return false end
-    if #pending >= 8 then app.tip("At most 8 attachments per message"); return false end
-    pending[#pending + 1] = a
+    local ok, why = composer:addAttachment(a)
+    if not ok then app.tip(why); return false end
     updateAttachments()
     return true
   end
 
-  function Panel.pendingAttachments()
-    local out = {}
-    for _, a in ipairs(pending) do out[#out + 1] = { label = a.label, path = a.path, uri = a.uri } end
-    return out
-  end
+  function Panel.pendingAttachments() return composer:pendingAttachments() end
 
   local function pickImageFile()
     local d = Dialog{ title = "Attach image" }
@@ -794,249 +796,96 @@ return function(deps)
     menu:menuItem{ text = "Attach active layer", onclick = function() Panel.attach("layer") end }
     menu:menuItem{ text = "Attach active frame", onclick = function() Panel.attach("frame") end }
     menu:menuItem{ text = "Attach image file...", onclick = pickImageFile }
-    if #pending > 0 then
+    if #composer:pendingAttachments() > 0 then
       menu:separator{}
-      menu:menuItem{ text = "Clear attachments", onclick = function() pending = {}; updateAttachments() end }
+      menu:menuItem{ text = "Clear attachments", onclick = function() composer:clearAttachments(); updateAttachments() end }
     end
     menu:showMenu()
   end
 
-  -- The / picker (#35): skills from the catalog and saved commands that
-  -- match every typed word, best matches first.
+  -- The / picker (#35): the Skill Catalog from the bridge goes to the Composer.
   refreshCatalog = function()
     deps.request("skills.list", {}, function(result)
       if result and result.skills then
-        catalogRows = {}
+        local rows = {}
         for _, s in ipairs(result.skills) do
           local needs = {}
           for _, n in ipairs(s.needs or {}) do needs[#needs + 1] = n end
-          catalogRows[#catalogRows + 1] = { kind = "skill", name = s.name, title = s.title, source = s.source,
+          rows[#rows + 1] = { kind = "skill", name = s.name, title = s.title, source = s.source,
             description = s.description, category = s.category, needs = needs }
         end
+        composer:setCatalog(rows)
       end
     end)
   end
 
-  function Panel.matches(query)
-    local items = {}
-    for _, s in ipairs(catalogRows) do
-      if s.source ~= "guide" then items[#items + 1] = s end
-    end
-    if deps.savedCommands then
-      for _, c in ipairs(deps.savedCommands:load()) do
-        if c.enabled ~= false then
-          items[#items + 1] = { kind = "command", name = c.name, title = c.title, description = c.description, source = "command" }
-        end
-      end
-    end
-    local words = {}
-    for w in (query or ""):lower():gmatch("%S+") do words[#words + 1] = w end
-    local out = {}
-    for _, it in ipairs(items) do
-      local head = (it.name .. " " .. it.title):lower()
-      local all = head .. " " .. (it.description or ""):lower() .. " " .. (it.category or ""):lower()
-      local score, ok = 0, true
-      for _, w in ipairs(words) do
-        if not all:find(w, 1, true) then ok = false; break end
-        score = score + (head:sub(1, #w) == w and 3 or (head:find(w, 1, true) and 2 or 1))
-      end
-      if ok then out[#out + 1] = { it = it, score = score } end
-    end
-    -- A bare "/" lists everything grouped by category (your commands last);
-    -- typing ranks by how well the words match.
-    local function group(it) return it.kind == "command" and "~" or (it.category or "Other") end
-    table.sort(out, function(a, b)
-      if #words == 0 and group(a.it) ~= group(b.it) then return group(a.it) < group(b.it) end
-      if a.score ~= b.score then return a.score > b.score end
-      return a.it.title < b.it.title
-    end)
-    local list = {}
-    for _, o in ipairs(out) do list[#list + 1] = o.it end
-    return list
+  function Panel.matches(query) return composer:matches(query) end
+
+  -- Shows a pick: the new prompt, and tips for what the skill needs.
+  local function showPick(r)
+    if dlg then dlg:modify{ id = "prompt", text = r.text } end
+    for _, tip in ipairs(r.tips) do app.tip(tip) end
   end
 
-  local function setSuggest(items)
-    suggest = items and { items = items, index = 1 } or nil
-    if dlg then dlg:repaint() end
-  end
-
-  -- Picking a match: a skill becomes "/skill:name " (the message then runs
-  -- with that skill), a saved command "/name ".
+  -- Picking a match: a skill becomes the chip, a saved command "/name ".
   function Panel.pickSuggestion(it)
     if not dlg or not it then return end
-    if it.kind == "command" then
-      lastPrompt = "/" .. it.name .. " "
-    else
-      -- A skill becomes a chip; the prompt keeps only the request.
-      pickedSkill = it
-      lastPrompt = ""
-    end
-    dlg:modify{ id = "prompt", text = lastPrompt }
-    setSuggest(nil)
-    for _, n in ipairs(it.needs or {}) do
-      if n == "image" and #pending == 0 then app.tip("This skill needs an image: attach one with +") end
-      if n == "selection" and (not app.sprite or app.sprite.selection.isEmpty) then
-        app.tip("This skill works on a selection: select an area first")
-      end
-    end
+    showPick(composer:pick(it))
+    dlg:repaint()
   end
 
-  function Panel.suggestions() return suggest and suggest.items or {} end
-  function Panel.suggestionIndex() return suggest and suggest.index or 0 end
-  function Panel.pickedSkill() return pickedSkill and pickedSkill.name or nil end
+  function Panel.suggestions() return composer:suggestions() end
+  function Panel.suggestionIndex() return composer:suggestionIndex() end
+  function Panel.pickedSkill() local s = composer:pickedSkill(); return s and s.name or nil end
   function Panel.clearPickedSkill()
-    pickedSkill = nil
+    composer:clearPickedSkill()
     if dlg then dlg:repaint() end
   end
 
   -- Keys in the prompt (the textedit's onkeydown, and tests). Returns true
   -- when the key was used here, so the box doesn't handle it too.
-  -- With the / picker open: Up and Down move the highlight, Enter or Tab
-  -- picks it, Escape closes the list. Backspace in an empty prompt removes
-  -- the skill chip.
   function Panel.onPromptKey(code)
-    if suggest and #suggest.items > 0 then
-      local n = #suggest.items
-      if code == "ArrowDown" then suggest.index = suggest.index % n + 1
-      elseif code == "ArrowUp" then suggest.index = (suggest.index - 2) % n + 1
-      elseif code == "Enter" or code == "NumpadEnter" or code == "Tab" then Panel.pickSuggestion(suggest.items[suggest.index])
-      elseif code == "Escape" then setSuggest(nil)
-      else return false end
-      if dlg then dlg:repaint() end
-      return true
-    end
-    if code == "Backspace" and pickedSkill and (dlg and (dlg.data.prompt or "") == "") then
-      Panel.clearPickedSkill()
-      return true
-    end
-    return false
-  end
-
-  local function skillByName(name)
-    for _, s in ipairs(catalogRows) do if s.name == name then return s end end
+    local r = composer:onKey(code, dlg and (dlg.data.prompt or "") or nil)
+    if not r then return false end
+    if r.kind == "pick" then showPick(r) end
+    if dlg then dlg:repaint() end
+    return true
   end
 
   -- Typing "@" at the end of the prompt opens the picker; a prompt that is
   -- just "/query" shows matching skills and commands.
   local function onPromptChange()
     if not dlg then return end
-    local text = dlg.data.prompt or ""
-    local grew = #text == #lastPrompt + 1 and text:sub(1, #lastPrompt) == lastPrompt
-    lastPrompt = text
-    if grew and text:sub(-1) == "@" then openPicker() end
-    local query = text:match("^/([^%s]*)$")
-    if query and not query:match("^skill:") then
-      if #catalogRows == 0 then refreshCatalog() end
-      setSuggest(Panel.matches((query:gsub("[-_]", " "))))
-    elseif suggest then
-      setSuggest(nil)
-    end
+    local r = composer:onTextChange(dlg.data.prompt or "")
+    if r.mentionPicker then openPicker() end
+    if r.needCatalog then refreshCatalog() end
+    if r.suggestChanged then dlg:repaint() end
   end
   Panel.onPromptChange = onPromptChange
 
   -- "/name args" runs a saved command right away, with no agent turn (#26).
-  -- Returns true when the prompt was a saved command.
-  local function runSlashCommand(prompt)
-    if not deps.savedCommands then return false end
-    local name, rest = prompt:match("^%s*/([%w%-]+)%s*(.-)%s*$")
-    if not name then return false end
-    deps.savedCommands:load()
-    if not deps.savedCommands:get(name) then return false end
-    local r = deps.savedCommands:run(name, deps.savedCommands.parseArgs(rest))
-    conv:note("user", prompt)
-    if r.ok then
-      conv:note("status", "Ran /" .. name .. (r.value ~= nil and (": " .. json.encode(r.value)) or ""))
+  local function runSlashCommand(r)
+    local result = deps.savedCommands:run(r.name, deps.savedCommands.parseArgs(r.args))
+    conv:note("user", r.text)
+    if result.ok then
+      conv:note("status", "Ran /" .. r.name .. (result.value ~= nil and (": " .. json.encode(result.value)) or ""))
     else
-      conv:note("error", "/" .. name .. ": " .. tostring(r.error))
+      conv:note("error", "/" .. r.name .. ": " .. tostring(result.error))
     end
-    lastPrompt = ""
     dlg:modify{ id = "prompt", text = "" }
     refreshContext()
     changed()
-    return true
   end
 
-  -- providerOverride / modeOverride come from Panel.submit (scripts, Apply
-  -- plan): the provider list may not be loaded yet right after opening.
-  local function send(providerOverride, modeOverride)
-    if conv:isBusy() or not dlg then return end
-    local prompt = dlg.data.prompt or ""
-    if prompt:match("^%s*$") then
-      if pickedSkill then app.tip("Write what you want " .. pickedSkill.title .. " to do") end
-      return
-    end
-    -- A saved command's exact name runs it, even while the picker shows it.
-    if runSlashCommand(prompt) then
-      setSuggest(nil)
-      return
-    end
-    -- Enter on any other bare "/query" picks the best match instead of sending.
-    if suggest and #suggest.items > 0 and prompt:match("^/[^%s]*$") then
-      Panel.pickSuggestion(suggest.items[suggest.index])
-      return
-    end
-    setSuggest(nil)
-    -- The skill chip goes with the message as /skill:name.
-    if pickedSkill and not prompt:match("^%s*/skill:") then prompt = "/skill:" .. pickedSkill.name .. " " .. prompt end
-    -- A skill that needs an image waits for an attachment (#35).
-    local skillName = prompt:match("^%s*/skill:([%w%-_]+)")
-    local skill = skillName and skillByName(skillName)
-    if skill then
-      for _, n in ipairs(skill.needs or {}) do
-        -- A follow-up in a conversation that already has the image is fine.
-        if n == "image" and #pending == 0 and not imageSent then
-          app.tip(skill.title .. " needs an image: attach one with + first")
-          return
-        end
-        if n == "selection" and (not app.sprite or app.sprite.selection.isEmpty) then
-          app.tip(skill.title .. " works on a selection: select an area first")
-          return
-        end
-      end
-    end
-    local provider = providerOverride or dlg.data.provider or providers[1]
-    local mode = modeOverride or (dlg.data.mode or "Agent"):lower()
-    if mode == "developer" and not deps.preferences.developerConfirmed then
-      local yes
-      if Panel.confirmDeveloper then yes = Panel.confirmDeveloper()
-      else
-        yes = app.alert{ title = "Developer mode", text = {
-          "In Developer mode the agent edits this Aseprite fork's source code",
-          "and can run commands in the repository (it asks you first).",
-          "Its changes go on a dev/ branch; Rebuild & Relaunch applies them.",
-        }, buttons = { "Turn on", "Cancel" } } == 1
-      end
-      if not yes then return end
-      deps.preferences.developerConfirmed = true
-    end
-    deps.preferences.mode = mode:sub(1, 1):upper() .. mode:sub(2)
-    deps.preferences.provider = provider
-    -- The document's state goes with every message (#18), and what changed
-    -- since the agent's last reply (#19), if anything. The bridge builds
-    -- the agent's message from these parts (#55).
-    local state = deps.stateBlock()
-    local changes = lastTurn and lastTurn.sprite == app.sprite and deps.TurnHistory.changesSince(lastTurn) or nil
-
-    -- @[label] tokens become "label (aseprite://...)" for the agent (#20).
-    local expanded = deps.Conversation.expandMentions(prompt, mentions)
-    mentions = {}
-    lastPrompt = ""
-    -- Attached images go as image blocks; the bridge adds a line for each.
-    local attachments, shown = {}, prompt
-    for _, a in ipairs(pending) do
-      attachments[#attachments + 1] = { label = a.label, path = a.path, uri = a.uri }
-      shown = shown .. "\nAttached: " .. a.label
-    end
-    if #pending > 0 then imageSent = true end
-    pending = {}
+  -- Starts the agent turn for a "send" outcome.
+  local function startTurn(r)
+    local p = r.payload
+    deps.preferences.mode = p.mode:sub(1, 1):upper() .. p.mode:sub(2)
+    deps.preferences.provider = p.provider
     updateAttachments()
-    -- The header names the skill, so the bubble shows only the request.
-    if skill then shown = shown:gsub("^%s*/skill:[%w%-_]+%s*", "", 1) end
-    -- Before the catalog arrives (right after start), name the skill by its id.
-    conv:send(shown, provider, mode, skill and skill.title or skillName)
+    conv:send(r.shown, p.provider, p.mode, r.skillTitle)
     -- Record where this reply starts in the undo history (#22).
     local header = conv:entries()[#conv:entries()]
-    pickedSkill = nil   -- the chip went with this message
     currentTurn = deps.TurnHistory.begin(app.sprite)
     currentTurn.captureSeq = deps.capture and deps.capture:seq() or 0
     turns[header] = currentTurn
@@ -1055,11 +904,12 @@ return function(deps)
 
     deps.ensureBridge(function(ok, err)
       if not ok then return fail(err or "Could not reach the bridge") end
+      -- The bridge builds the agent's message from these parts (#55).
       deps.request("chat.send", {
-        prompt = expanded, state = state, changes = changes, provider = provider,
+        prompt = p.prompt, state = p.state, changes = p.changes, provider = p.provider,
         sessions = conv:conversationIds(),
-        attachments = #attachments > 0 and attachments or nil,
-        mode = mode,
+        attachments = p.attachments,
+        mode = p.mode,
       }, function(_, error)
         if error then
           fail(error.message or tostring(error))
@@ -1068,6 +918,40 @@ return function(deps)
         end
       end)
     end)
+  end
+
+  local function confirmDeveloper()
+    if Panel.confirmDeveloper then return Panel.confirmDeveloper() end
+    return app.alert{ title = "Developer mode", text = {
+      "In Developer mode the agent edits this Aseprite fork's source code",
+      "and can run commands in the repository (it asks you first).",
+      "Its changes go on a dev/ branch; Rebuild & Relaunch applies them.",
+    }, buttons = { "Turn on", "Cancel" } } == 1
+  end
+
+  -- Enter, Send, Panel.submit: asks the Composer what to do with the draft.
+  -- providerOverride / modeOverride come from Panel.submit (scripts, Apply
+  -- plan): the provider list may not be loaded yet right after opening.
+  local function send(providerOverride, modeOverride)
+    if conv:isBusy() or not dlg then return end
+    local ctx = {
+      text = dlg.data.prompt or "",
+      provider = providerOverride or dlg.data.provider or providers[1],
+      mode = modeOverride or (dlg.data.mode or "Agent"):lower(),
+      developerConfirmed = deps.preferences.developerConfirmed,
+    }
+    local r = composer:decide(ctx)
+    if r.kind == "confirm_developer" then
+      if not confirmDeveloper() then return end
+      deps.preferences.developerConfirmed = true
+      ctx.developerConfirmed = true
+      r = composer:decide(ctx)
+    end
+    if r.kind == "tip" then app.tip(r.message); dlg:repaint()
+    elseif r.kind == "command" then runSlashCommand(r)
+    elseif r.kind == "pick" then showPick(r); dlg:repaint()
+    elseif r.kind == "send" then startTurn(r)
+    end
   end
 
   ---------------------------------------------------------------------------
@@ -1088,7 +972,7 @@ return function(deps)
   function Panel.placeholder() return PLACEHOLDER end
   function Panel.isOpen() return dlg ~= nil end
   function Panel.promptText() return dlg and dlg.data.prompt or nil end
-  function Panel.setPrompt(text) if dlg then lastPrompt = text; dlg:modify{ id = "prompt", text = text } end end
+  function Panel.setPrompt(text) if dlg then composer:setText(text); dlg:modify{ id = "prompt", text = text } end end
   -- Adds a mention as the picker would (for tests and other scripts).
   function Panel.mention(name, uri) insertMention{ name = name, uri = uri } end
   function Panel.close() if dlg then dlg:close() end end
@@ -1350,7 +1234,7 @@ return function(deps)
 
   function Panel.open()
     if dlg then return end
-    if #catalogRows == 0 and deps.isConnected() then refreshCatalog() end
+    if not composer:hasCatalog() and deps.isConnected() then refreshCatalog() end
     dlg = Dialog{
       title = "AI Agent",
       resizeable = true,
@@ -1447,7 +1331,7 @@ return function(deps)
     dlg:button{ id = "new", text = "&New chat", onclick = function()
       deps.request("chat.reset", {}, function() end)
       conv:reset()
-      imageSent = false
+      composer:newConversation()
       syncBusy()
       updateStatus("")
       changed()
