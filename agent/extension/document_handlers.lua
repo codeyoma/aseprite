@@ -1786,7 +1786,7 @@ function M.new(opts)
   scopeGuard = dofile(app.fs.joinPath(chunkDir, "scope_guard.lua"))
   wireParams = dofile(app.fs.joinPath(chunkDir, "wire_params.lua"))
   px = dofile(app.fs.joinPath(chunkDir, "pixels.lua"))
-  writePalette = opts.writePalette or function(pal, path) pal:saveAs(path) end
+  writePalette = opts.writePalette or function() error("Saving palettes needs agent.lua (opts.writePalette)") end
   onVariations = opts.onVariations
   onCommandsChanged = opts.onCommandsChanged
   PROTOCOL = assert(opts.protocol, "protocol required")

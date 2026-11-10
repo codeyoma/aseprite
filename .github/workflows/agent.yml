@@ -37,9 +37,14 @@ jobs:
           npm ci
           npm run build
 
-      - name: Unit tests (bridge)
+      - name: Lua for the syntax check
+        run: sudo apt-get install -y lua5.4
+
+      # The same command as locally: build, plugin copies up to date,
+      # extension checks (file access, Lua syntax), unit tests.
+      - name: Tests
         working-directory: agent/bridge
-        run: node --test test/
+        run: npm test
 
       - name: Check the command catalog is up to date
         run: |

@@ -21,7 +21,7 @@
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "prepack": "npm run build",
-    "test": "npm run build && node scripts/sync-plugin.mjs --check && node --test test/"
+    "test": "npm run build && node scripts/sync-plugin.mjs --check && node ../tools/check_extension.mjs && node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"
