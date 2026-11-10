@@ -1682,6 +1682,44 @@ handlers.draw_swatches = function(params)
 end
 
 -- The <aseprite-state> block (for sub-agents' first message, #33).
+-- A new sprite with a tilemap layer (#59): the tiles (a set image cut into
+-- `count` tiles of `tile` px, `columns` per row) become its tileset, and
+-- `map` (rows of 0-based tile indices, -1 = empty) its cels. One sprite.
+handlers.create_tilemap = function(params)
+  if not ColorMode.TILEMAP then error("Tilemap layers need Aseprite 1.3 or later") end
+  local t, cols, count, map = params.tile, params.columns, params.count, params.map
+  local rows, mapW = #map, #map[1]
+  local set = Image(params.width, params.height, ColorMode.RGB)
+  local bytes = px.base64Decode(params.rgba)
+  if #bytes ~= params.width * params.height * 4 then error("Expected " .. params.width * params.height * 4 .. " bytes, got " .. #bytes) end
+  set.bytes = bytes
+  local sprite = Sprite(mapW * t, rows * t, ColorMode.RGB)
+  sprite.gridBounds = Rectangle(0, 0, t, t)
+  app.command.NewLayer{ tilemap = true }
+  local layer = app.layer
+  layer.name = params.title or "Terrain"
+  local tileset = layer.tileset
+  tileset.name = params.title or "Terrain"
+  -- Tileset index 0 is the empty tile; set tile i is index i + 1.
+  for i = 0, count - 1 do
+    local img = Image(t, t, ColorMode.RGB)
+    img:drawImage(set, Point(-(i % cols) * t, -(i // cols) * t))
+    sprite:newTile(tileset).image = img
+  end
+  local cells = Image(mapW, rows, ColorMode.TILEMAP)
+  for y = 1, rows do
+    for x = 1, mapW do
+      local i = map[y][x]
+      if i >= 0 then cells:drawPixel(x - 1, y - 1, app.pixelColor.tile(i + 1, 0)) end
+    end
+  end
+  sprite:newCel(layer, 1, cells, Point(0, 0))
+  sprite:deleteLayer(sprite.layers[1])
+  if params.title then sprite.filename = params.title end
+  app.refresh()
+  return { title = params.title or "Terrain", tiles = count, layer = "L" .. layer.id }
+end
+
 handlers.state_block = function() return { text = stateBlock() } end
 
 local M = {}

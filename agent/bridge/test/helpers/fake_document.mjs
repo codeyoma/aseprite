@@ -107,6 +107,22 @@ export function fakeDocument({ width, height, frames = 1, layers = [], palette =
       active = { sprite: s, frame: 1, layer: s.layers[0] };
       return { title: s.title, frames: s.durations.length };
     },
+    create_tilemap: (p) => {
+      // The map drawn flat, plus what the tilemap was made of.
+      const set = new Uint8Array(Buffer.from(p.rgba, "base64")), t = p.tile;
+      const rows = p.map.length, cols = p.map[0].length, W = cols * t;
+      const cel = new Uint8Array(W * rows * t * 4);
+      p.map.forEach((row, y) => row.forEach((i, x) => {
+        if (i < 0) return;
+        const sx = (i % p.columns) * t, sy = Math.floor(i / p.columns) * t;
+        for (let r = 0; r < t; r++) cel.set(set.subarray(((sy + r) * p.width + sx) * 4, ((sy + r) * p.width + sx + t) * 4), ((y * t + r) * W + x * t) * 4);
+      }));
+      const s = { title: p.title ?? "Terrain", width: W, height: rows * t, durations: [100], palette: [], tags: [], tilemap: { tile: t, count: p.count },
+        layers: [{ id: nextId++, name: p.title ?? "Terrain", visible: true, cels: [cel] }] };
+      sprites.push(s);
+      active = { sprite: s, frame: 1, layer: s.layers[0] };
+      return { title: s.title, tiles: p.count, layer: `L${s.layers[0].id}` };
+    },
     ...extra,
   };
   return {

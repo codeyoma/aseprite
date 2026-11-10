@@ -86,6 +86,39 @@ export interface Tileset {
   masks: number[];
 }
 
+/**
+ * A 6-tile template (2 tiles wide, 3 high, the RPG Maker layout) as the
+ * 5-tile row. In quarter-tile units (4 x 6):
+ *   top row:    a lone-tile preview (unused) | inner corners
+ *   rows 2-3:   a 2x2 block of terrain with its border: outer corners,
+ *               edges and fill.
+ * Each output piece takes, for each of its quarters, the quarter at the
+ * matching place in that block.
+ */
+export function templateFrom2x3(tpl: Rgba, t: number): Rgba {
+  if (t % 2) throw new Error("Tile size must be even (tiles are made of quarters)");
+  if (tpl.width < 2 * t || tpl.height < 3 * t) throw new Error(`A 6-tile template is 2 tiles wide and 3 high (${2 * t}x${3 * t} px)`);
+  const h = t / 2, W = 5 * t, out = new Uint8Array(W * t * 4);
+  // [qx, qy] of the source quarter for each piece's NW, NE, SW, SE quarter.
+  const pieces: [number, number][][] = [
+    [[0, 2], [3, 2], [0, 5], [3, 5]], // island: outer corners
+    [[0, 4], [3, 4], [0, 3], [3, 3]], // vertical: west and east edges
+    [[2, 2], [1, 2], [2, 5], [1, 5]], // horizontal: north and south edges
+    [[2, 4], [1, 4], [2, 3], [1, 3]], // fill
+    [[2, 0], [3, 0], [2, 1], [3, 1]], // inner corners
+  ];
+  pieces.forEach((quarters, p) => {
+    quarters.forEach(([qx, qy], q) => {
+      const dx = p * t + (q % 2) * h, dy = Math.floor(q / 2) * h;
+      for (let y = 0; y < h; y++) {
+        const src = ((qy * h + y) * tpl.width + qx * h) * 4;
+        out.set(tpl.data.subarray(src, src + h * 4), ((dy + y) * W + dx) * 4);
+      }
+    });
+  });
+  return { width: W, height: t, data: out };
+}
+
 /** Builds the whole set laid out in `columns` columns. */
 export function buildTileset(template: Rgba, t: number, kind: 47 | 16 = 47, columns = 8): Tileset {
   if (t % 2) throw new Error("Tile size must be even (tiles are made of quarters)");
@@ -118,17 +151,25 @@ export function cellMask(map: boolean[][], x: number, y: number): number {
   return m;
 }
 
+/** The tile index (0-based, into the set) of every terrain cell of a map; -1 for empty cells. */
+export function mapIndices(ts: Tileset, map: boolean[][], kind: 47 | 16 = 47): number[][] {
+  const index = new Map(ts.masks.map((m, i) => [m, i]));
+  return map.map((row, y) => row.map((on, x) => {
+    if (!on) return -1;
+    const m = cellMask(map, x, y);
+    return index.get(kind === 16 ? reduceMask((m & (N | E | S | W)) | NE | SE | SW | NW) : reduceMask(m))!;
+  }));
+}
+
 /** Paints a terrain map with the tileset (a preview, and the seam test). */
 export function renderMap(ts: Tileset, map: boolean[][], kind: 47 | 16 = 47): Rgba {
   const t = ts.tile, rows = map.length, cols = map[0].length;
   const W = cols * t, H = rows * t, data = new Uint8Array(W * H * 4);
-  const index = new Map(ts.masks.map((m, i) => [m, i]));
+  const idx = mapIndices(ts, map, kind);
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
-      if (!map[y][x]) continue;
-      let m = cellMask(map, x, y);
-      m = kind === 16 ? reduceMask((m & (N | E | S | W)) | NE | SE | SW | NW) : reduceMask(m);
-      const i = index.get(m)!;
+      const i = idx[y][x];
+      if (i < 0) continue;
       const sx = (i % ts.columns) * t, sy = Math.floor(i / ts.columns) * t;
       for (let r = 0; r < t; r++) {
         const src = ((sy + r) * ts.image.width + sx) * 4;
@@ -209,4 +250,44 @@ export function seamScore(tile: Rgba): { horizontal: number; vertical: number } 
   for (let y = 0; y < h; y++) if (diff((y * w) * 4, (y * w + w - 1) * 4)) hz++;
   for (let x = 0; x < w; x++) if (diff(x * 4, ((h - 1) * w + x) * 4)) vt++;
   return { horizontal: hz / h, vertical: vt / w };
+}
+
+export interface SeamFix {
+  image: Rgba;
+  /** Pixels changed on the left/right and top/bottom seams. */
+  fixed: { horizontal: number; vertical: number };
+  /** Seams too wide to fix by touching edge pixels (share of the edge that clashes). */
+  tooWide: { horizontal?: number; vertical?: number };
+}
+
+/**
+ * Fixes small seams so a tile repeats cleanly: where an edge pixel clashes
+ * with the pixel on the opposite edge, the one whose color is rarer in the
+ * tile takes the other's color. Only when at most `maxShare` of an edge
+ * clashes; a wider seam needs redrawing, and is reported instead.
+ */
+export function makeSeamless(tile: Rgba, maxShare = 0.25): SeamFix {
+  const { width: w, height: h } = tile;
+  const data = new Uint8Array(tile.data);
+  const key = (i: number) => (data[i] << 24 | data[i + 1] << 16 | data[i + 2] << 8 | data[i + 3]) >>> 0;
+  const count = new Map<number, number>();
+  for (let i = 0; i < data.length; i += 4) count.set(key(i), (count.get(key(i)) ?? 0) + 1);
+  const clash = (i: number, j: number) => Math.abs(data[i] - data[j]) + Math.abs(data[i + 1] - data[j + 1]) + Math.abs(data[i + 2] - data[j + 2]) + Math.abs(data[i + 3] - data[j + 3]) > 60;
+  const settle = (i: number, j: number) => {
+    const [from, to] = (count.get(key(i)) ?? 0) >= (count.get(key(j)) ?? 0) ? [i, j] : [j, i];
+    data.set(data.subarray(from, from + 4), to);
+  };
+  const before = seamScore(tile);
+  const fixed = { horizontal: 0, vertical: 0 }, tooWide: SeamFix["tooWide"] = {};
+  if (before.horizontal > maxShare) tooWide.horizontal = before.horizontal;
+  else for (let y = 0; y < h; y++) {
+    const i = y * w * 4, j = (y * w + w - 1) * 4;
+    if (clash(i, j)) { settle(i, j); fixed.horizontal++; }
+  }
+  if (before.vertical > maxShare) tooWide.vertical = before.vertical;
+  else for (let x = 0; x < w; x++) {
+    const i = x * 4, j = ((h - 1) * w + x) * 4;
+    if (clash(i, j)) { settle(i, j); fixed.vertical++; }
+  }
+  return { image: { width: w, height: h, data }, fixed, tooWide };
 }

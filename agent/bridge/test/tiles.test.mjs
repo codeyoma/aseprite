@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { blobMasks, buildTileset, cellMask, composeTile, godotTileset, reduceMask, renderMap, seamScore, tiledTileset, N, E, S, W, NE, NW, SE, SW } from "../dist/tiles.js";
+import { blobMasks, buildTileset, cellMask, composeTile, godotTileset, makeSeamless, mapIndices, reduceMask, renderMap, seamScore, templateFrom2x3, tiledTileset, N, E, S, W, NE, NW, SE, SW } from "../dist/tiles.js";
+import { fakeDocument } from "./helpers/fake_document.mjs";
 import { SAMPLE_MAP } from "../dist/tile_tools.js";
 import { findTool, runTool } from "../dist/tools.js";
 
@@ -81,10 +82,81 @@ test("seam score and the make_autotile tool", async () => {
   const fake = { async request(m, p) { calls.push({ m, p }); return m === "snapshot" ? { result: { width: tpl.width, height: 16 }, binary: Buffer.concat([Buffer.from(tpl.data), Buffer.alloc(tpl.width * 8 * 4)]) } : { result: { title: p.title } }; } };
   const dir = mkdtempSync(join(tmpdir(), "tiles-"));
   const r = await runTool(findTool("make_autotile"), { export_dir: dir }, fake);
-  const sprites = calls.filter((c) => c.m === "create_sprite");
-  assert.equal(sprites.length, 2, "the set and a preview");
+  const sprites = calls.filter((c) => c.m === "create_sprite" || c.m === "create_tilemap");
+  assert.deepEqual(sprites.map((c) => c.m), ["create_sprite", "create_tilemap"], "the set and a tilemap preview");
   assert.deepEqual([sprites[0].p.width, sprites[0].p.height], [64, 48]);
   assert.match(r.content[0].text, /Made a 47-tile set of 8x8 tiles/);
   assert.equal(JSON.parse(readFileSync(join(dir, "terrain.json"), "utf8")).masks.length, 47);
   assert.match(readFileSync(join(dir, "terrain.tres"), "utf8"), /res:\/\/terrain\.png/);
+});
+
+// A 5-tile row whose every quarter has its own color.
+function quarterRow(t) {
+  const h = t / 2, W = 5 * t, d = new Uint8Array(W * t * 4);
+  for (let p = 0; p < 5; p++) for (let q = 0; q < 4; q++) {
+    const c = [40 + p * 40, 30 + q * 50, 200 - p * 30, 255];
+    for (let y = 0; y < h; y++) for (let x = 0; x < h; x++) d.set(c, ((Math.floor(q / 2) * h + y) * W + p * t + (q % 2) * h + x) * 4);
+  }
+  return { width: W, height: t, data: d };
+}
+// The same pieces laid out as the 2x3 (RPG Maker) template.
+const PLACES = [[[0, 2], [3, 2], [0, 5], [3, 5]], [[0, 4], [3, 4], [0, 3], [3, 3]], [[2, 2], [1, 2], [2, 5], [1, 5]], [[2, 4], [1, 4], [2, 3], [1, 3]], [[2, 0], [3, 0], [2, 1], [3, 1]]];
+function as2x3(row, t) {
+  const h = t / 2, W = 2 * t, d = new Uint8Array(W * 3 * t * 4);
+  PLACES.forEach((quarters, p) => quarters.forEach(([qx, qy], q) => {
+    for (let y = 0; y < h; y++) {
+      const src = ((Math.floor(q / 2) * h + y) * row.width + p * t + (q % 2) * h) * 4;
+      d.set(row.data.subarray(src, src + h * 4), ((qy * h + y) * W + qx * h) * 4);
+    }
+  }));
+  return { width: W, height: 3 * t, data: d };
+}
+
+test("a 6-tile (2x3) template builds the same 47 tiles pixel for pixel", () => {
+  const t = 8, row = quarterRow(t);
+  const a = buildTileset(row, t), b = buildTileset(templateFrom2x3(as2x3(row, t), t), t);
+  assert.equal(a.masks.length, 47);
+  assert.deepEqual(Buffer.from(b.image.data), Buffer.from(a.image.data));
+  assert.throws(() => templateFrom2x3({ width: 8, height: 8, data: new Uint8Array(256) }, 8), /2 tiles wide and 3 high/);
+});
+
+test("map indices match the rendered map; neighbors' shared edges agree", () => {
+  const t = 8, ts = buildTileset(quarterRow(t), t);
+  const idx = mapIndices(ts, SAMPLE_MAP);
+  const img = renderMap(ts, SAMPLE_MAP);
+  for (let y = 0; y < SAMPLE_MAP.length; y++) for (let x = 0; x < SAMPLE_MAP[0].length; x++) {
+    assert.equal(idx[y][x] >= 0, SAMPLE_MAP[y][x]);
+    if (idx[y][x] < 0) continue;
+    const i = idx[y][x], sx = (i % ts.columns) * t, sy = Math.floor(i / ts.columns) * t;
+    const a = ((y * t) * img.width + x * t) * 4, b = (sy * ts.image.width + sx) * 4;
+    assert.deepEqual([...img.data.subarray(a, a + 4)], [...ts.image.data.subarray(b, b + 4)]);
+  }
+});
+
+test("make_seamless fixes small seams and leaves wide ones", () => {
+  const w = 8, d = new Uint8Array(w * w * 4);
+  for (let i = 0; i < d.length; i += 4) d.set([50, 150, 50, 255], i);
+  d.set([250, 250, 250, 255], (3 * w + w - 1) * 4); // one clashing pixel on the right edge
+  const fixed = makeSeamless({ width: w, height: w, data: d });
+  assert.equal(fixed.fixed.horizontal, 1);
+  assert.equal(seamScore(fixed.image).horizontal, 0);
+  const stripes = new Uint8Array(d);
+  for (let y = 0; y < w; y++) stripes.set([250, 0, 0, 255], (y * w + w - 1) * 4);
+  const wide = makeSeamless({ width: w, height: w, data: stripes });
+  assert.equal(wide.fixed.horizontal, 0);
+  assert.equal(wide.tooWide.horizontal, 1);
+});
+
+test("make_autotile from a 2x3 layer opens the preview on a tilemap layer", async () => {
+  const t = 8, tpl = as2x3(quarterRow(t), t);
+  const full = new Uint8Array(32 * 32 * 4);
+  for (let y = 0; y < tpl.height; y++) full.set(tpl.data.subarray(y * tpl.width * 4, (y + 1) * tpl.width * 4), y * 32 * 4);
+  const fake = fakeDocument({ width: 32, height: 32, layers: [{ name: "Template", frames: [full] }] });
+  const r = await runTool(findTool("make_autotile"), { layer: "Template" }, fake);
+  assert.ok(!r.isError, r.content[0].text);
+  assert.match(r.content[0].text, /6-tile \(2x3\)/);
+  const tm = fake.calls.find((c) => c.method === "create_tilemap");
+  assert.ok(tm, "a tilemap");
+  assert.equal(tm.params.count, 47);
+  assert.deepEqual(tm.params.map, mapIndices(buildTileset(quarterRow(t), t), SAMPLE_MAP));
 });

@@ -83,6 +83,8 @@ export interface Document {
   putImage(img: Rgba, o?: PutImage): Promise<{ layer: string; name: string }>;
   createSprite(img: Rgba, o?: NewSprite): Promise<{ title: string }>;
   createAnimation(width: number, height: number, frames: AnimationFrame[], o?: NewSprite & { tags?: { name: string; from: number; to: number }[] }): Promise<{ title: string }>;
+  /** A new sprite with a tilemap layer: `set` cut into `count` tiles of `tile` px, placed by `map` (0-based indices, -1 empty). */
+  createTilemap(set: Rgba, tile: number, columns: number, count: number, map: number[][], o?: { title?: string }): Promise<{ title: string; layer: string }>;
 }
 
 const encode = (img: Rgba) => Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength).toString("base64");
@@ -182,6 +184,14 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       const { result } = await aseprite.request("create_animation", {
         width, height, title: o.title, palette: o.palette, tags: o.tags,
         frames: frames.map((f) => ({ rgba: encode(f.image), duration: f.duration ?? 100 })),
+      }, 120_000);
+      wrote();
+      return result;
+    },
+    async createTilemap(set, tile, columns, count, map, o = {}) {
+      checkSize(set, "create_tilemap");
+      const { result } = await aseprite.request("create_tilemap", {
+        tile, width: set.width, height: set.height, rgba: encode(set), columns, count, map, title: o.title,
       }, 120_000);
       wrote();
       return result;
