@@ -1,15 +1,14 @@
 // Keeps the Claude Code plugin (agent/claude-plugin) in step with the bridge:
 // the guide topics become skills, and the plugin's version is the bridge's.
-// Run by `npm run build`; `node scripts/sync-plugin.mjs --check` fails when
-// the committed plugin is out of date.
+// Part of `npm run gen` (scripts/gen.mjs); `node scripts/sync-plugin.mjs --check`
+// fails when the committed plugin is out of date.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const plugin = join(root, "..", "claude-plugin");
 const guide = join(root, "..", "guide");
-const check = process.argv.includes("--check");
 
 const SKILLS = [
   {
@@ -33,37 +32,51 @@ const SKILLS = [
   },
 ];
 
-const files = new Map();
-for (const s of SKILLS) {
-  const body = readFileSync(join(guide, `${s.topic}.md`), "utf8");
-  files.set(join(plugin, "skills", s.name, "SKILL.md"), `---\nname: ${s.name}\ndescription: ${s.description}\n---\n\n${body}`);
-}
-// Built-in skills (#35) ship in the plugin too, as aseprite-<name>.
-const builtin = join(root, "..", "skills");
-for (const name of existsSync(builtin) ? readdirSync(builtin) : []) {
-  const file = join(builtin, name, "SKILL.md");
-  if (!existsSync(file)) continue;
-  const text = readFileSync(file, "utf8").replace(/^name: .*$/m, `name: aseprite-${name}`);
-  files.set(join(plugin, "skills", `aseprite-${name}`, "SKILL.md"), text);
-}
-
-const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-const manifestPath = join(plugin, ".claude-plugin", "plugin.json");
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-files.set(manifestPath, JSON.stringify({ ...manifest, version }, null, 2) + "\n");
-
-let stale = [];
-for (const [path, text] of files) {
-  const current = existsSync(path) ? readFileSync(path, "utf8") : undefined;
-  if (current === text) continue;
-  if (check) stale.push(path);
-  else {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, text);
-    console.log(`updated ${path}`);
+// Every plugin file this script owns, mapped to its expected contents.
+function pluginFiles() {
+  const files = new Map();
+  for (const s of SKILLS) {
+    const body = readFileSync(join(guide, `${s.topic}.md`), "utf8");
+    files.set(join(plugin, "skills", s.name, "SKILL.md"), `---\nname: ${s.name}\ndescription: ${s.description}\n---\n\n${body}`);
   }
+  // Built-in skills (#35) ship in the plugin too, as aseprite-<name>.
+  const builtin = join(root, "..", "skills");
+  for (const name of existsSync(builtin) ? readdirSync(builtin) : []) {
+    const file = join(builtin, name, "SKILL.md");
+    if (!existsSync(file)) continue;
+    const text = readFileSync(file, "utf8").replace(/^name: .*$/m, `name: aseprite-${name}`);
+    files.set(join(plugin, "skills", `aseprite-${name}`, "SKILL.md"), text);
+  }
+
+  const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+  const manifestPath = join(plugin, ".claude-plugin", "plugin.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  files.set(manifestPath, JSON.stringify({ ...manifest, version }, null, 2) + "\n");
+  return files;
 }
-if (stale.length) {
-  console.error(`The Claude Code plugin is out of date; run npm run build:\n${stale.join("\n")}`);
-  process.exit(1);
+
+// Writes the plugin files that differ, or with check only lists them.
+// Returns the paths that were (or would be) changed.
+export function syncPlugin({ check = false } = {}) {
+  const stale = [];
+  for (const [path, text] of pluginFiles()) {
+    const current = existsSync(path) ? readFileSync(path, "utf8") : undefined;
+    if (current === text) continue;
+    stale.push(path);
+    if (!check) {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, text);
+      console.log(`updated ${path}`);
+    }
+  }
+  return stale;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const check = process.argv.includes("--check");
+  const stale = syncPlugin({ check });
+  if (check && stale.length) {
+    console.error(`The Claude Code plugin is out of date; run npm run gen:\n${stale.join("\n")}`);
+    process.exit(1);
+  }
 }

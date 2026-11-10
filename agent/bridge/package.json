@@ -17,11 +17,13 @@
     "skills"
   ],
   "scripts": {
-    "build": "tsc && node scripts/copy-guide.mjs && node scripts/sync-plugin.mjs",
+    "build": "tsc && node scripts/copy-guide.mjs",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "prepack": "npm run build",
-    "test": "npm run build && node scripts/sync-plugin.mjs --check && node ../tools/check_extension.mjs && node --test test/*.test.mjs"
+    "gen": "node scripts/gen.mjs",
+    "gen:check": "node scripts/gen.mjs --check",
+    "test": "npm run gen:check && npm run build && node ../tools/check_extension.mjs && node ../tools/check_lua_stamp.mjs && node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"

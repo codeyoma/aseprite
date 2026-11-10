@@ -2,3 +2,4 @@ node_modules/
 dist/
 *.aseprite-extension
 tests/smoke_snapshot.png
+tests/.lua-tests-passed

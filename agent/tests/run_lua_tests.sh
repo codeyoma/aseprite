@@ -3,6 +3,7 @@
 # syntax check in a headless Aseprite, each with every parameter the tests
 # use (ext, fixtures, guide, tmp), and prints one line per test.
 # Usage: agent/tests/run_lua_tests.sh [name ...]   (default: all; names without _test.lua)
+# A full passing run writes the stamp agent/tests/.lua-tests-passed.
 # ASEPRITE=<binary> picks the Aseprite build (default: build/bin/aseprite).
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -27,4 +28,7 @@ for n in "${names[@]}"; do
     echo "ok   $n"
   fi
 done
-[ $failed -eq 0 ] && echo "LUA TESTS PASSED" || { echo "LUA TESTS FAILED ($failed)"; exit 1; }
+[ $failed -eq 0 ] || { echo "LUA TESTS FAILED ($failed)"; exit 1; }
+echo "LUA TESTS PASSED"
+# A full passing run records the stamp that npm test checks (tools/check_lua_stamp.mjs).
+if [ $# -eq 0 ]; then node "$root/agent/tools/check_lua_stamp.mjs" --write || exit 1; fi

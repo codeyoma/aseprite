@@ -13,6 +13,7 @@ import { findTool, runTool } from "../dist/tools.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const SKILLS = join(here, "..", "..", "skills");
 const EVALS = join(here, "..", "..", "tests", "skills");
+const LUA_TESTS = join(here, "..", "..", "tests");
 
 const skills = readdirSync(SKILLS).filter((n) => statSync(join(SKILLS, n)).isDirectory() && existsSync(join(SKILLS, n, "SKILL.md"))).sort();
 const textOf = (r) => (r?.content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
@@ -33,8 +34,15 @@ for (const name of skills) {
     const ev = (await import(pathToFileURL(file).href)).default;
     assert.equal(ev?.skill, name, `${name}.eval.mjs exports skill '${ev?.skill}'`);
     if (ev.skip) {
-      assert.equal(typeof ev.skip, "string");
-      t.skip(ev.skip);
+      // A plain reason, or { reason, luaTest } naming the headless Lua test
+      // (agent/tests/<luaTest>, run by tests/run_lua_tests.sh) that covers it.
+      const reason = typeof ev.skip === "string" ? ev.skip : ev.skip.reason;
+      assert.equal(typeof reason, "string", "skip is a reason or { reason, luaTest }");
+      if (typeof ev.skip === "object") {
+        assert.equal(typeof ev.skip.luaTest, "string", "skip object names its luaTest");
+        assert.ok(existsSync(join(LUA_TESTS, ev.skip.luaTest)), `skip.luaTest '${ev.skip.luaTest}' not found in agent/tests`);
+      }
+      t.skip(typeof ev.skip === "object" ? `${reason} (covered by ${ev.skip.luaTest})` : reason);
       return;
     }
     const skill = parseSkill(readFileSync(join(SKILLS, name, "SKILL.md"), "utf8"), name, "built-in");

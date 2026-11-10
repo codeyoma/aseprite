@@ -31,25 +31,20 @@ jobs:
           cache: npm
           cache-dependency-path: agent/bridge/package-lock.json
 
-      - name: Build bridge
+      - name: Install bridge dependencies
         working-directory: agent/bridge
-        run: |
-          npm ci
-          npm run build
+        run: npm ci
 
       - name: Lua for the syntax check
         run: sudo apt-get install -y lua5.4
 
-      # The same command as locally: build, plugin copies up to date,
-      # extension checks (file access, Lua syntax), unit tests.
+      # The same command as locally: generated files up to date (plugin
+      # copies, commands.json), build, extension checks (file access, Lua
+      # syntax), Lua-tests stamp (a warning here: no Aseprite build in CI),
+      # unit tests. The build output is what the packaging steps use.
       - name: Tests
         working-directory: agent/bridge
         run: npm test
-
-      - name: Check the command catalog is up to date
-        run: |
-          python3 tools/gen_commands.py
-          git diff --exit-code bridge/src/commands.json
 
       - name: Pack bridge
         working-directory: agent/bridge
