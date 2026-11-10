@@ -27,7 +27,7 @@ test("every tool is fully defined", () => {
     assert.ok(t.title && t.description, `${t.name}: title and description`);
     assert.ok(t.kind === "edit" || t.kind === "read", `${t.name}: kind`);
     assert.ok(t.label({}).length > 0, `${t.name}: label`);
-    const required = new Set(["execute_lua", "run_command", "propose_variations", "save_command", "run_saved_command", "delete_saved_command"]);
+    const required = new Set(["execute_lua", "run_command", "propose_variations", "save_command", "run_saved_command", "delete_saved_command", "apply_timeline_text"]);
     assert.ok(t.input.safeParse({}).success || required.has(t.name), `${t.name}: optional input`);
   }
 });
@@ -172,4 +172,19 @@ test("propose_variations: names the candidates and how the user picks", async ()
   assert.equal(textOf(res), 'Showing 2 variations of "sword": AI: sword v1, AI: sword v2. The user sees them in the chat panel and will keep one or discard them.');
   assert.deepEqual(fake.calls[0], { method: "propose_variations", params: { task: "sword" } });
   assert.equal(toolKind("propose_variations"), "read");
+});
+
+test("timeline text: plan, apply, errors with line numbers", async () => {
+  const get = await runTool(findTool("get_timeline_text"), {}, fakeAseprite({ get_timeline_text: { result: { text: "frames 4\n" } } }));
+  assert.equal(textOf(get), "frames 4\n");
+  const planned = await runTool(findTool("apply_timeline_text"), { text: "fps 10", plan: true },
+    fakeAseprite({ apply_timeline_text: (p) => ({ result: { ok: true, errors: [], changes: ["Frames 1-4 duration 100ms -> 100ms"], plan: p.plan } }) }));
+  assert.match(textOf(planned), /^Planned changes \(not applied\):\n- Frames 1-4/);
+  const bad = await runTool(findTool("apply_timeline_text"), { text: "tg x" },
+    fakeAseprite({ apply_timeline_text: { result: { ok: false, errors: ["line 1: unknown line 'tg'"], changes: [] } } }));
+  assert.equal(bad.isError, true);
+  assert.match(textOf(bad), /line 1: unknown line 'tg'/);
+  const none = await runTool(findTool("apply_timeline_text"), { text: "frames 4" },
+    fakeAseprite({ apply_timeline_text: { result: { ok: true, errors: [], changes: [] } } }));
+  assert.equal(textOf(none), "No changes: the timeline already matches.");
 });

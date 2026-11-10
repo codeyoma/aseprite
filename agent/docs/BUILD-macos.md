@@ -29,7 +29,7 @@ Aseprite only loads extensions from real folders: it skips a symlinked extension
 ```bash
 E="$HOME/Library/Application Support/Aseprite/extensions/aseprite-agent"
 mkdir -p "$E"
-for f in package.json protocol.json agent.lua document_handlers.lua bridge_connection.lua chat_panel.lua conversation.lua turn_history.lua step_capture.lua attachments.lua variations.lua saved_commands.lua; do
+for f in package.json protocol.json agent.lua document_handlers.lua bridge_connection.lua chat_panel.lua conversation.lua turn_history.lua step_capture.lua attachments.lua variations.lua saved_commands.lua timeline_text.lua; do
   ln -sf "$PWD/agent/extension/$f" "$E/$f"
 done
 ```

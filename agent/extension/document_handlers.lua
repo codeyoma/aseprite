@@ -12,6 +12,7 @@
 local chunkDir = "."     -- set by new(): agent code gets its own chunk name here
 local PROTOCOL = nil     -- set by new()
 local variations         -- variations.lua, loaded by new()
+local timelineText       -- timeline_text.lua, loaded by new()
 
 ---------------------------------------------------------------------------
 -- Utilities
@@ -404,6 +405,27 @@ end
 local capture
 -- AI layers and variations (variations.lua), and who shows them; set by M.new.
 local onVariations
+
+-- Timeline as text (#32), see timeline_text.lua.
+handlers.get_timeline_text = function()
+  local s = app.sprite
+  if not s then error("No active sprite") end
+  return { text = timelineText.serialize(s) }
+end
+
+handlers.apply_timeline_text = function(params)
+  local s = app.sprite
+  if not s then error("No active sprite") end
+  local spec, errors = timelineText.parse(params.text or "")
+  if #errors > 0 then return { ok = false, errors = errors, changes = {} } end
+  local changes
+  if params.plan then
+    changes, errors = timelineText.plan(s, spec, layerById)
+  else
+    changes, errors = timelineText.apply(s, spec, layerById)
+  end
+  return { ok = #errors == 0, errors = errors, changes = changes, applied = (not params.plan and #errors == 0 and #changes > 0) }
+end
 
 -- Saved commands (#26): syntax check before saving, and a refresh after.
 local onCommandsChanged
@@ -1183,6 +1205,7 @@ function M.new(opts)
   chunkDir = assert(opts and opts.chunkDir, "chunkDir required")
   capture = opts.capture
   variations = dofile(app.fs.joinPath(chunkDir, "variations.lua"))
+  timelineText = dofile(app.fs.joinPath(chunkDir, "timeline_text.lua"))
   onVariations = opts.onVariations
   onCommandsChanged = opts.onCommandsChanged
   PROTOCOL = assert(opts.protocol, "protocol required")

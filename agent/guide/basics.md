@@ -31,6 +31,25 @@ local l = variationLayer("sword", 2)  -- candidate 2
 app.sprite:newCel(l, app.frame, img, Point(0, 0))
 ```
 
+## Timeline as text
+
+For frame counts, durations, tags and linked cels, use `get_timeline_text` and `apply_timeline_text` instead of Lua. Read the text, edit it, apply it: one call, one undo step.
+
+```
+frames 12
+frame 1-4 duration 100ms
+frame 5-12 duration 80ms
+tag idle 1-4 ping-pong
+tag walk 5-12 forward repeat=2
+layer Shadow link 5-12
+```
+
+- `frames N` adds copies of the last frame or removes frames from the end. Draw new content with Lua afterwards.
+- `fps N` sets every frame; a later `frame A-B duration` line overrides a range.
+- Tags not listed are removed, so start from `get_timeline_text`.
+- `layer NAME link A-B` links the cels to the one in A; `unlink A-B` gives each its own copy. Quote names with spaces: `layer "Back arm" link 1-4`.
+- `plan: true` returns the changes without applying them. Errors name the line.
+
 ## Mentions and links
 
 Users can mention objects; you receive them as `Body (aseprite://layer/L12)`. The scheme:

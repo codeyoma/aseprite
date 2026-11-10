@@ -116,6 +116,7 @@ Produced by [demos/run_demos.mjs](demos/run_demos.mjs), which calls the same MCP
 | `snapshot` | PNG of the sprite or a layer, upscaled so pixels are visible |
 | `read_pixels` | A region as a text grid with a color legend |
 | `save_command` / `run_saved_command` / `list_saved_commands` / `delete_saved_command` | Keep Lua the agent wrote as a command in **My Commands**, versioned with git |
+| `get_timeline_text` / `apply_timeline_text` | The timeline (frames, durations, tags, linked cels) as editable text, applied in one undo step or previewed as a plan |
 | `propose_variations` | Shows the user the candidates the agent built (`variationLayer`) as thumbnails to keep one or discard |
 | `diff_visual` | What changed on the active frame since the last edit step or a saved checkpoint: PNG with changed pixels in red, bounds and count |
 | `check` | Pixel-art checks (off-palette, orphans, semi-transparent, empty cels, frame timing, outside canvas) with fixes |
