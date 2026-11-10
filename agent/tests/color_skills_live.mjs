@@ -44,4 +44,20 @@ const pico = ["000000","1d2b53","7e2553","008751","ab5236","5f574f","c2c3c7","ff
 const used = [...textOf(cols).matchAll(/#([0-9a-f]{6})/g)].map((m) => m[1]);
 check("remap: only PICO-8 colors remain", used.length > 0 && used.every((h) => pico.includes(h)), used);
 
+// 4. Palette files (#62): Aseprite's formats directly, and the agent saving a Lospec .hex.
+const { mkdtempSync, readFileSync, existsSync } = await import("node:fs");
+const { tmpdir } = await import("node:os");
+const { join } = await import("node:path");
+const out = mkdtempSync(join(tmpdir(), "palfiles-"));
+for (const ext of ["aseprite", "pal", "act"]) {
+  const path = join(out, `ref.${ext}`);
+  const r = await c.call("palette_from_image", { source: "file", path: refPng, save: path });
+  const n = await lua(`local p = Palette{ fromFile = ${JSON.stringify(path)} } return p and #p or 0`);
+  check(`saved and reloaded a .${ext} palette`, !r.isError && n >= 4, { n, text: textOf(r).split("\n").at(-1) });
+}
+const hexPath = join(out, "lospec.hex");
+await lua(`Sprite(16, 16, ColorMode.RGB) AsepriteAgent.attach{ path = ${JSON.stringify(refPng)} } return true`);
+await chat(`/skill:extract-palette Save the attached image's palette as a Lospec .hex file at ${hexPath}. Don't change the sprite.`);
+const lines = existsSync(hexPath) ? readFileSync(hexPath, "utf8").trim().split("\n") : [];
+check("the agent saved a .hex palette", lines.length === 4 && lines.every((l) => /^[0-9a-f]{6}$/.test(l)), lines);
 done("COLOR SKILLS");

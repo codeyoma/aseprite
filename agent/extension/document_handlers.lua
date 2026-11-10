@@ -16,6 +16,7 @@ local timelineText       -- timeline_text.lua, loaded by new()
 local scopeGuard         -- scope_guard.lua, loaded by new()
 local wireParams         -- wire_params.lua, loaded by new()
 local px                 -- pixels.lua, loaded by new()
+local writePalette       -- opts.writePalette(palette, path), from agent.lua
 
 
 ---------------------------------------------------------------------------
@@ -1762,6 +1763,17 @@ handlers.render_text = function(params)
   return { width = out.width, height = out.height }, out.bytes
 end
 
+-- Saves colors as a palette file in any format Aseprite writes (#62): .act,
+-- .col, .gpl, .hex, .pal, or an image such as .png or .aseprite.
+handlers.save_palette = function(params)
+  local pal = Palette(#params.colors)
+  for i, h in ipairs(params.colors) do pal:setColor(i - 1, px.color(h)) end
+  -- The file is written by agent.lua: Aseprite asks permission per script file.
+  writePalette(pal, params.path)
+  if not app.fs.isFile(params.path) then error("Aseprite could not save a palette as " .. params.path) end
+  return { path = params.path, colors = #params.colors }
+end
+
 handlers.state_block = function() return { text = stateBlock() } end
 
 local M = {}
@@ -1774,6 +1786,7 @@ function M.new(opts)
   scopeGuard = dofile(app.fs.joinPath(chunkDir, "scope_guard.lua"))
   wireParams = dofile(app.fs.joinPath(chunkDir, "wire_params.lua"))
   px = dofile(app.fs.joinPath(chunkDir, "pixels.lua"))
+  writePalette = opts.writePalette or function(pal, path) pal:saveAs(path) end
   onVariations = opts.onVariations
   onCommandsChanged = opts.onCommandsChanged
   PROTOCOL = assert(opts.protocol, "protocol required")

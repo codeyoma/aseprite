@@ -69,7 +69,9 @@ function init(plugin)
   local handlers = load("document_handlers.lua").new{ chunkDir = plugin.path, protocol = protocol, capture = capture,
     onVariations = function(info) if Panel then Panel.showVariations(info) end end,
     -- The bridge says which folder it saved to (ASEPRITE_AGENT_COMMANDS can move it).
-    onCommandsChanged = function(dir) if saved then saved:reload(dir) end end }
+    onCommandsChanged = function(dir) if saved then saved:reload(dir) end end,
+    -- Writing files stays in this script (Aseprite asks permission per script file).
+    writePalette = function(pal, path) pal:saveAs(path) end }
   saved = load("saved_commands.lua").new{
     dir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "commands"),
     readFile = readFile, plugin = plugin, executeLua = handlers.executeLua,

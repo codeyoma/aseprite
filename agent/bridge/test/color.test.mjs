@@ -122,3 +122,25 @@ test("remap_to_palette sends one color map; adjust_tone matches a reference", as
   const t = await runTool(findTool("adjust_tone"), { match_to: { source: "layer", layer: "Ref" } }, fake2);
   assert.match(textOf(t), /Before: .*more saturated.*After: the tones match closely/s);
 });
+
+test("palette_from_image: min_share, ignore_alpha_below and save formats", async () => {
+  const { mkdtempSync, readFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { findTool, runTool } = await import("../dist/tools.js");
+  const sent = [];
+  // 1000 red, 999 blue, 1 stray green, 50 half-transparent yellow.
+  const colors = [{ hex: "#ff0000", count: 1000 }, { hex: "#0000ff", count: 999 }, { hex: "#00ff00", count: 1 }, { hex: "#ffff0070", count: 50 }];
+  const fake = { async request(m, p) { sent.push([m, p]); return { result: m === "collect_colors" ? { colors } : { ok: true } }; } };
+  const dir = mkdtempSync(join(tmpdir(), "pal-"));
+  let r = await runTool(findTool("palette_from_image"), { min_share: 0.002, save: join(dir, "p.hex") }, fake);
+  assert.match(r.content[0].text, /2 distinct colors \(1 rare color under 0\.2% dropped\)/);
+  assert.deepEqual(readFileSync(join(dir, "p.hex"), "utf8").trim().split("\n").sort(), ["0000ff", "ff0000"]);
+  r = await runTool(findTool("palette_from_image"), { ignore_alpha_below: 100, save_gpl: join(dir, "p.gpl") }, fake);
+  assert.match(r.content[0].text, /4 distinct colors/);
+  assert.match(readFileSync(join(dir, "p.gpl"), "utf8"), /^GIMP Palette\nName: p\n/);
+  await runTool(findTool("palette_from_image"), { save: join(dir, "p.pal") }, fake);
+  const save = sent.find(([m]) => m === "save_palette");
+  assert.deepEqual(save[1].path, join(dir, "p.pal"));
+  assert.equal(save[1].colors.length, 3);
+});

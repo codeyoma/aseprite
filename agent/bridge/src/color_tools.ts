@@ -3,6 +3,7 @@
 // gathers colors (collect_colors) and applies color maps (apply_color_map).
 import { readFileSync, writeFileSync } from "node:fs";
 import { PNG } from "pngjs";
+import { basename } from "node:path";
 import * as z from "zod/v4";
 import {
   adjust, describeToneDifference, hex, matchPalettes, nearDuplicates, nearest, parseHex, quantize, ramps, remap,
@@ -78,19 +79,27 @@ export const COLOR_TOOLS: Tool[] = [
       "The colors an image, layer, selection or the whole sprite uses: counts and shares, grouped into ramps (dark to " +
       "light), near-duplicate colors, and the closest palettes among those available (Aseprite's and the user's). " +
       "Reduces to max_colors with k-means in OKLab when there are more. Can set the result as the sprite palette, " +
-      "draw swatches on an 'AI: palette' layer, or save a .gpl file.",
+      "draw swatches on an 'AI: palette' layer, or save it as a palette file (.gpl, .hex, .pal, .act, .col, or .aseprite/.png). " +
+      "ignore_alpha_below skips soft edges; min_share drops colors used by too few pixels (anti-aliasing noise) before reducing.",
     input: sourceSchema.extend({
       max_colors: z.number().int().min(2).max(256).optional().describe("Default 32."),
       method: z.enum(["exact", "median-cut", "k-means"]).optional().describe("Default k-means (only used above max_colors)."),
       set_palette: z.boolean().optional().describe("Replace the sprite palette with the result."),
       swatches: z.boolean().optional().describe("Draw the palette on a new 'AI: palette' layer."),
-      save_gpl: z.string().optional().describe("Save the palette as a GIMP .gpl file at this path."),
+      save: z.string().optional().describe("Save the palette here; the extension picks the format: .gpl, .hex, .pal, .act, .col, .aseprite, .png."),
+      save_gpl: z.string().optional().describe("Same as save (older name)."),
+      ignore_alpha_below: z.number().int().min(1).max(255).optional().describe("Pixels with less alpha don't count. Default 128."),
+      min_share: z.number().min(0).max(0.5).optional().describe("Drop colors covering less than this share of the pixels (e.g. 0.002). Default 0."),
     }),
     kind: "edit",
     label: () => "Extract palette",
     async run(input, aseprite) {
-      const all = tally(await gatherColors(input, aseprite));
-      if (!all.length) return failure(`No opaque pixels in ${describeSource(input)}.`);
+      const counted = tally(await gatherColors(input, aseprite), input.ignore_alpha_below ?? 128);
+      if (!counted.length) return failure(`No opaque pixels in ${describeSource(input)}.`);
+      const pixelsCounted = counted.reduce((n, c) => n + c.count, 0);
+      const all = input.min_share ? counted.filter((c) => c.count / pixelsCounted >= input.min_share!) : counted;
+      if (!all.length) return failure(`No color covers ${pct(input.min_share!)} of ${describeSource(input)}.`);
+      const dropped = counted.length - all.length;
       const max = input.max_colors ?? 32;
       const reduced = all.length > max;
       const colors = reduced ? quantize(all, max, input.method ?? "k-means") : all;
@@ -100,7 +109,7 @@ export const COLOR_TOOLS: Tool[] = [
       const matches = matchPalettes(all, knownPalettes(), 3);
       const ordered = groups.flatMap((g) => g.colors);
       const lines = [
-        `${describeSource(input)}: ${all.length} distinct colors${reduced ? `, reduced to ${colors.length} (${input.method ?? "k-means"})` : ""}.`,
+        `${describeSource(input)}: ${all.length} distinct colors${dropped ? ` (${dropped} rare color${dropped === 1 ? "" : "s"} under ${pct(input.min_share!)} dropped)` : ""}${reduced ? `, reduced to ${colors.length} (${input.method ?? "k-means"})` : ""}.`,
         "Ramps (dark to light):",
         ...groups.map((g) => `- ${g.name}: ${g.colors.map((c) => `${hex(c)} ${pct(((c as Counted).count ?? 0) / total)}`).join(", ")}`),
       ];
@@ -118,9 +127,9 @@ export const COLOR_TOOLS: Tool[] = [
         await aseprite.request("draw_swatches", { colors: ordered.map(hex), name: "palette" });
         lines.push("Drew swatches on a new 'AI: palette' layer.");
       }
-      if (input.save_gpl) {
-        writeFileSync(input.save_gpl, gpl(ordered, "Extracted"));
-        lines.push(`Saved ${input.save_gpl}.`);
+      const save = input.save ?? input.save_gpl;
+      if (save) {
+        lines.push(`Saved ${await savePalette(save, ordered, aseprite)}.`);
       }
       return { content: [text(lines.join("\n"))] };
     },
@@ -241,6 +250,17 @@ export const COLOR_TOOLS: Tool[] = [
     },
   },
 ];
+
+/**
+ * Saves a palette by its extension: .gpl and .hex are written here, other
+ * formats (.pal, .act, .col, .aseprite, .png…) by Aseprite.
+ */
+export async function savePalette(path: string, colors: RGBA[], aseprite: AsepriteRequester): Promise<string> {
+  if (/\.gpl$/i.test(path)) writeFileSync(path, gpl(colors, basename(path).replace(/\.gpl$/i, "")));
+  else if (/\.hex$/i.test(path)) writeFileSync(path, colors.map((c) => hex(c).slice(1)).join("\n") + "\n");
+  else await aseprite.request("save_palette", { colors: colors.map(hex), path });
+  return path;
+}
 
 export function gpl(colors: RGBA[], name: string): string {
   return ["GIMP Palette", `Name: ${name}`, "#", ...colors.map((c) => `${String(c.r).padStart(3)} ${String(c.g).padStart(3)} ${String(c.b).padStart(3)}\t${hex(c)}`)].join("\n") + "\n";
