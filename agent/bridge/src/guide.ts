@@ -108,8 +108,8 @@ function readDir(dir: string, source: Skill["source"]): Skill[] {
   return out;
 }
 
-/** Built-in skills: one folder per skill with a SKILL.md. */
-function readSkillFolders(dir: string | undefined): Skill[] {
+/** Skills as folders with a SKILL.md (built-ins, and user skills laid out the same way). */
+function readSkillFolders(dir: string | undefined, source: Skill["source"] = "built-in"): Skill[] {
   if (!dir) return [];
   let names: string[];
   try {
@@ -122,7 +122,7 @@ function readSkillFolders(dir: string | undefined): Skill[] {
     const file = join(dir, n, "SKILL.md");
     if (!existsSync(file)) continue;
     try {
-      out.push(parseSkill(readFileSync(file, "utf8"), n.toLowerCase(), "built-in"));
+      out.push(parseSkill(readFileSync(file, "utf8"), n.toLowerCase(), source));
     } catch {
       // unreadable: skip
     }
@@ -135,7 +135,7 @@ export function allSkills(): Map<string, Skill> {
   const map = new Map<string, Skill>();
   for (const s of readDir(GUIDE_DIR, "guide")) map.set(s.name, s);
   for (const s of readSkillFolders(BUILTIN_DIR)) map.set(s.name, s);
-  for (const s of readDir(skillsDir(), "user")) map.set(s.name, s);
+  for (const s of [...readDir(skillsDir(), "user"), ...readSkillFolders(skillsDir(), "user")]) map.set(s.name, s);
   return map;
 }
 

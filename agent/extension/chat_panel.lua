@@ -588,7 +588,8 @@ return function(deps)
         gc.color = C.text
         gc:fillText(it.title, x, ry + u)
         gc.color = C.faint
-        local tag = it.kind == "command" and ("/" .. it.name) or (it.source == "user" and "your skill" or "skill")
+        local tag = it.kind == "command" and ("/" .. it.name)
+          or ((it.category or "Skill") .. (it.source == "user" and " · your skill" or ""))
         gc:fillText(tag, x + gc:measureText(it.title).width + u * 3, ry + u)
         gc.color = C.dim
         local desc = it.description or ""
@@ -806,7 +807,11 @@ return function(deps)
       end
       if ok then out[#out + 1] = { it = it, score = score } end
     end
+    -- A bare "/" lists everything grouped by category (your commands last);
+    -- typing ranks by how well the words match.
+    local function group(it) return it.kind == "command" and "~" or (it.category or "Other") end
     table.sort(out, function(a, b)
+      if #words == 0 and group(a.it) ~= group(b.it) then return group(a.it) < group(b.it) end
       if a.score ~= b.score then return a.score > b.score end
       return a.it.title < b.it.title
     end)
@@ -829,6 +834,9 @@ return function(deps)
     setSuggest(nil)
     for _, n in ipairs(it.needs or {}) do
       if n == "image" and #pending == 0 then app.tip("This skill needs an image: attach one with +") end
+      if n == "selection" and (not app.sprite or app.sprite.selection.isEmpty) then
+        app.tip("This skill works on a selection: select an area first")
+      end
     end
   end
 
@@ -903,6 +911,10 @@ return function(deps)
         -- A follow-up in a conversation that already has the image is fine.
         if n == "image" and #pending == 0 and not imageSent then
           app.tip(skill.title .. " needs an image: attach one with + first")
+          return
+        end
+        if n == "selection" and (not app.sprite or app.sprite.selection.isEmpty) then
+          app.tip(skill.title .. " works on a selection: select an area first")
           return
         end
       end
