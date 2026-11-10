@@ -1,816 +1,822 @@
 [
- {
-  "name": "adjust_tone",
-  "title": "Adjust tone",
-  "kind": "edit",
-  "label": "Adjust tone",
-  "input": [
-   "contrast",
-   "frames",
-   "hue",
-   "layer",
-   "lightness",
-   "match_to",
-   "saturation",
-   "snap_to_palette",
-   "strength"
-  ]
- },
- {
-  "name": "ambient_occlusion",
-  "title": "Ambient occlusion",
-  "kind": "edit",
-  "label": "Ambient occlusion",
-  "input": [
-   "as_mask",
-   "frames",
-   "height_layer",
-   "layer",
-   "levels",
-   "radius",
-   "source",
-   "strength"
-  ]
- },
- {
-  "name": "anti_alias",
-  "title": "Anti-alias steps",
-  "kind": "edit",
-  "label": "Anti-alias steps",
-  "input": [
-   "frames",
-   "layer",
-   "snap_to_palette",
-   "strength"
-  ]
- },
- {
-  "name": "apply_timeline_text",
-  "title": "Apply timeline text",
-  "kind": "edit",
-  "label": "Apply timeline changes",
-  "input": [
-   "plan",
-   "text"
-  ]
- },
- {
-  "name": "check",
-  "title": "Check pixel art",
-  "kind": "read",
-  "label": "Check pixel art",
-  "input": [
-   "frames",
-   "layer",
-   "rules"
-  ]
- },
- {
-  "name": "color_stats",
-  "title": "Compare tone",
-  "kind": "read",
-  "label": "Compare tone",
-  "input": [
-   "compare_to",
-   "frames",
-   "layer",
-   "path",
-   "source"
-  ]
- },
- {
-  "name": "delete_saved_command",
-  "title": "Delete a saved command",
-  "kind": "edit",
-  "label": "Delete saved command",
-  "input": [
-   "name"
-  ]
- },
- {
-  "name": "detect_background",
-  "title": "Detect background",
-  "kind": "edit",
-  "label": "Detect background",
-  "input": [
-   "frame",
-   "layer",
-   "out",
-   "path",
-   "remove",
-   "source",
-   "tolerance"
-  ]
- },
- {
-  "name": "detect_pixel_grid",
-  "title": "Detect pixel grid",
-  "kind": "read",
-  "label": "Detect pixel grid",
-  "input": [
-   "frame",
-   "layer",
-   "path",
-   "source"
-  ]
- },
- {
-  "name": "diff_visual",
-  "title": "Visual diff",
-  "kind": "read",
-  "label": "Compare with before",
-  "input": [
-   "checkpoint",
-   "save",
-   "scale"
-  ]
- },
- {
-  "name": "direction_plan",
-  "title": "Plan directions",
-  "kind": "read",
-  "label": "Plan directions",
-  "input": [
-   "count"
-  ]
- },
- {
-  "name": "dither_gradient",
-  "title": "Dithered gradient",
-  "kind": "edit",
-  "label": "Dithered gradient",
-  "input": [
-   "area",
-   "colors",
-   "direction",
-   "frame",
-   "mask_layer",
-   "pattern"
-  ]
- },
- {
-  "name": "dither_to_palette",
-  "title": "Dither to palette",
-  "kind": "edit",
-  "label": "Dither to palette",
-  "input": [
-   "colors",
-   "frames",
-   "layer",
-   "palette",
-   "pattern",
-   "strength"
-  ]
- },
- {
-  "name": "draw_text",
-  "title": "Draw pixel text",
-  "kind": "edit",
-  "label": "Draw text",
-  "input": [
-   "align",
-   "color",
-   "font",
-   "frame",
-   "outline",
-   "scale",
-   "shadow",
-   "size",
-   "text",
-   "x",
-   "y"
-  ]
- },
- {
-  "name": "execute_lua",
-  "title": "Run Lua in Aseprite",
-  "kind": "edit",
-  "label": "Run Lua",
-  "input": [
-   "code",
-   "label",
-   "transaction"
-  ]
- },
- {
-  "name": "export_for_engine",
-  "title": "Export for a game engine",
-  "kind": "edit",
-  "label": "Export for engine",
-  "input": [
-   "columns",
-   "dir",
-   "engine",
-   "extrude",
-   "name",
-   "padding",
-   "pivot",
-   "pixels_per_unit",
-   "power_of_two",
-   "scale",
-   "trim"
-  ]
- },
- {
-  "name": "export_normal_sheet",
-  "title": "Export color and normal sheets",
-  "kind": "edit",
-  "label": "Export normal sheet",
-  "input": [
-   "dir",
-   "frames",
-   "layer",
-   "name",
-   "normal_layer"
-  ]
- },
- {
-  "name": "export_palette_lut",
-  "title": "Export palette swap LUT",
-  "kind": "edit",
-  "label": "Export palette LUT",
-  "input": [
-   "dir",
-   "frame",
-   "layer",
-   "name",
-   "variants"
-  ]
- },
- {
-  "name": "find_sprites",
-  "title": "Find sprites",
-  "kind": "edit",
-  "label": "Find sprites",
-  "input": [
-   "as",
-   "frame",
-   "layer",
-   "merge_distance",
-   "min_pixels",
-   "name",
-   "path",
-   "row_tags",
-   "source"
-  ]
- },
- {
-  "name": "fix_pixel_art",
-  "title": "Fix pixel art",
-  "kind": "edit",
-  "label": "Fix pixel art",
-  "input": [
-   "cell",
-   "frame",
-   "layer",
-   "max_colors",
-   "merge",
-   "name",
-   "offset_x",
-   "offset_y",
-   "path",
-   "source",
-   "trim"
-  ]
- },
- {
-  "name": "get_context",
-  "title": "Get user context",
-  "kind": "read",
-  "label": "Read selection",
-  "input": []
- },
- {
-  "name": "get_state",
-  "title": "Get Aseprite state",
-  "kind": "read",
-  "label": "Read sprite state",
-  "input": []
- },
- {
-  "name": "get_timeline_text",
-  "title": "Timeline as text",
-  "kind": "read",
-  "label": "Read the timeline",
-  "input": []
- },
- {
-  "name": "import_sheet",
-  "title": "Import sprite sheet",
-  "kind": "edit",
-  "label": "Import sprite sheet",
-  "input": [
-   "align",
-   "atlas",
-   "cell_h",
-   "cell_w",
-   "duration_ms",
-   "margin_x",
-   "margin_y",
-   "merge_distance",
-   "mode",
-   "name",
-   "order",
-   "padding_x",
-   "padding_y",
-   "path",
-   "row_tags"
-  ]
- },
- {
-  "name": "iso_grid",
-  "title": "Isometric grid guide",
-  "kind": "edit",
-  "label": "Isometric grid",
-  "input": [
-   "tile"
-  ]
- },
- {
-  "name": "iso_project",
-  "title": "Project to isometric",
-  "kind": "edit",
-  "label": "Project to isometric",
-  "input": [
-   "frame",
-   "layer"
-  ]
- },
- {
-  "name": "layers_to_voxels",
-  "title": "Layers to isometric object",
-  "kind": "edit",
-  "label": "Layers to isometric",
-  "input": [
-   "directions",
-   "frame",
-   "name",
-   "save_vox"
-  ]
- },
- {
-  "name": "light_preview",
-  "title": "Preview lighting",
-  "kind": "read",
-  "label": "Preview lighting",
-  "input": [
-   "convention",
-   "frame",
-   "layer",
-   "light",
-   "masks",
-   "normal_layer"
-  ]
- },
- {
-  "name": "list_commands",
-  "title": "List Aseprite commands",
-  "kind": "read",
-  "label": "Look up commands",
-  "input": [
-   "filter"
-  ]
- },
- {
-  "name": "list_saved_commands",
-  "title": "List saved commands",
-  "kind": "read",
-  "label": "List saved commands",
-  "input": []
- },
- {
-  "name": "list_skills",
-  "title": "List skills",
-  "kind": "read",
-  "label": "List skills",
-  "input": [
-   "query"
-  ]
- },
- {
-  "name": "make_autotile",
-  "title": "Make autotile set",
-  "kind": "edit",
-  "label": "Make 47-tile set",
-  "input": [
-   "columns",
-   "export_dir",
-   "frame",
-   "kind",
-   "layer",
-   "name",
-   "path",
-   "preview",
-   "template",
-   "tile"
-  ]
- },
- {
-  "name": "make_masks",
-  "title": "Make emission and specular masks",
-  "kind": "edit",
-  "label": "Make masks",
-  "input": [
-   "emission",
-   "frames",
-   "kind",
-   "layer",
-   "specular"
-  ]
- },
- {
-  "name": "make_ramp",
-  "title": "Make color ramp",
-  "kind": "edit",
-  "label": "Make ramp",
-  "input": [
-   "add_to_palette",
-   "base",
-   "hue_shift",
-   "steps"
-  ]
- },
- {
-  "name": "make_seamless",
-  "title": "Fix tile seams",
-  "kind": "edit",
-  "label": "Fix tile seams",
-  "input": [
-   "frame",
-   "layer",
-   "max_share",
-   "out",
-   "path"
-  ]
- },
- {
-  "name": "make_ui",
-  "title": "Make UI element",
-  "kind": "edit",
-  "label": "Make UI",
-  "input": [
-   "border",
-   "fill",
-   "font",
-   "height",
-   "highlight",
-   "kind",
-   "label",
-   "label_color",
-   "name",
-   "radius",
-   "shadow",
-   "snap_to_palette",
-   "width"
-  ]
- },
- {
-  "name": "mirror_direction",
-  "title": "Mirror direction",
-  "kind": "edit",
-  "label": "Mirror direction",
-  "input": [
-   "keep_layers",
-   "new_tag",
-   "tag",
-   "to"
-  ]
- },
- {
-  "name": "normal_map",
-  "title": "Make normal map",
-  "kind": "edit",
-  "label": "Make normal map",
-  "input": [
-   "bevel",
-   "convention",
-   "frames",
-   "height_layer",
-   "layer",
-   "levels",
-   "source",
-   "strength"
-  ]
- },
- {
-  "name": "outline_sprite",
-  "title": "Outline",
-  "kind": "edit",
-  "label": "Outline",
-  "input": [
-   "color",
-   "connectivity",
-   "frames",
-   "layer",
-   "mode"
-  ]
- },
- {
-  "name": "palette_from_image",
-  "title": "Extract palette",
-  "kind": "edit",
-  "label": "Extract palette",
-  "input": [
-   "frames",
-   "ignore_alpha_below",
-   "layer",
-   "max_colors",
-   "method",
-   "min_share",
-   "path",
-   "save",
-   "save_gpl",
-   "set_palette",
-   "source",
-   "swatches"
-  ]
- },
- {
-  "name": "palette_swap",
-  "title": "Palette swap variants",
-  "kind": "edit",
-  "label": "Make palette swaps",
-  "input": [
-   "frames",
-   "layer",
-   "variants"
-  ]
- },
- {
-  "name": "propose_variations",
-  "title": "Show variations",
-  "kind": "read",
-  "label": "Show variations",
-  "input": [
-   "task"
-  ]
- },
- {
-  "name": "read_guide",
-  "title": "Read the Aseprite agent guide",
-  "kind": "read",
-  "label": "Read guide",
-  "input": [
-   "topic"
-  ]
- },
- {
-  "name": "read_pixels",
-  "title": "Read pixels",
-  "kind": "read",
-  "label": "Inspect pixels",
-  "input": [
-   "frame",
-   "height",
-   "layer",
-   "width",
-   "x",
-   "y"
-  ]
- },
- {
-  "name": "recreate_from_reference",
-  "title": "Recreate from reference",
-  "kind": "edit",
-  "label": "Recreate from reference",
-  "input": [
-   "cell",
-   "frames",
-   "merge_distance",
-   "name",
-   "path",
-   "row_tags",
-   "split_layers"
-  ]
- },
- {
-  "name": "redo",
-  "title": "Redo",
-  "kind": "edit",
-  "label": "Redo",
-  "input": [
-   "steps"
-  ]
- },
- {
-  "name": "remap_to_palette",
-  "title": "Remap to palette",
-  "kind": "edit",
-  "label": "Remap to palette",
-  "input": [
-   "colors",
-   "file",
-   "frames",
-   "layer",
-   "palette",
-   "preserve_ramps",
-   "set_palette"
-  ]
- },
- {
-  "name": "render_model",
-  "title": "Render 3D model to sprites",
-  "kind": "edit",
-  "label": "Render 3D model",
-  "input": [
-   "animation",
-   "bands",
-   "directions",
-   "elevation",
-   "fps",
-   "name",
-   "outline",
-   "palette",
-   "path",
-   "preview",
-   "size"
-  ]
- },
- {
-  "name": "render_voxels",
-  "title": "Render voxel model",
-  "kind": "edit",
-  "label": "Render voxel model",
-  "input": [
-   "directions",
-   "name",
-   "path"
-  ]
- },
- {
-  "name": "rotate_layer",
-  "title": "Rotate cleanly",
-  "kind": "edit",
-  "label": "Rotate  °",
-  "input": [
-   "angle",
-   "frames",
-   "layer",
-   "pivot_x",
-   "pivot_y"
-  ]
- },
- {
-  "name": "run_command",
-  "title": "Run Aseprite command",
-  "kind": "edit",
-  "label": "Run command",
-  "input": [
-   "name",
-   "params"
-  ]
- },
- {
-  "name": "run_saved_command",
-  "title": "Run a saved command",
-  "kind": "edit",
-  "label": "Run saved command",
-  "input": [
-   "args",
-   "name"
-  ]
- },
- {
-  "name": "save_command",
-  "title": "Save as command",
-  "kind": "edit",
-  "label": "Save command",
-  "input": [
-   "code",
-   "description",
-   "name",
-   "params",
-   "title"
-  ]
- },
- {
-  "name": "seamless_check",
-  "title": "Check tile wrap",
-  "kind": "read",
-  "label": "Check tile wrap",
-  "input": [
-   "frame",
-   "layer",
-   "path"
-  ]
- },
- {
-  "name": "shade_sprite",
-  "title": "Shade sprite",
-  "kind": "edit",
-  "label": "Shade",
-  "input": [
-   "bands",
-   "frames",
-   "layer",
-   "light",
-   "rim",
-   "snap_to_palette",
-   "whole_shape"
-  ]
- },
- {
-  "name": "smear_frame",
-  "title": "Smear frame",
-  "kind": "edit",
-  "label": "Smear frame",
-  "input": [
-   "frame",
-   "from_frame",
-   "layer",
-   "steps",
-   "to_frame"
-  ]
- },
- {
-  "name": "snapshot",
-  "title": "Snapshot sprite",
-  "kind": "read",
-  "label": "Look at the sprite",
-  "input": [
-   "background",
-   "frame",
-   "layer",
-   "scale"
-  ]
- },
- {
-  "name": "spawn_agents",
-  "title": "Run sub-agents in parallel",
-  "kind": "edit",
-  "label": "Run sub-agents",
-  "input": [
-   "instruction",
-   "parallel",
-   "tasks"
-  ]
- },
- {
-  "name": "split_by_color",
-  "title": "Split layer by color",
-  "kind": "edit",
-  "label": "Split layer by color",
-  "input": [
-   "layer"
-  ]
- },
- {
-  "name": "squash_stretch",
-  "title": "Squash and stretch",
-  "kind": "edit",
-  "label": "Stretch",
-  "input": [
-   "amount",
-   "frame",
-   "layer"
-  ]
- },
- {
-  "name": "style_summary",
-  "title": "Describe style",
-  "kind": "read",
-  "label": "Describe style",
-  "input": [
-   "frame",
-   "layer",
-   "path"
-  ]
- },
- {
-  "name": "subpixel_move",
-  "title": "Sub-pixel motion",
-  "kind": "edit",
-  "label": "Sub-pixel move",
-  "input": [
-   "dx",
-   "dy",
-   "easing",
-   "from_frame",
-   "layer",
-   "to_frame"
-  ]
- },
- {
-  "name": "transform_layer",
-  "title": "In-between a part",
-  "kind": "edit",
-  "label": "In-between",
-  "input": [
-   "arc",
-   "easing",
-   "from_frame",
-   "layer",
-   "move",
-   "to_frame"
-  ]
- },
- {
-  "name": "undo",
-  "title": "Undo",
-  "kind": "edit",
-  "label": "Undo",
-  "input": [
-   "steps"
-  ]
- }
+  {
+    "name": "adjust_tone",
+    "title": "Adjust tone",
+    "kind": "edit",
+    "label": "Adjust tone",
+    "input": [
+      "contrast",
+      "frames",
+      "hue",
+      "layer",
+      "lightness",
+      "match_to",
+      "saturation",
+      "snap_to_palette",
+      "strength"
+    ]
+  },
+  {
+    "name": "ambient_occlusion",
+    "title": "Ambient occlusion",
+    "kind": "edit",
+    "label": "Ambient occlusion",
+    "input": [
+      "as_mask",
+      "frames",
+      "height_layer",
+      "layer",
+      "levels",
+      "radius",
+      "source",
+      "strength"
+    ]
+  },
+  {
+    "name": "anti_alias",
+    "title": "Anti-alias steps",
+    "kind": "edit",
+    "label": "Anti-alias steps",
+    "input": [
+      "frames",
+      "layer",
+      "snap_to_palette",
+      "strength"
+    ]
+  },
+  {
+    "name": "apply_timeline_text",
+    "title": "Apply timeline text",
+    "kind": "edit",
+    "label": "Apply timeline changes",
+    "input": [
+      "plan",
+      "text"
+    ]
+  },
+  {
+    "name": "check",
+    "title": "Check pixel art",
+    "kind": "read",
+    "label": "Check pixel art",
+    "input": [
+      "frames",
+      "layer",
+      "rules"
+    ]
+  },
+  {
+    "name": "color_stats",
+    "title": "Compare tone",
+    "kind": "read",
+    "label": "Compare tone",
+    "input": [
+      "compare_to",
+      "frame",
+      "frames",
+      "layer",
+      "path",
+      "source"
+    ]
+  },
+  {
+    "name": "delete_saved_command",
+    "title": "Delete a saved command",
+    "kind": "edit",
+    "label": "Delete saved command",
+    "input": [
+      "name"
+    ]
+  },
+  {
+    "name": "detect_background",
+    "title": "Detect background",
+    "kind": "edit",
+    "label": "Detect background",
+    "input": [
+      "frame",
+      "frames",
+      "layer",
+      "out",
+      "path",
+      "remove",
+      "source",
+      "tolerance"
+    ]
+  },
+  {
+    "name": "detect_pixel_grid",
+    "title": "Detect pixel grid",
+    "kind": "read",
+    "label": "Detect pixel grid",
+    "input": [
+      "frame",
+      "frames",
+      "layer",
+      "path",
+      "source"
+    ]
+  },
+  {
+    "name": "diff_visual",
+    "title": "Visual diff",
+    "kind": "read",
+    "label": "Compare with before",
+    "input": [
+      "checkpoint",
+      "save",
+      "scale"
+    ]
+  },
+  {
+    "name": "direction_plan",
+    "title": "Plan directions",
+    "kind": "read",
+    "label": "Plan directions",
+    "input": [
+      "count"
+    ]
+  },
+  {
+    "name": "dither_gradient",
+    "title": "Dithered gradient",
+    "kind": "edit",
+    "label": "Dithered gradient",
+    "input": [
+      "area",
+      "colors",
+      "direction",
+      "frame",
+      "mask_layer",
+      "pattern"
+    ]
+  },
+  {
+    "name": "dither_to_palette",
+    "title": "Dither to palette",
+    "kind": "edit",
+    "label": "Dither to palette",
+    "input": [
+      "colors",
+      "frames",
+      "layer",
+      "palette",
+      "pattern",
+      "strength"
+    ]
+  },
+  {
+    "name": "draw_text",
+    "title": "Draw pixel text",
+    "kind": "edit",
+    "label": "Draw text",
+    "input": [
+      "align",
+      "color",
+      "font",
+      "frame",
+      "outline",
+      "scale",
+      "shadow",
+      "size",
+      "text",
+      "x",
+      "y"
+    ]
+  },
+  {
+    "name": "execute_lua",
+    "title": "Run Lua in Aseprite",
+    "kind": "edit",
+    "label": "Run Lua",
+    "input": [
+      "code",
+      "label",
+      "transaction"
+    ]
+  },
+  {
+    "name": "export_for_engine",
+    "title": "Export for a game engine",
+    "kind": "edit",
+    "label": "Export for engine",
+    "input": [
+      "columns",
+      "dir",
+      "engine",
+      "extrude",
+      "name",
+      "padding",
+      "pivot",
+      "pixels_per_unit",
+      "power_of_two",
+      "scale",
+      "trim"
+    ]
+  },
+  {
+    "name": "export_normal_sheet",
+    "title": "Export color and normal sheets",
+    "kind": "edit",
+    "label": "Export normal sheet",
+    "input": [
+      "dir",
+      "frames",
+      "layer",
+      "name",
+      "normal_layer"
+    ]
+  },
+  {
+    "name": "export_palette_lut",
+    "title": "Export palette swap LUT",
+    "kind": "edit",
+    "label": "Export palette LUT",
+    "input": [
+      "dir",
+      "frame",
+      "layer",
+      "name",
+      "variants"
+    ]
+  },
+  {
+    "name": "find_sprites",
+    "title": "Find sprites",
+    "kind": "edit",
+    "label": "Find sprites",
+    "input": [
+      "as",
+      "frame",
+      "frames",
+      "layer",
+      "merge_distance",
+      "min_pixels",
+      "name",
+      "path",
+      "row_tags",
+      "source"
+    ]
+  },
+  {
+    "name": "fix_pixel_art",
+    "title": "Fix pixel art",
+    "kind": "edit",
+    "label": "Fix pixel art",
+    "input": [
+      "cell",
+      "frame",
+      "frames",
+      "layer",
+      "max_colors",
+      "merge",
+      "name",
+      "offset_x",
+      "offset_y",
+      "path",
+      "source",
+      "trim"
+    ]
+  },
+  {
+    "name": "get_context",
+    "title": "Get user context",
+    "kind": "read",
+    "label": "Read selection",
+    "input": []
+  },
+  {
+    "name": "get_state",
+    "title": "Get Aseprite state",
+    "kind": "read",
+    "label": "Read sprite state",
+    "input": []
+  },
+  {
+    "name": "get_timeline_text",
+    "title": "Timeline as text",
+    "kind": "read",
+    "label": "Read the timeline",
+    "input": []
+  },
+  {
+    "name": "import_sheet",
+    "title": "Import sprite sheet",
+    "kind": "edit",
+    "label": "Import sprite sheet",
+    "input": [
+      "align",
+      "atlas",
+      "cell_h",
+      "cell_w",
+      "duration_ms",
+      "margin_x",
+      "margin_y",
+      "merge_distance",
+      "mode",
+      "name",
+      "order",
+      "padding_x",
+      "padding_y",
+      "path",
+      "row_tags"
+    ]
+  },
+  {
+    "name": "iso_grid",
+    "title": "Isometric grid guide",
+    "kind": "edit",
+    "label": "Isometric grid",
+    "input": [
+      "tile"
+    ]
+  },
+  {
+    "name": "iso_project",
+    "title": "Project to isometric",
+    "kind": "edit",
+    "label": "Project to isometric",
+    "input": [
+      "frame",
+      "layer"
+    ]
+  },
+  {
+    "name": "layers_to_voxels",
+    "title": "Layers to isometric object",
+    "kind": "edit",
+    "label": "Layers to isometric",
+    "input": [
+      "directions",
+      "frame",
+      "name",
+      "save_vox"
+    ]
+  },
+  {
+    "name": "light_preview",
+    "title": "Preview lighting",
+    "kind": "read",
+    "label": "Preview lighting",
+    "input": [
+      "convention",
+      "frame",
+      "layer",
+      "light",
+      "masks",
+      "normal_layer"
+    ]
+  },
+  {
+    "name": "list_commands",
+    "title": "List Aseprite commands",
+    "kind": "read",
+    "label": "Look up commands",
+    "input": [
+      "filter"
+    ]
+  },
+  {
+    "name": "list_saved_commands",
+    "title": "List saved commands",
+    "kind": "read",
+    "label": "List saved commands",
+    "input": []
+  },
+  {
+    "name": "list_skills",
+    "title": "List skills",
+    "kind": "read",
+    "label": "List skills",
+    "input": [
+      "query"
+    ]
+  },
+  {
+    "name": "make_autotile",
+    "title": "Make autotile set",
+    "kind": "edit",
+    "label": "Make 47-tile set",
+    "input": [
+      "columns",
+      "export_dir",
+      "frame",
+      "kind",
+      "layer",
+      "name",
+      "path",
+      "preview",
+      "template",
+      "tile"
+    ]
+  },
+  {
+    "name": "make_masks",
+    "title": "Make emission and specular masks",
+    "kind": "edit",
+    "label": "Make masks",
+    "input": [
+      "emission",
+      "frames",
+      "kind",
+      "layer",
+      "specular"
+    ]
+  },
+  {
+    "name": "make_ramp",
+    "title": "Make color ramp",
+    "kind": "edit",
+    "label": "Make ramp",
+    "input": [
+      "add_to_palette",
+      "base",
+      "hue_shift",
+      "steps"
+    ]
+  },
+  {
+    "name": "make_seamless",
+    "title": "Fix tile seams",
+    "kind": "edit",
+    "label": "Fix tile seams",
+    "input": [
+      "frame",
+      "layer",
+      "max_share",
+      "out",
+      "path"
+    ]
+  },
+  {
+    "name": "make_ui",
+    "title": "Make UI element",
+    "kind": "edit",
+    "label": "Make UI",
+    "input": [
+      "border",
+      "fill",
+      "font",
+      "height",
+      "highlight",
+      "kind",
+      "label",
+      "label_color",
+      "name",
+      "radius",
+      "shadow",
+      "snap_to_palette",
+      "width"
+    ]
+  },
+  {
+    "name": "mirror_direction",
+    "title": "Mirror direction",
+    "kind": "edit",
+    "label": "Mirror direction",
+    "input": [
+      "keep_layers",
+      "new_tag",
+      "tag",
+      "to"
+    ]
+  },
+  {
+    "name": "normal_map",
+    "title": "Make normal map",
+    "kind": "edit",
+    "label": "Make normal map",
+    "input": [
+      "bevel",
+      "convention",
+      "frames",
+      "height_layer",
+      "layer",
+      "levels",
+      "source",
+      "strength"
+    ]
+  },
+  {
+    "name": "outline_sprite",
+    "title": "Outline",
+    "kind": "edit",
+    "label": "Outline",
+    "input": [
+      "color",
+      "connectivity",
+      "frames",
+      "layer",
+      "mode"
+    ]
+  },
+  {
+    "name": "palette_from_image",
+    "title": "Extract palette",
+    "kind": "edit",
+    "label": "Extract palette",
+    "input": [
+      "frame",
+      "frames",
+      "ignore_alpha_below",
+      "layer",
+      "max_colors",
+      "method",
+      "min_share",
+      "path",
+      "save",
+      "save_gpl",
+      "set_palette",
+      "source",
+      "swatches"
+    ]
+  },
+  {
+    "name": "palette_swap",
+    "title": "Palette swap variants",
+    "kind": "edit",
+    "label": "Make palette swaps",
+    "input": [
+      "frames",
+      "layer",
+      "variants"
+    ]
+  },
+  {
+    "name": "propose_variations",
+    "title": "Show variations",
+    "kind": "read",
+    "label": "Show variations",
+    "input": [
+      "task"
+    ]
+  },
+  {
+    "name": "read_guide",
+    "title": "Read the Aseprite agent guide",
+    "kind": "read",
+    "label": "Read guide",
+    "input": [
+      "topic"
+    ]
+  },
+  {
+    "name": "read_pixels",
+    "title": "Read pixels",
+    "kind": "read",
+    "label": "Inspect pixels",
+    "input": [
+      "frame",
+      "height",
+      "layer",
+      "width",
+      "x",
+      "y"
+    ]
+  },
+  {
+    "name": "recreate_from_reference",
+    "title": "Recreate from reference",
+    "kind": "edit",
+    "label": "Recreate from reference",
+    "input": [
+      "cell",
+      "frames",
+      "merge_distance",
+      "name",
+      "path",
+      "row_tags",
+      "split_layers"
+    ]
+  },
+  {
+    "name": "redo",
+    "title": "Redo",
+    "kind": "edit",
+    "label": "Redo",
+    "input": [
+      "steps"
+    ]
+  },
+  {
+    "name": "remap_to_palette",
+    "title": "Remap to palette",
+    "kind": "edit",
+    "label": "Remap to palette",
+    "input": [
+      "colors",
+      "file",
+      "frames",
+      "layer",
+      "palette",
+      "preserve_ramps",
+      "set_palette"
+    ]
+  },
+  {
+    "name": "render_model",
+    "title": "Render 3D model to sprites",
+    "kind": "edit",
+    "label": "Render 3D model",
+    "input": [
+      "animation",
+      "bands",
+      "directions",
+      "elevation",
+      "fps",
+      "name",
+      "outline",
+      "palette",
+      "path",
+      "preview",
+      "size"
+    ]
+  },
+  {
+    "name": "render_voxels",
+    "title": "Render voxel model",
+    "kind": "edit",
+    "label": "Render voxel model",
+    "input": [
+      "directions",
+      "name",
+      "path"
+    ]
+  },
+  {
+    "name": "rotate_layer",
+    "title": "Rotate cleanly",
+    "kind": "edit",
+    "label": "Rotate  °",
+    "input": [
+      "angle",
+      "frames",
+      "layer",
+      "pivot_x",
+      "pivot_y"
+    ]
+  },
+  {
+    "name": "run_command",
+    "title": "Run Aseprite command",
+    "kind": "edit",
+    "label": "Run command",
+    "input": [
+      "name",
+      "params"
+    ]
+  },
+  {
+    "name": "run_saved_command",
+    "title": "Run a saved command",
+    "kind": "edit",
+    "label": "Run saved command",
+    "input": [
+      "args",
+      "name"
+    ]
+  },
+  {
+    "name": "save_command",
+    "title": "Save as command",
+    "kind": "edit",
+    "label": "Save command",
+    "input": [
+      "code",
+      "description",
+      "name",
+      "params",
+      "title"
+    ]
+  },
+  {
+    "name": "seamless_check",
+    "title": "Check tile wrap",
+    "kind": "read",
+    "label": "Check tile wrap",
+    "input": [
+      "frame",
+      "layer",
+      "path"
+    ]
+  },
+  {
+    "name": "shade_sprite",
+    "title": "Shade sprite",
+    "kind": "edit",
+    "label": "Shade",
+    "input": [
+      "bands",
+      "frames",
+      "layer",
+      "light",
+      "rim",
+      "snap_to_palette",
+      "whole_shape"
+    ]
+  },
+  {
+    "name": "smear_frame",
+    "title": "Smear frame",
+    "kind": "edit",
+    "label": "Smear frame",
+    "input": [
+      "frame",
+      "from_frame",
+      "layer",
+      "steps",
+      "to_frame"
+    ]
+  },
+  {
+    "name": "snapshot",
+    "title": "Snapshot sprite",
+    "kind": "read",
+    "label": "Look at the sprite",
+    "input": [
+      "background",
+      "frame",
+      "layer",
+      "scale"
+    ]
+  },
+  {
+    "name": "spawn_agents",
+    "title": "Run sub-agents in parallel",
+    "kind": "edit",
+    "label": "Run sub-agents",
+    "input": [
+      "instruction",
+      "parallel",
+      "tasks"
+    ]
+  },
+  {
+    "name": "split_by_color",
+    "title": "Split layer by color",
+    "kind": "edit",
+    "label": "Split layer by color",
+    "input": [
+      "layer"
+    ]
+  },
+  {
+    "name": "squash_stretch",
+    "title": "Squash and stretch",
+    "kind": "edit",
+    "label": "Stretch",
+    "input": [
+      "amount",
+      "frame",
+      "layer"
+    ]
+  },
+  {
+    "name": "style_summary",
+    "title": "Describe style",
+    "kind": "read",
+    "label": "Describe style",
+    "input": [
+      "frame",
+      "layer",
+      "path"
+    ]
+  },
+  {
+    "name": "subpixel_move",
+    "title": "Sub-pixel motion",
+    "kind": "edit",
+    "label": "Sub-pixel move",
+    "input": [
+      "dx",
+      "dy",
+      "easing",
+      "from_frame",
+      "layer",
+      "to_frame"
+    ]
+  },
+  {
+    "name": "transform_layer",
+    "title": "In-between a part",
+    "kind": "edit",
+    "label": "In-between",
+    "input": [
+      "arc",
+      "easing",
+      "from_frame",
+      "layer",
+      "move",
+      "to_frame"
+    ]
+  },
+  {
+    "name": "undo",
+    "title": "Undo",
+    "kind": "edit",
+    "label": "Undo",
+    "input": [
+      "steps"
+    ]
+  }
 ]
