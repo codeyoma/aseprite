@@ -1,5 +1,26 @@
 [
   {
+    "name": "add_fx",
+    "title": "Add effect",
+    "kind": "edit",
+    "label": "Add effect",
+    "input": [
+      "angle",
+      "flip",
+      "fps",
+      "glow",
+      "id",
+      "light",
+      "options",
+      "palette",
+      "seed",
+      "slice",
+      "start_frame",
+      "x",
+      "y"
+    ]
+  },
+  {
     "name": "adjust_tone",
     "title": "Adjust tone",
     "kind": "edit",
@@ -377,6 +398,17 @@
     ]
   },
   {
+    "name": "list_fx",
+    "title": "List effects",
+    "kind": "read",
+    "label": "List effects",
+    "input": [
+      "category",
+      "loop",
+      "query"
+    ]
+  },
+  {
     "name": "list_saved_commands",
     "title": "List saved commands",
     "kind": "read",
@@ -482,6 +514,20 @@
     ]
   },
   {
+    "name": "new_fx_sprite",
+    "title": "Effect as a new sprite",
+    "kind": "edit",
+    "label": "New effect sprite",
+    "input": [
+      "fps",
+      "id",
+      "light",
+      "options",
+      "palette",
+      "seed"
+    ]
+  },
+  {
     "name": "normal_map",
     "title": "Make normal map",
     "kind": "edit",
@@ -540,6 +586,21 @@
       "frames",
       "layer",
       "variants"
+    ]
+  },
+  {
+    "name": "preview_fx",
+    "title": "Preview effect",
+    "kind": "read",
+    "label": "Preview effect",
+    "input": [
+      "fps",
+      "frames",
+      "id",
+      "options",
+      "palette",
+      "seed",
+      "zoom"
     ]
   },
   {

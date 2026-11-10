@@ -141,3 +141,55 @@ export function readPng(path: string, notPng?: string): Rgba {
 export function writePng(path: string, img: Rgba): void {
   writeFileSync(path, encodePng(img));
 }
+
+/** 3x5 pixel digits for labels, rows top to bottom, 3 bits each (4 = left column). */
+const DIGITS: Record<string, number[]> = {
+  "0": [7, 5, 5, 5, 7], "1": [2, 6, 2, 2, 7], "2": [7, 1, 7, 4, 7], "3": [7, 1, 3, 1, 7], "4": [5, 5, 7, 1, 1],
+  "5": [7, 4, 7, 1, 7], "6": [7, 4, 7, 5, 7], "7": [7, 1, 1, 2, 2], "8": [7, 5, 7, 5, 7], "9": [7, 5, 7, 1, 7],
+};
+
+/** Normal "over" blending of one RGBA pixel onto an opaque background pixel. */
+function over(out: Uint8Array, i: number, src: Uint8Array | Buffer, j: number): void {
+  const a = src[j + 3] / 255;
+  if (!a) return;
+  for (let k = 0; k < 3; k++) out[i + k] = Math.round(src[j + k] * a + out[i + k] * (1 - a));
+}
+
+/**
+ * Frames side by side in a grid on an opaque background, each scaled by zoom and labelled above with a number
+ * (labels[i], digits only) in 3x5 pixel digits at labelScale. Shows an animation as one image.
+ */
+export function contactSheet(
+  frames: Rgba[],
+  o: { labels: string[]; columns: number; zoom: number; background: RGBA; labelColor: RGBA; gap?: number; labelScale?: number },
+): Rgba {
+  if (!frames.length) return blank(1, 1);
+  const z = Math.max(1, Math.floor(o.zoom)), ls = o.labelScale ?? 2, gap = o.gap ?? 4;
+  const fw = frames[0].width * z, fh = frames[0].height * z;
+  const labelH = 5 * ls + 3;
+  const cols = Math.max(1, Math.min(o.columns, frames.length)), rows = Math.ceil(frames.length / cols);
+  const cellW = Math.max(fw, 4 * ls * 4), cellH = labelH + fh;
+  const W = gap + cols * (cellW + gap), H = gap + rows * (cellH + gap);
+  const out = new Uint8Array(W * H * 4);
+  for (let i = 0; i < W * H; i++) out.set([o.background.r, o.background.g, o.background.b, 255], i * 4);
+  const label = [o.labelColor.r, o.labelColor.g, o.labelColor.b, 255];
+  frames.forEach((f, n) => {
+    const cx = gap + (n % cols) * (cellW + gap), cy = gap + Math.floor(n / cols) * (cellH + gap);
+    [...(o.labels[n] ?? "")].forEach((ch, k) => {
+      const g = DIGITS[ch];
+      if (!g) return;
+      for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) {
+        if (!(g[r] & (4 >> c))) continue;
+        for (let yy = 0; yy < ls; yy++) for (let xx = 0; xx < ls; xx++) {
+          const X = cx + k * 4 * ls + c * ls + xx, Y = cy + r * ls + yy;
+          if (X < W && Y < H) out.set(label, (Y * W + X) * 4);
+        }
+      }
+    });
+    for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
+      const j = (Math.floor(y / z) * f.width + Math.floor(x / z)) * 4;
+      over(out, ((cy + labelH + y) * W + cx + x) * 4, f.data, j);
+    }
+  });
+  return { width: W, height: H, data: out };
+}

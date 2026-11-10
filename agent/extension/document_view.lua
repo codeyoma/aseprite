@@ -32,6 +32,20 @@ local RANGE_TYPES = {
   [RangeType.CELS] = "cels",
 }
 
+-- Layer blend modes by their wire names (protocol.json blendModes), both ways.
+local BLEND_MODES = {
+  normal = BlendMode.NORMAL, multiply = BlendMode.MULTIPLY, screen = BlendMode.SCREEN,
+  overlay = BlendMode.OVERLAY, darken = BlendMode.DARKEN, lighten = BlendMode.LIGHTEN,
+  color_dodge = BlendMode.COLOR_DODGE, color_burn = BlendMode.COLOR_BURN,
+  hard_light = BlendMode.HARD_LIGHT, soft_light = BlendMode.SOFT_LIGHT,
+  difference = BlendMode.DIFFERENCE, exclusion = BlendMode.EXCLUSION,
+  hue = BlendMode.HSL_HUE, saturation = BlendMode.HSL_SATURATION, color = BlendMode.HSL_COLOR,
+  luminosity = BlendMode.HSL_LUMINOSITY, addition = BlendMode.ADDITION,
+  subtract = BlendMode.SUBTRACT, divide = BlendMode.DIVIDE,
+}
+local BLEND_NAMES = {}
+for name, mode in pairs(BLEND_MODES) do BLEND_NAMES[mode] = name end
+
 local BRUSH_TYPES = {
   [BrushType.CIRCLE] = "circle",
   [BrushType.SQUARE] = "square",
@@ -61,7 +75,7 @@ end
 -- opts.px: pixels.lua (hex colors).
 function M.new(opts)
   local px = assert(opts and opts.px, "px (pixels.lua) required")
-  local V = { COLOR_MODES = COLOR_MODES, ANI_DIRS = ANI_DIRS, typeName = typeName }
+  local V = { COLOR_MODES = COLOR_MODES, ANI_DIRS = ANI_DIRS, BLEND_MODES = BLEND_MODES, typeName = typeName }
 
   -------------------------------------------------------------------------
   -- Layers
@@ -136,6 +150,7 @@ function M.new(opts)
         item.layers = describeLayers(l.layers)
       else
         item.opacity = l.opacity
+        item.blendMode = BLEND_NAMES[l.blendMode] or tostring(l.blendMode)
         item.tilemap = l.isTilemap or nil
         item.background = l.isBackground or nil
         item.reference = l.isReference or nil

@@ -122,57 +122,165 @@ return function(handlers, D)
     return { layers = names }
   end
 
+  -- A layer's blend mode and opacity from wire params (protocol.json blendModes), checked before anything changes.
+  local function layerLook(params, what)
+    local mode, opacity = nil, params.opacity
+    if params.blend_mode ~= nil then
+      mode = D.view.BLEND_MODES[params.blend_mode]
+      if not mode then error(what .. "Unknown blend mode: " .. tostring(params.blend_mode)) end
+    end
+    if opacity ~= nil and (math.type(opacity) ~= "integer" or opacity < 0 or opacity > 255) then
+      error(what .. "opacity must be an integer from 0 to 255")
+    end
+    if (mode or opacity) and not params.new_layer then
+      error(what .. "blend_mode and opacity apply to a new layer (new_layer)")
+    end
+    return mode, opacity
+  end
+
+  -- One image into a frame (inside the caller's transaction): params.layer
+  -- (id or name) replaces that layer's cel, or params.new_layer = name puts
+  -- it on an "AI: <name>" layer above params.above (created once, reused by
+  -- later frames), with blend mode and opacity when given. Returns the layer.
+  local function putOne(sprite, params, bytes, frame, mode, opacity)
+    local w, h = params.width, params.height
+    local target
+    if params.new_layer then
+      local name = variations.PREFIX .. params.new_layer
+      local source = nil
+      if params.above then
+        source = layerById(params.above, sprite)
+        if not source then error("Layer not found: " .. tostring(params.above)) end
+      end
+      -- Reuse the layer made for an earlier frame. aiLayer puts it next to
+      -- the source, inside the source's group when there is one.
+      local function find(layers)
+        for _, l in ipairs(layers) do
+          if l.name == name and not l.isGroup then return l end
+          if l.isGroup then local f = find(l.layers) if f then return f end end
+        end
+      end
+      target = find(source and source.parent and source.parent.layers or sprite.layers) or find(sprite.layers)
+      if not target then
+        target = variations.aiLayer(params.new_layer, params.prompt, { above = source })
+      end
+      if params.hide_source and source then source.isVisible = false end
+      -- hide: the new layer itself stays hidden (e.g. a normal map under the colors).
+      if params.hide then target.isVisible = false end
+      if mode then target.blendMode = mode end
+      if opacity then target.opacity = opacity end
+    else
+      if params.layer then
+        target = layerById(params.layer, sprite)
+        if not target then error("No layer " .. tostring(params.layer)) end
+      else
+        target = app.layer
+      end
+      if not target or target.isGroup then error("No image layer to write to") end
+    end
+    local img = Image(w, h, ColorMode.RGB)
+    img.bytes = bytes
+    if sprite.colorMode ~= ColorMode.RGB then
+      local conv = Image(w, h, sprite.colorMode)
+      conv:drawImage(img)
+      img = conv
+    end
+    sprite:newCel(target, frame, img, Point(params.x or 0, params.y or 0))
+    return target
+  end
+
   -- Writes RGBA pixels (base64, canvas-sized at x, y) into a frame of a layer
-  -- (#39): params.layer (id or name) replaces that layer's cel, or
-  -- params.new_layer = name puts them on an "AI: <name>" layer above
-  -- params.above (created once, reused by later frames). hide_source hides
-  -- the layer it was made from. One undo step.
+  -- (#39): see putOne. hide_source hides the layer it was made from;
+  -- blend_mode and opacity set up a new layer (#69). One undo step.
   handlers.put_image = function(params)
     local sprite = app.sprite
     local w, h = params.width, params.height
     local bytes = px.base64Decode(params.rgba or "")
     if #bytes ~= w * h * 4 then error(string.format("Expected %d bytes, got %d", w * h * 4, #bytes)) end
+    local mode, opacity = layerLook(params, "")
     local frame = params.frame or (app.frame and app.frame.frameNumber) or 1
     local target
     app.transaction(params.label or "AI image", function()
-      if params.new_layer then
-        local name = variations.PREFIX .. params.new_layer
-        local source = params.above and layerById(params.above, sprite) or nil
-        -- Reuse the layer made for an earlier frame. aiLayer puts it next to
-        -- the source, inside the source's group when there is one.
-        local function find(layers)
-          for _, l in ipairs(layers) do
-            if l.name == name and not l.isGroup then return l end
-            if l.isGroup then local f = find(l.layers) if f then return f end end
-          end
-        end
-        target = find(source and source.parent and source.parent.layers or sprite.layers) or find(sprite.layers)
-        if not target then
-          target = variations.aiLayer(params.new_layer, params.prompt, { above = source })
-        end
-        if params.hide_source and source then source.isVisible = false end
-        -- hide: the new layer itself stays hidden (e.g. a normal map under the colors).
-        if params.hide then target.isVisible = false end
-      else
-        if params.layer then
-          target = layerById(params.layer, sprite)
-          if not target then error("No layer " .. tostring(params.layer)) end
-        else
-          target = app.layer
-        end
-        if not target or target.isGroup then error("No image layer to write to") end
-      end
-      local img = Image(w, h, ColorMode.RGB)
-      img.bytes = bytes
-      if sprite.colorMode ~= ColorMode.RGB then
-        local conv = Image(w, h, sprite.colorMode)
-        conv:drawImage(img)
-        img = conv
-      end
-      sprite:newCel(target, frame, img, Point(params.x or 0, params.y or 0))
+      target = putOne(sprite, params, bytes, frame, mode, opacity)
     end)
     app.refresh()
     return { layer = "L" .. target.id, name = target.name }
+  end
+
+  -- Several images in one undo step (#69): params.images is a list of
+  -- put_image params with a frame each. params.frames: the sprite first gets
+  -- at least that many frames, each a copy of the last frame's cels (Aseprite's
+  -- New Frame) lasting params.duration ms. Everything is checked before the
+  -- sprite changes. Returns the layers written, in order of first use.
+  local IMAGE_KEYS = { width = true, height = true, rgba = true, frame = true, new_layer = true, layer = true,
+                       above = true, x = true, y = true, hide = true, blend_mode = true, opacity = true }
+  handlers.put_images = function(params)
+    local sprite = app.sprite
+    local images = params.images or {}
+    if #images == 0 then error("No images") end
+    local count = math.max(#sprite.frames, params.frames or 0)
+    if params.duration ~= nil and params.duration < 1 then error("duration must be at least 1 ms") end
+    local checked = {}
+    for i, im in ipairs(images) do
+      local what = "Image " .. i .. ": "
+      if type(im) ~= "table" then error(what .. "expected an object") end
+      for k in pairs(im) do
+        if not IMAGE_KEYS[k] then error(what .. "unknown param '" .. tostring(k) .. "'") end
+      end
+      if math.type(im.width) ~= "integer" or math.type(im.height) ~= "integer" or type(im.rgba) ~= "string" then
+        error(what .. "width, height and rgba are required")
+      end
+      if math.type(im.frame) ~= "integer" then error(what .. "frame is required") end
+      if im.frame < 1 or im.frame > count then
+        error(string.format("%sframe %d is out of range (1-%d)", what, im.frame, count))
+      end
+      local bytes = px.base64Decode(im.rgba)
+      if #bytes ~= im.width * im.height * 4 then
+        error(string.format("%sexpected %d bytes, got %d", what, im.width * im.height * 4, #bytes))
+      end
+      local mode, opacity = layerLook(im, what)
+      checked[i] = { bytes = bytes, mode = mode, opacity = opacity }
+    end
+    local layers, seen, added = {}, {}, 0
+    local activeFrame = app.frame and app.frame.frameNumber
+    app.transaction(params.label or "AI images", function()
+      -- New frames at the end, each a copy of the last frame's cels. Aseprite grows a tag that ends on the
+      -- last frame over new frames; put them back (as mirror_frames does).
+      local ranges = {}
+      for i, t in ipairs(sprite.tags) do ranges[i] = t.toFrame.frameNumber end
+      while #sprite.frames < count do
+        local last = #sprite.frames
+        local nf = sprite:newEmptyFrame(last + 1)
+        nf.duration = params.duration and params.duration / 1000 or sprite.frames[last].duration
+        local function copy(layers)
+          for _, l in ipairs(layers) do
+            if l.isGroup then copy(l.layers)
+            elseif l.isImage then
+              local cel = l:cel(last)
+              if cel then sprite:newCel(l, nf.frameNumber, cel.image:clone(), cel.position) end
+            end
+          end
+        end
+        copy(sprite.layers)
+        added = added + 1
+      end
+      for i, t in ipairs(sprite.tags) do
+        if t.toFrame.frameNumber ~= ranges[i] then t.toFrame = ranges[i] end
+      end
+      for i, im in ipairs(images) do
+        local c = checked[i]
+        if params.prompt and im.new_layer then im.prompt = params.prompt end
+        local target = putOne(sprite, im, c.bytes, im.frame, c.mode, c.opacity)
+        local id = "L" .. target.id
+        if not seen[id] then
+          seen[id] = true
+          layers[#layers + 1] = { layer = id, name = target.name }
+        end
+      end
+    end)
+    if activeFrame then app.frame = sprite.frames[activeFrame] end
+    app.refresh()
+    return { layers = layers, frames = #sprite.frames, added = added }
   end
 
   -- Copies frames (a tag, or a list) to new frames at the end, flipped

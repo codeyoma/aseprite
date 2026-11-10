@@ -1,7 +1,7 @@
 // An in-memory sprite behind the AsepriteRequester seam (#52): answers every
 // request the document module sends (get_state, snapshot, put_image,
-// create_sprite, create_animation, create_tilemap, and the color, palette,
-// mirror, split and slice requests) the way the extension's handlers do
+// put_images, create_sprite, create_animation, create_tilemap, and the color,
+// palette, mirror, split and slice requests) the way the extension's handlers do
 // (document_handlers.lua, handlers_color.lua, handlers_sprite.lua), so tool
 // modules run in unit tests.
 //
@@ -16,7 +16,8 @@
 // Aseprite: writes are not clipped to the canvas, and off-canvas pixels count
 // in collect_colors and apply_color_map. RGB cels hold RGBA bytes, indexed
 // cels hold palette indexes (0 is transparent). Grayscale sprites hold no
-// pixels.
+// pixels. Layers keep a blend mode and opacity, but snapshots of the sprite
+// only blend normal layers at full opacity: anything else is refused.
 import { resolveFrames } from "../../dist/document.js";
 import { checkParams, PROTOCOL } from "../../dist/protocol.js";
 
@@ -35,6 +36,11 @@ const decode = (s) => new Uint8Array(Buffer.from(s ?? "", "base64"));
 /** app.fs.fileTitle: the file name without folder and extension. */
 const fileTitle = (f) => String(f).split(/[\\/]/).pop().replace(/\.[^.]*$/, "");
 const DIRECTIONS = { forward: "forward", reverse: "reverse", pingpong: "ping-pong", "ping-pong": "ping-pong" };
+/** Wire blend mode names (protocol.json blendModes). */
+const BLEND_MODES = new Set(["normal", "multiply", "screen", "overlay", "darken", "lighten", "color_dodge", "color_burn", "hard_light",
+  "soft_light", "difference", "exclusion", "hue", "saturation", "color", "luminosity", "addition", "subtract", "divide"]);
+/** put_images item keys (handlers_sprite.lua IMAGE_KEYS). */
+const IMAGE_KEYS = new Set(["width", "height", "rgba", "frame", "new_layer", "layer", "above", "x", "y", "hide", "blend_mode", "opacity"]);
 
 // Aseprite's normal blend (doc/blend_funcs.cpp rgba_blender_normal) at full opacity, as drawSprite composites layers.
 const mul = (a, b) => { const t = a * b + 0x80; return ((t >> 8) + t) >> 8; };
@@ -96,7 +102,7 @@ export function fakeDocument({
     return out;
   };
   const build = (s, list, parent) => list.map((l) => {
-    const node = { id: nextId++, name: l.name, visible: l.visible !== false, group: !!l.group, parent, cels: [] };
+    const node = { id: nextId++, name: l.name, visible: l.visible !== false, group: !!l.group, parent, cels: [], blendMode: "normal", opacity: 255 };
     if (l.group) node.layers = build(s, l.layers ?? [], node);
     else node.cels = (l.frames ?? []).map((c) => {
       if (!c) return undefined;
@@ -127,7 +133,7 @@ export function fakeDocument({
   const detach = (l) => { const sib = siblings(l); sib.splice(sib.indexOf(l), 1); };
   // A new image layer just above ref, in ref's parent (on top when there is no ref).
   const newLayerAbove = (name, ref) => {
-    const l = { id: nextId++, name, visible: true, group: false, parent: ref ? ref.parent : null, cels: [] };
+    const l = { id: nextId++, name, visible: true, group: false, parent: ref ? ref.parent : null, cels: [], blendMode: "normal", opacity: 255 };
     const sib = ref ? siblings(ref) : active.sprite.layers;
     sib.splice(ref ? sib.indexOf(ref) + 1 : sib.length, 0, l);
     return l;
@@ -170,7 +176,12 @@ export function fakeDocument({
       for (const l of list) {
         if (!l.visible) continue;
         if (l.group) paint(l.layers);
-        else if (l.cels[f - 1]) draw(out, s, l.cels[f - 1], true);
+        else if (l.cels[f - 1]) {
+          if ((l.blendMode ?? "normal") !== "normal" || (l.opacity ?? 255) !== 255) {
+            throw unsupported(`blending layer '${l.name}' (${l.blendMode}, opacity ${l.opacity}) into a snapshot`);
+          }
+          draw(out, s, l.cels[f - 1], true);
+        }
       }
     };
     paint(s.layers);
@@ -198,11 +209,44 @@ export function fakeDocument({
   const describe = (list) => [...list].reverse().map((l) => ({
     id: `L${l.id}`, name: l.name, visible: l.visible, group: l.group,
     ...(l.group ? { layers: describe(l.layers) } : {
+      opacity: l.opacity ?? 255, blendMode: l.blendMode ?? "normal",
       celFrames: l.cels.flatMap((c, i) => (c ? [i + 1] : [])),
       ...(l.tilemap ? { tilemap: true } : {}),
     }),
   }));
   const pathOf = (l) => (l.parent ? `${pathOf(l.parent)}/${l.name}` : l.name);
+  // A new layer's blend mode and opacity from wire params, checked first (handlers_sprite.lua layerLook).
+  const layerLook = (p, what) => {
+    if (p.blend_mode !== undefined && !BLEND_MODES.has(p.blend_mode)) throw new Error(`${what}Unknown blend mode: ${p.blend_mode}`);
+    if (p.opacity !== undefined && (!Number.isInteger(p.opacity) || p.opacity < 0 || p.opacity > 255)) throw new Error(`${what}opacity must be an integer from 0 to 255`);
+    if ((p.blend_mode !== undefined || p.opacity !== undefined) && !p.new_layer) throw new Error(`${what}blend_mode and opacity apply to a new layer (new_layer)`);
+    return { blendMode: p.blend_mode, opacity: p.opacity };
+  };
+  // One image into a frame (handlers_sprite.lua putOne): onto the 'AI: <new_layer>' layer (made once, reused) or into a layer.
+  const putOne = (s, p, bytes, frame, look) => {
+    let target;
+    if (p.new_layer) {
+      const name = `AI: ${p.new_layer}`;
+      let source;
+      if (p.above !== undefined) {
+        source = byRef(p.above);
+        if (!source) throw new Error(`Layer not found: ${p.above}`);
+      }
+      // Reuse the layer made for an earlier frame: among the source's siblings first, then anywhere.
+      const find = (list) => walk(list).find((l) => !l.group && l.name === name);
+      target = find(source ? siblings(source) : s.layers) ?? find(s.layers);
+      if (!target) target = aiLayer(p.new_layer, source);
+      if (p.hide_source && source) source.visible = false;
+      if (p.hide) target.visible = false;
+      if (look.blendMode !== undefined) target.blendMode = look.blendMode;
+      if (look.opacity !== undefined) target.opacity = look.opacity;
+    } else {
+      target = p.layer !== undefined ? byRef(p.layer) : active.layer;
+      if (!target || target.group) throw new Error("No image layer to write to");
+    }
+    target.cels[frame - 1] = makeCel(s, p.x ?? 0, p.y ?? 0, p.width, p.height, bytes);
+    return target;
+  };
 
   const handlers = {
     get_state: () => {
@@ -236,25 +280,45 @@ export function fakeDocument({
       return [{ width: s.width, height: s.height, frame: f, layer: p.layer }, data];
     },
     put_image: (p) => {
-      const s = active.sprite;
       const bytes = decode(p.rgba);
       checkBytes(bytes, p.width, p.height);
-      let target;
-      if (p.new_layer) {
-        const name = `AI: ${p.new_layer}`;
-        const source = p.above !== undefined ? byRef(p.above) : undefined;
-        // Reuse the layer made for an earlier frame: among the source's siblings first, then anywhere.
-        const find = (list) => walk(list).find((l) => !l.group && l.name === name);
-        target = find(source ? siblings(source) : s.layers) ?? find(s.layers);
-        if (!target) target = aiLayer(p.new_layer, source);
-        if (p.hide_source && source) source.visible = false;
-        if (p.hide) target.visible = false;
-      } else {
-        target = p.layer !== undefined ? byRef(p.layer) : active.layer;
-        if (!target || target.group) throw new Error("No image layer to write to");
-      }
-      target.cels[p.frame - 1] = makeCel(s, p.x ?? 0, p.y ?? 0, p.width, p.height, bytes);
+      const target = putOne(active.sprite, p, bytes, p.frame, layerLook(p, ""));
       return { layer: `L${target.id}`, name: target.name };
+    },
+    // Several images in one undo step; the sprite first gets at least `frames` frames, copies of the last one.
+    put_images: (p) => {
+      const s = active.sprite;
+      if (!p.images.length) throw new Error("No images");
+      const count = Math.max(s.durations.length, p.frames ?? 0);
+      if (p.duration !== undefined && p.duration < 1) throw new Error("duration must be at least 1 ms");
+      const checked = p.images.map((im, i) => {
+        const what = `Image ${i + 1}: `;
+        if (!im || typeof im !== "object" || Array.isArray(im)) throw new Error(`${what}expected an object`);
+        for (const k of Object.keys(im)) if (!IMAGE_KEYS.has(k)) throw new Error(`${what}unknown param '${k}'`);
+        if (!Number.isInteger(im.width) || !Number.isInteger(im.height) || typeof im.rgba !== "string") throw new Error(`${what}width, height and rgba are required`);
+        if (!Number.isInteger(im.frame)) throw new Error(`${what}frame is required`);
+        if (im.frame < 1 || im.frame > count) throw new Error(`${what}frame ${im.frame} is out of range (1-${count})`);
+        const bytes = decode(im.rgba);
+        if (bytes.length !== im.width * im.height * 4) throw new Error(`${what}expected ${im.width * im.height * 4} bytes, got ${bytes.length}`);
+        return { bytes, look: layerLook(im, what) };
+      });
+      let added = 0;
+      // Sprite:newFrame: a copy of the last frame's cels (every image layer), with its duration unless one is given.
+      while (s.durations.length < count) {
+        const last = s.durations.length;
+        s.durations.push(p.duration ?? s.durations[last - 1]);
+        for (const l of walk(s.layers)) {
+          const c = !l.group && l.cels[last - 1];
+          if (c) l.cels[last] = { ...c, data: new Uint8Array(c.data) };
+        }
+        added++;
+      }
+      const layers = [], seen = new Set();
+      p.images.forEach((im, i) => {
+        const target = putOne(s, { ...im, prompt: p.prompt }, checked[i].bytes, im.frame, checked[i].look);
+        if (!seen.has(target.id)) { seen.add(target.id); layers.push({ layer: `L${target.id}`, name: target.name }); }
+      });
+      return { layers, frames: s.durations.length, added };
     },
     create_sprite: (p) => {
       const bytes = decode(p.rgba);

@@ -225,7 +225,10 @@ local function normalize(st)
     for i, l in ipairs(list or {}) do
       local item = { name = l.name, visible = l.visible, group = l.group and true or false }
       if l.group then item.layers = layers(l.layers)
-      else item.cels = l.celFrames or {}; item.tilemap = l.tilemap and true or false end
+      else
+        item.cels = l.celFrames or {}; item.tilemap = l.tilemap and true or false
+        item.opacity = l.opacity; item.blendMode = l.blendMode
+      end
       out[i] = item
     end
     return out

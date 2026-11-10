@@ -6,12 +6,27 @@ own header, including its credits.
 
 ## What is vendored
 
-- `vendor/core/`: `math.js`, `color.js`, `painter.js`, `sim.js`, `particles.js`, `fx.js`, `chain.js`, `shapes.js`
-  and `index.js`, from pixelfx's `src/core/`.
-- `vendor/effects/`: three effects used as the engine's test set, from pixelfx's `src/fx/`:
-  `impacts/hit-spark.js`, `lightning/plasma-ball.js` and `nature/poison-cloud.js`.
+- `vendor/core/`: `math.js`, `color.js`, `painter.js`, `sim.js`, `particles.js`, `fx.js`, `chain.js`, `shapes.js`,
+  `poses.js` and `index.js`, from pixelfx's `src/core/`. `poses.js` is data only (the `READY` stance some effects'
+  `act` export starts from; their acts are not used here).
+- `vendor/effects/<category>/`: the FX library (`../library.ts`), from pixelfx's `src/fx/<category>/`, with each
+  category's shared `_lib.js`. Every file is pixelfx's (MIT, below); the ones marked Sprite Fusion adapt Sprite
+  Fusion's pixel art VFX named after it (credit below and at the top of the file):
+  - `arcane/`: `_lib` (Sprite Fusion: black-hole, energy), `arcane-orb` (Sprite Fusion: energy), `magic-circle-cast` (Sprite Fusion: holy-light), `mana-burst` (Sprite Fusion: energy), `portal` (Sprite Fusion: black-hole), `rune-circle` (Sprite Fusion: heal).
+  - `explosions/`: `_lib` (Sprite Fusion: explosion), `grenade` (Sprite Fusion: explosion), `implosion` (Sprite Fusion: energy), `plasma-explosion` (Sprite Fusion: energy), `small-explosion` (Sprite Fusion: explosion), `smoke-bomb`.
+  - `fire/`: `_lib` (Sprite Fusion: fire), `campfire` (Sprite Fusion: fire), `candle` (Sprite Fusion: fire), `fireball` (Sprite Fusion: explosion), `flame-pillar` (Sprite Fusion: explosion, holy-light), `meteor` (Sprite Fusion: explosion), `spirit-flame` (Sprite Fusion: fire), `torch` (Sprite Fusion: fire).
+  - `holy/`: `_lib` (Sprite Fusion: heal), `feather-burst`, `heal-aoe`, `holy-pillar`, `smite`, `sunburst`.
+  - `impacts/`: `_lib` (Sprite Fusion: impact, explosion), `bullet-impact` (Sprite Fusion: impact), `crit-hit` (Sprite Fusion: impact), `ground-slam` (Sprite Fusion: explosion), `heavy-landing` (Sprite Fusion: explosion), `hit-spark` (Sprite Fusion: impact), `parry` (Sprite Fusion: impact), `ricochet` (Sprite Fusion: impact).
+  - `lightning/`: `_lib` (Sprite Fusion: lightning), `ball-lightning` (Sprite Fusion: energy), `chain-lightning` (Sprite Fusion: lightning), `lightning-strike` (Sprite Fusion: lightning), `plasma-ball` (Sprite Fusion: energy), `spark-arc` (Sprite Fusion: lightning).
+  - `melee/`: `_lib` (Sprite Fusion: slash), `claw-swipe` (Sprite Fusion: slash), `double-slash` (Sprite Fusion: slash), `heavy-cleave` (Sprite Fusion: slash), `spin-slash` (Sprite Fusion: slash), `sword-slash` (Sprite Fusion: slash), `thrust` (Sprite Fusion), `uppercut` (Sprite Fusion).
+  - `nature/`: `poison-cloud`.
 
-Not vendored: `act.js`, `actor.js`, `rig.js`, `poses.js`, `scene.js` and `font.js` from `src/core/`, and nothing from
+  Left out on purpose: effects that read the character (`o.actor`, pixelfx's `onBody`), the text effect
+  (`cartoon-pow`, it needs the font), and others to keep the first set near 40. Some melee and impact effects set
+  `meta.actor: 2` only for pixelfx's gallery (the character's scale and pose); they never read `o.actor`, and
+  `library.ts` offers them with `actor` removed from their meta (their files are unchanged).
+
+Not vendored: `act.js`, `actor.js`, `rig.js`, `scene.js` and `font.js` from `src/core/`, and nothing from
 `gallery/`. The Patch Pixel font in pixelfx's `gallery/fonts` is not covered by pixelfx's MIT license and is not
 copied here.
 
@@ -21,8 +36,8 @@ copied here.
 
 - `core/index.js`: no longer re-exports the font (`FONTS`, `textWidth`), the actor (`stockActor`, `drawActor`,
   `actorAlphaOf`, `HERO`, `HERO2`, `HERO_PAL`, `DUMMY_PAL`), scenes (`backdrop`, `BACKDROPS`), acts (`createAct`,
-  `actBounds`, `actSpan`, `actTiming`, `poseAt`, `lerpPose`, `Target`, `STAND`, `SKINS`, `posed`), the rig
-  (`skeleton`, `posedParts`) or poses (`READY`). A comment notes the edit.
+  `actBounds`, `actSpan`, `actTiming`, `poseAt`, `lerpPose`, `Target`, `STAND`, `SKINS`, `posed`) or the rig
+  (`skeleton`, `posedParts`). It still re-exports `READY` from `poses.js`. A comment notes the edit.
 - `core/fx.js`: no longer imports `stockActor`; `resolveOptions` throws "this effect needs an actor" when an effect
   needs a character and none is passed, instead of using the stock one.
 - `core/painter.js`: no longer imports the font; `Painter.text()` and `Painter.measure()` throw "text not supported".
@@ -31,8 +46,8 @@ copied here.
 ## Credits
 
 - **pixelfx**: Copyright (c) 2026 Patch, Copyright (c) 2026 Hugo Duprez. MIT License, below.
-- **Sprite Fusion's pixel art VFX**: `core/sim.js` and the effects that say so at the top of their file
-  (`hit-spark.js`, `plasma-ball.js`) adapt Sprite Fusion's open-source pixel art VFX
+- **Sprite Fusion's pixel art VFX**: `core/sim.js` and the effects that say so at the top of their file (marked
+  Sprite Fusion in the list above) adapt Sprite Fusion's open-source pixel art VFX
   (https://www.spritefusion.com/pixel-art-vfx), Copyright (c) 2026 Hugo Duprez, MIT License.
 - **Hollow Crown**: pixelfx's `act.js` adapts Hollow Crown (https://github.com/rehan-remade/hollow-crown),
   Copyright (c) 2026 rehan-remade, MIT License. `act.js` is not vendored here; this credit is kept for when it is.

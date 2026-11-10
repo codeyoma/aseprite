@@ -1,0 +1,78 @@
+{
+  "scenarios": [
+    {
+      "name": "put_image sets a new layer's blend mode and opacity; other layers and bad values are refused before anything changes",
+      "fixture": {
+        "width": 2, "height": 1,
+        "layers": [{ "name": "Body", "cels": { "1": ["r."] } }]
+      },
+      "steps": [
+        { "state": { "layers": [{ "name": "Body", "blendMode": "normal", "opacity": 255 }] } },
+        { "request": "put_image", "params": { "new_layer": "glow", "width": 2, "height": 1, "rgba": { "rows": ["b."] }, "blend_mode": "addition", "opacity": 128 },
+          "result": { "name": "AI: glow", "layer": { "$layerId": "AI: glow" } } },
+        { "state": { "activeLayer": "AI: glow", "layers": [
+          { "name": "AI: glow", "cels": [1], "blendMode": "addition", "opacity": 128 },
+          { "name": "Body", "cels": [1], "blendMode": "normal", "opacity": 255 }
+        ] } },
+        { "pixels": { "layer": "AI: glow" }, "rows": ["b."] },
+        { "request": "put_image", "params": { "layer": "Body", "width": 2, "height": 1, "rgba": { "rows": ["g."] }, "blend_mode": "screen" },
+          "error": "blend_mode and opacity apply to a new layer (new_layer)" },
+        { "request": "put_image", "params": { "new_layer": "x", "width": 2, "height": 1, "rgba": { "rows": ["g."] }, "blend_mode": "glowy" },
+          "error": "Unknown blend mode: glowy" },
+        { "request": "put_image", "params": { "new_layer": "x", "width": 2, "height": 1, "rgba": { "rows": ["g."] }, "opacity": 300 },
+          "error": "opacity must be an integer from 0 to 255" },
+        { "state": { "layers": [{ "name": "AI: glow" }, { "name": "Body", "cels": [1] }] } },
+        { "pixels": { "layer": "Body" }, "rows": ["r."] }
+      ]
+    },
+    {
+      "name": "put_images adds frames (copies of the last one) and writes every image, a layer above one made in the same request",
+      "notes": "One undo step in Aseprite (one transaction). New frames copy the last frame's cels and take duration; the active layer ends on the last layer made.",
+      "fixture": {
+        "width": 2, "height": 1, "durations": [100, 200],
+        "tags": [{ "name": "idle", "from": 1, "to": 2 }],
+        "layers": [{ "name": "Body", "cels": { "1": ["r."], "2": [".r"] } }]
+      },
+      "steps": [
+        { "request": "put_images", "params": { "frames": 4, "duration": 50, "label": "Add FX", "images": [
+          { "new_layer": "fx", "frame": 2, "width": 1, "height": 1, "x": 0, "y": 0, "rgba": { "rows": ["y"] } },
+          { "new_layer": "fx", "frame": 4, "width": 1, "height": 1, "x": 1, "y": 0, "rgba": { "rows": ["y"] } },
+          { "new_layer": "fx glow", "above": "AI: fx", "frame": 4, "width": 2, "height": 1, "rgba": { "rows": ["bb"] }, "blend_mode": "addition" }
+        ] }, "result": {
+          "layers": [{ "name": "AI: fx", "layer": { "$layerId": "AI: fx" } }, { "name": "AI: fx glow", "layer": { "$layerId": "AI: fx glow" } }],
+          "frames": 4, "added": 2
+        } },
+        { "state": {
+          "durations": [100, 200, 50, 50], "activeFrame": 1, "tags": [{ "name": "idle", "from": 1, "to": 2 }], "activeLayer": "AI: fx glow",
+          "layers": [
+            { "name": "AI: fx glow", "cels": [4], "blendMode": "addition", "opacity": 255 },
+            { "name": "AI: fx", "cels": [2, 4], "blendMode": "normal" },
+            { "name": "Body", "cels": [1, 2, 3, 4] }
+          ]
+        } },
+        { "pixels": { "layer": "Body", "frame": 3 }, "rows": [".r"] },
+        { "pixels": { "layer": "Body", "frame": 4 }, "rows": [".r"] },
+        { "pixels": { "layer": "AI: fx", "frame": 2 }, "rows": ["y."] },
+        { "pixels": { "layer": "AI: fx", "frame": 4 }, "rows": [".y"] },
+        { "pixels": { "layer": "AI: fx glow", "frame": 4 }, "rows": ["bb"] },
+        { "request": "put_images", "params": { "images": [] }, "error": "No images" },
+        { "request": "put_images", "params": { "images": [{ "new_layer": "z", "frame": 9, "width": 1, "height": 1, "rgba": { "rows": ["y"] } }] },
+          "error": "Image 1: frame 9 is out of range (1-4)" },
+        { "request": "put_images", "params": { "images": [{ "new_layer": "z", "frame": 1, "width": 2, "height": 1, "rgba": { "rows": ["y"] } }] },
+          "error": "Image 1: expected 8 bytes, got 4" },
+        { "request": "put_images", "params": { "images": [{ "new_layer": "z", "width": 1, "height": 1, "rgba": { "rows": ["y"] } }] },
+          "error": "Image 1: frame is required" },
+        { "request": "put_images", "params": { "images": [{ "new_layer": "z", "frame": 1, "width": 1, "height": 1, "rgba": { "rows": ["y"] }, "tint": 1 }] },
+          "error": "Image 1: unknown param 'tint'" },
+        { "request": "put_images", "params": { "frames": 6, "images": [
+          { "new_layer": "z", "frame": 1, "width": 1, "height": 1, "rgba": { "rows": ["y"] } },
+          { "new_layer": "z", "frame": 6, "width": 1, "height": 1, "rgba": { "rows": ["y"] }, "blend_mode": "nope" }
+        ] }, "error": "Image 2: Unknown blend mode: nope" },
+        { "state": { "durations": [100, 200, 50, 50], "layers": [{ "name": "AI: fx glow" }, { "name": "AI: fx" }, { "name": "Body" }] } },
+        { "request": "put_images", "params": { "frames": 2, "images": [{ "layer": "Body", "frame": 1, "width": 2, "height": 1, "rgba": { "rows": ["gg"] } }] },
+          "result": { "frames": 4, "added": 0, "layers": [{ "name": "Body" }] } },
+        { "pixels": { "layer": "Body", "frame": 1 }, "rows": ["gg"] }
+      ]
+    }
+  ]
+}

@@ -15,6 +15,9 @@ export interface LayerInfo {
   group: boolean;
   /** Group names from the top, e.g. ["Body"] for a layer inside Body. */
   path: string[];
+  /** Image layers: 0-255 and the blend mode's wire name (protocol.json blendModes). */
+  opacity?: number;
+  blendMode?: string;
 }
 
 export interface TagInfo {
@@ -68,6 +71,25 @@ export interface PutImage {
   x?: number;
   y?: number;
   label?: string;
+  /** The new layer's blend mode (protocol.json blendModes), e.g. "addition"; with newLayer only. */
+  blendMode?: string;
+  /** The new layer's opacity, 0-255; with newLayer only. */
+  opacity?: number;
+}
+
+/** One image of putImages: put at (x, y) in a frame, onto a new 'AI: ' layer or into a layer. */
+export interface PutImagesItem {
+  image: Rgba;
+  frame: number;
+  layer?: string;
+  newLayer?: string;
+  /** A layer id or name, also one made earlier in the same call ('AI: <name>'). */
+  above?: string;
+  x?: number;
+  y?: number;
+  hide?: boolean;
+  blendMode?: string;
+  opacity?: number;
 }
 
 export interface NewSprite {
@@ -125,6 +147,12 @@ export interface Document {
   /** A layer's pixels at sprite size (or the whole sprite when no layer). */
   pixels(layer: string | undefined, frame?: number): Promise<Rgba>;
   putImage(img: Rgba, o?: PutImage): Promise<{ layer: string; name: string }>;
+  /**
+   * Several images in one undo step. frames: the sprite first gets at least that many frames, each a copy of
+   * the last frame's cels lasting duration ms (default the last frame's).
+   */
+  putImages(items: PutImagesItem[], o?: { frames?: number; duration?: number; label?: string; prompt?: string }):
+    Promise<{ layers: { layer: string; name: string }[]; frames: number; added: number }>;
   createSprite(img: Rgba, o?: NewSprite): Promise<{ title: string }>;
   createAnimation(width: number, height: number, frames: AnimationFrame[], o?: NewSprite & { tags?: { name: string; from: number; to: number }[] }): Promise<{ title: string }>;
   /** Text rendered by Aseprite in a font file or system font (PasteText spec), white, trimmed. */
@@ -182,7 +210,10 @@ export function resolveFrames(spec: unknown, count: number, active: number, fall
 function flatten(tree: any[], path: string[] = []): LayerInfo[] {
   const out: LayerInfo[] = [];
   for (const l of tree ?? []) {
-    out.push({ id: String(l.id ?? ""), name: l.name, visible: l.visible !== false, group: !!l.group, path });
+    out.push({
+      id: String(l.id ?? ""), name: l.name, visible: l.visible !== false, group: !!l.group, path,
+      ...(l.group ? {} : { opacity: l.opacity, blendMode: l.blendMode }),
+    });
     if (l.group) out.push(...flatten(l.layers, [...path, l.name]));
   }
   return out;
@@ -248,9 +279,20 @@ export function documentOf(aseprite: AsepriteRequester): Document {
         width: img.width, height: img.height, rgba: encode(img),
         frame: o.frame, layer: o.layer, new_layer: o.newLayer, above: o.above,
         hide_source: o.hideSource, hide: o.hide, x: o.x, y: o.y, label: o.label,
+        blend_mode: o.blendMode, opacity: o.opacity,
       });
       wrote();
       return result;
+    },
+    putImages(items, o = {}) {
+      const images = items.map((it) => {
+        checkSize(it.image, "put_images");
+        const im: Record<string, unknown> = { width: it.image.width, height: it.image.height, rgba: encode(it.image), frame: it.frame };
+        const opt = { layer: it.layer, new_layer: it.newLayer, above: it.above, x: it.x, y: it.y, hide: it.hide, blend_mode: it.blendMode, opacity: it.opacity };
+        for (const [k, v] of Object.entries(opt)) if (v !== undefined) im[k] = v;
+        return im;
+      });
+      return write("put_images", { images, frames: o.frames, duration: o.duration, label: o.label, prompt: o.prompt });
     },
     async createSprite(img, o = {}) {
       checkSize(img, "create_sprite");
