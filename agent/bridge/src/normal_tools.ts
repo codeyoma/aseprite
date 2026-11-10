@@ -3,13 +3,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import * as z from "zod/v4";
+import { documentOf } from "./document.js";
 import { light, normalMap } from "./normals.js";
 import type { Rgba } from "./pixel_grid.js";
 import { encodeSnapshot } from "./png.js";
-import { frameList, layerPixels, spriteInfo } from "./shading_tools.js";
 import { text, type Tool } from "./tool.js";
-
-const send = (img: Rgba) => Buffer.from(img.data).toString("base64");
 
 const lightSchema = z.object({
   from: z.enum(["top-left", "top", "top-right", "left", "right", "bottom-left", "bottom", "bottom-right", "front"]).optional()
@@ -53,17 +51,18 @@ export const NORMAL_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Make normal map",
     async run(input, aseprite) {
-      const info = await spriteInfo(aseprite);
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
       const layer = input.layer ?? info.layer;
-      const frames = frameList(input.frames ?? "all", info.frames, info.frame);
+      const frames = await doc.frames(input.frames ?? "all");
       for (const f of frames) {
-        const img = await layerPixels(aseprite, layer, f);
-        const height = input.height_layer ? await layerPixels(aseprite, input.height_layer, f) : undefined;
+        const img = await doc.pixels(layer, f);
+        const height = input.height_layer ? await doc.pixels(input.height_layer, f) : undefined;
         const n = normalMap(img, {
           source: input.source ?? (height ? "height" : "bevel"), height, bevel: input.bevel, strength: input.strength,
           levels: input.levels, convention: input.convention,
         });
-        await aseprite.request("put_image", { new_layer: `normal ${layer}`, above: layer, hide: true, frame: f, width: n.width, height: n.height, rgba: send(n) });
+        await doc.putImage(n, { newLayer: `normal ${layer}`, above: layer, hide: true, frame: f });
       }
       return { content: [text(`Made a ${input.convention ?? "opengl"} normal map of ${layer} (${input.source ?? "bevel"}) for ${frames.length} frame(s) on the hidden layer 'AI: normal ${layer}'. Preview it with light_preview.`)] };
     },
@@ -82,11 +81,12 @@ export const NORMAL_TOOLS: Tool[] = [
     kind: "read",
     label: () => "Preview lighting",
     async run(input, aseprite) {
-      const info = await spriteInfo(aseprite);
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
       const layer = input.layer ?? info.layer;
       const f = input.frame ?? info.frame;
-      const albedo = await layerPixels(aseprite, layer, f);
-      const normals = await layerPixels(aseprite, input.normal_layer ?? `AI: normal ${layer}`, f);
+      const albedo = await doc.pixels(layer, f);
+      const normals = await doc.pixels(input.normal_layer ?? `AI: normal ${layer}`, f);
       const l = input.light ?? {};
       const lit = light(albedo, normals, {
         dir: l.point ? undefined : DIRS[l.from ?? "top-left"],
@@ -111,13 +111,14 @@ export const NORMAL_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Export normal sheet",
     async run(input, aseprite) {
-      const info = await spriteInfo(aseprite);
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
       const layer = input.layer ?? info.layer;
-      const frames = frameList(input.frames ?? "all", info.frames, info.frame);
+      const frames = await doc.frames(input.frames ?? "all");
       const color: Rgba[] = [], normal: Rgba[] = [];
       for (const f of frames) {
-        color.push(await layerPixels(aseprite, layer, f));
-        normal.push(await layerPixels(aseprite, input.normal_layer ?? `AI: normal ${layer}`, f));
+        color.push(await doc.pixels(layer, f));
+        normal.push(await doc.pixels(input.normal_layer ?? `AI: normal ${layer}`, f));
       }
       const name = input.name ?? layer.toLowerCase().replace(/[^a-z0-9]+/g, "_");
       mkdirSync(input.dir, { recursive: true });

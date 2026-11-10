@@ -37,7 +37,7 @@ test("make_ui button: 4 tagged frames and a 9-patch slice", async () => {
   const pico = ["#000000", "#1d2b53", "#29adff", "#fff1e8", "#83769c", "#c2c3c7"];
   const fake = { async request(m, p) {
     calls.push({ m, p });
-    if (m === "execute_lua") return { result: { ok: true, value: { frames: 1, frame: 1, layer: "L", palette: pico } } };
+    if (m === "get_state") return { result: { activeFrame: 1, activeLayerId: "L1", activeSprite: { filename: "Sprite", width: 48, height: 16, frames: [100].map((durationMs) => ({ durationMs })), layers: [{ id: "L1", name: "L" }], tags: [], palette: { colors: pico } } } };
     return { result: { title: p.title } };
   } };
   const r = await runTool(findTool("make_ui"), { kind: "button", width: 48, height: 16, fill: "#29adff", label: "Play" }, fake);

@@ -52,7 +52,7 @@ test("normal_map writes a hidden layer per frame; export writes matching sheets"
   const fake = {
     async request(m, p) {
       calls.push({ m, p });
-      if (m === "execute_lua") return { result: { ok: true, value: { frames: 2, frame: 1, layer: "Ball", palette: [] } } };
+      if (m === "get_state") return { result: { activeFrame: 1, activeLayerId: "L1", activeSprite: { filename: "Sprite", width: W, height: W, frames: [{ durationMs: 100 }, { durationMs: 100 }], layers: [{ id: "L1", name: "Ball" }], tags: [], palette: { colors: [] } } } };
       if (m === "snapshot") return { result: { width: W, height: W }, binary: Buffer.from(p.layer === "AI: normal Ball" ? normalMap(img).data : img.data) };
       return { result: {} };
     },

@@ -2,12 +2,12 @@
 import * as z from "zod/v4";
 import { hex, nearest, type RGBA } from "./color.js";
 import { DIRECTIONS_4, DIRECTIONS_8 } from "./directions.js";
+import { documentOf, type AnimationFrame } from "./document.js";
 import { ELEVATIONS, fitFrame, loadModel, renderView, type View } from "./model3d.js";
 import { findPalette } from "./palettes.js";
 import type { Rgba } from "./pixel_grid.js";
 import { encodeSnapshot } from "./png.js";
 import { outline } from "./shading.js";
-import { spriteInfo } from "./shading_tools.js";
 import { failure, text, type Tool, type ToolResult } from "./tool.js";
 
 
@@ -82,7 +82,7 @@ export const MODEL_TOOLS: Tool[] = [
       const fit = fitFrame(poses.flat(), views);
       let palette: RGBA[] | undefined;
       if (input.palette && input.palette !== "none") {
-        palette = input.palette === "sprite" ? (await spriteInfo(aseprite)).palette : findPalette(input.palette)?.colors;
+        palette = input.palette === "sprite" ? (await documentOf(aseprite).info()).palette : findPalette(input.palette)?.colors;
         if (!palette?.length) return failure(`No palette ${input.palette}.`);
       }
       const finish = (data: Uint8Array): Rgba => {
@@ -96,27 +96,27 @@ export const MODEL_TOOLS: Tool[] = [
         const png = encodeSnapshot(Buffer.from(img.data), size, size, Math.max(1, Math.floor(256 / size)), "checker");
         return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }, text(`Preview: ${size}x${size}, facing S, elevation ${elev}°.${model.notes.length ? " " + model.notes.join(" ") : ""}`)] };
       }
-      const frames: { rgba: string; duration: number }[] = [];
+      const frames: AnimationFrame[] = [];
       const tags: { name: string; from: number; to: number }[] = [];
       for (let ci = 0; ci < clips.length; ci++) {
         for (let di = 0; di < views.length; di++) {
           const from = frames.length + 1;
           for (const tris of poses[ci]) {
             const img = finish(renderView(tris, views[di], fit, { size, bands: input.bands }));
-            frames.push({ rgba: Buffer.from(img.data).toString("base64"), duration: Math.round(1000 / fps) });
+            frames.push({ image: img, duration: Math.round(1000 / fps) });
           }
           tags.push({ name: clips[ci].name ? `${clips[ci].name}_${names[di]}` : names[di], from, to: frames.length });
         }
       }
       const colors = new Set<string>();
       for (const f of frames) {
-        const d = Buffer.from(f.rgba, "base64");
+        const d = f.image.data;
         for (let i = 0; i < d.length; i += 4) if (d[i + 3]) colors.add(hex({ r: d[i], g: d[i + 1], b: d[i + 2], a: 255 }));
       }
-      const r = await aseprite.request("create_animation", {
-        width: size, height: size, title: input.name ?? "3D render", frames, tags, palette: palette ? palette.map(hex) : [...colors].slice(0, 256),
-      }, 120_000);
-      return { content: [text(`Rendered "${r.result.title}": ${frames.length} frames of ${size}x${size} — ${views.length} direction(s)` +
+      const r = await documentOf(aseprite).createAnimation(size, size, frames, {
+        title: input.name ?? "3D render", tags, palette: palette ? palette.map(hex) : [...colors].slice(0, 256),
+      });
+      return { content: [text(`Rendered "${r.title}": ${frames.length} frames of ${size}x${size} — ${views.length} direction(s)` +
         `${wanted.length ? ` x ${clips.map((c) => `${c.name} (${c.times.length} frames)`).join(", ")}` : ""}, elevation ${elev}°, ${colors.size} colors. ` +
         `Tags: ${tags.slice(0, 8).map((t) => t.name).join(", ")}${tags.length > 8 ? ", …" : ""}.${model.notes.length ? " " + model.notes.join(" ") : ""}`)] };
     },

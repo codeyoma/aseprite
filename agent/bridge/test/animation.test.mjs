@@ -65,7 +65,7 @@ test("transform_layer writes frames after from_frame", async () => {
   const fake = {
     async request(m, p) {
       calls.push({ m, p });
-      if (m === "execute_lua") return { result: { ok: true, value: 6 } };
+      if (m === "get_state") return { result: { activeFrame: 1, activeLayerId: "L1", activeSprite: { filename: "Sprite", width: 40, height: 40, frames: Array(6).fill(100).map((durationMs) => ({ durationMs })), layers: [{ id: "L1", name: "Sword" }], tags: [], palette: { colors: [] } } } };
       if (m === "snapshot") return { result: { width: 40, height: 40 }, binary: Buffer.from(img.data) };
       return { result: {} };
     },

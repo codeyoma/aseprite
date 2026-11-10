@@ -99,6 +99,7 @@ local function describeLayers(layers)
   for i = #layers, 1, -1 do
     local l = layers[i]
     local item = {
+      id = "L" .. tostring(l.id),
       name = l.name,
       stackIndex = l.stackIndex,
       visible = l.isVisible,
@@ -191,6 +192,7 @@ local function getState()
   if sprite then
     state.activeSprite = describeSprite(sprite, true)
     state.activeLayer = app.layer and layerPath(app.layer) or nil
+    state.activeLayerId = app.layer and ("L" .. tostring(app.layer.id)) or nil
     state.activeFrame = app.frame and app.frame.frameNumber or nil
   end
   return state
@@ -270,8 +272,8 @@ local function snapshot(params)
   local img = Image(sprite.width, sprite.height, ColorMode.RGB)
 
   if params.layer then
-    local layer = findLayer(sprite.layers, params.layer)
-    if not layer then error("Layer not found: " .. params.layer) end
+    local layer = layerById(params.layer, sprite)
+    if not layer then error("Layer not found: " .. tostring(params.layer)) end
     if layer.isGroup then error("Snapshot of a group layer is not supported; snapshot the sprite instead") end
     local cel = layer:cel(frameNumber)
     if cel then

@@ -5,12 +5,11 @@ import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { hex, parseHex, type RGBA } from "./color.js";
 import { applyLut, applyMap, ditherGradient, ditherToPalette, paletteLut, rampMap, type Pattern } from "./dither.js";
+import { documentOf } from "./document.js";
 import { findPalette } from "./palettes.js";
 import type { Rgba } from "./pixel_grid.js";
-import { frameList, layerPixels, spriteInfo } from "./shading_tools.js";
-import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type Tool } from "./tool.js";
 
-const send = (img: Rgba) => Buffer.from(img.data).toString("base64");
 const colorsOf = (list: string[]) => list.map((h) => parseHex(h)).filter((c): c is RGBA => !!c);
 
 const variantSchema = z.object({
@@ -36,14 +35,6 @@ function writePng(path: string, img: Rgba) {
   writeFileSync(path, PNG.sync.write(png));
 }
 
-async function selectionRect(aseprite: AsepriteRequester): Promise<{ x: number; y: number; w: number; h: number } | undefined> {
-  const { result } = await aseprite.request("execute_lua", {
-    code: "local s = app.sprite.selection if s.isEmpty then return nil end local b = s.bounds return { x = b.x, y = b.y, w = b.width, h = b.height }",
-    transaction: false,
-  });
-  return result.ok ? result.value ?? undefined : undefined;
-}
-
 export const DITHER_TOOLS: Tool[] = [
   {
     name: "dither_gradient",
@@ -63,20 +54,20 @@ export const DITHER_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Dithered gradient",
     async run(input, aseprite) {
-      const info = await spriteInfo(aseprite);
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
       const frame = input.frame ?? info.frame;
-      const { result: dims } = await aseprite.request("execute_lua", { code: "return { w = app.sprite.width, h = app.sprite.height }", transaction: false });
-      const W = dims.value.w, H = dims.value.h;
+      const W = info.width, H = info.height;
       let rect = typeof input.area === "object" ? input.area : undefined;
       if (input.area === "selection") {
-        rect = await selectionRect(aseprite);
+        rect = info.selection;
         if (!rect) return failure("There is no selection; select an area or pass area: 'canvas'.");
       }
-      const mask = input.mask_layer ? await layerPixels(aseprite, input.mask_layer, frame) : undefined;
+      const mask = input.mask_layer ? await doc.pixels(input.mask_layer, frame) : undefined;
       const img = ditherGradient(W, H, {
         colors: colorsOf(input.colors), direction: input.direction ?? "vertical", pattern: (input.pattern ?? "bayer4") as Pattern, rect, mask,
       });
-      await aseprite.request("put_image", { new_layer: "dither", above: input.mask_layer, frame, width: W, height: H, rgba: send(img) });
+      await doc.putImage(img, { newLayer: "dither", above: input.mask_layer, frame });
       return { content: [text(`Drew a ${input.direction ?? "vertical"} ${input.pattern ?? "bayer4"} gradient of ${input.colors.length} colors on 'AI: dither'.`)] };
     },
   },
@@ -98,15 +89,16 @@ export const DITHER_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Dither to palette",
     async run(input, aseprite) {
-      const info = await spriteInfo(aseprite);
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
       const layer = input.layer ?? info.layer;
       const palette = input.colors?.length ? colorsOf(input.colors)
         : input.palette && input.palette !== "sprite" ? findPalette(input.palette)?.colors : info.palette;
       if (!palette?.length) return failure(`No palette${input.palette ? ` named ${input.palette}` : ""}.`);
-      const frames = frameList(input.frames, info.frames, info.frame);
+      const frames = await doc.frames(input.frames);
       for (const f of frames) {
-        const out = ditherToPalette(await layerPixels(aseprite, layer, f), palette, (input.pattern ?? "bayer4") as Pattern, input.strength ?? 1);
-        await aseprite.request("put_image", { new_layer: `dithered ${layer}`, above: layer, hide_source: true, frame: f, width: out.width, height: out.height, rgba: send(out) });
+        const out = ditherToPalette(await doc.pixels(layer, f), palette, (input.pattern ?? "bayer4") as Pattern, input.strength ?? 1);
+        await doc.putImage(out, { newLayer: `dithered ${layer}`, above: layer, hideSource: true, frame: f });
       }
       return { content: [text(`Dithered ${layer} to ${palette.length} colors (${input.pattern ?? "bayer4"}) in ${frames.length} frame(s) on 'AI: dithered ${layer}'; the original is hidden.`)] };
     },
@@ -126,14 +118,15 @@ export const DITHER_TOOLS: Tool[] = [
     kind: "edit",
     label: (a) => `Make ${a.variants?.length ?? ""} palette swaps`.replace("  ", " "),
     async run(input, aseprite) {
-      const info = await spriteInfo(aseprite);
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
       const layer = input.layer ?? info.layer;
-      const frames = frameList(input.frames ?? "all", info.frames, info.frame);
+      const frames = await doc.frames(input.frames ?? "all");
       for (const f of frames) {
-        const img = await layerPixels(aseprite, layer, f);
+        const img = await doc.pixels(layer, f);
         for (const v of input.variants) {
           const out = applyMap(img, variantMap(v));
-          await aseprite.request("put_image", { new_layer: v.name, above: layer, frame: f, width: out.width, height: out.height, rgba: send(out) });
+          await doc.putImage(out, { newLayer: v.name, above: layer, frame: f });
         }
       }
       return { content: [text(`Made ${input.variants.length} variant(s) of ${layer} over ${frames.length} frame(s): ${input.variants.map((v: Variant) => `'AI: ${v.name}'`).join(", ")}. Show one at a time to compare.`)] };
@@ -156,8 +149,9 @@ export const DITHER_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Export palette LUT",
     async run(input, aseprite) {
-      const info = await spriteInfo(aseprite);
-      const img = await layerPixels(aseprite, input.layer ?? info.layer, input.frame ?? info.frame);
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
+      const img = await doc.pixels(input.layer ?? info.layer, input.frame ?? info.frame);
       const { index, lut, missing } = paletteLut(img, info.palette, input.variants.map((v: Variant) => variantMap(v)));
       // Check: row 0 reproduces the sprite.
       const back = applyLut(index, lut, 0);

@@ -1,21 +1,20 @@
 // Pixel text and UI elements as tools (#50).
 import * as z from "zod/v4";
 import { adjust, nearest, parseHex, type RGBA } from "./color.js";
+import { documentOf, type AnimationFrame } from "./document.js";
 import type { Rgba } from "./pixel_grid.js";
-import { spriteInfo } from "./shading_tools.js";
 import { loadFont, measureText, panel, renderText, stamp, type PanelStyle } from "./ui.js";
-import { failure, text, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type Tool } from "./tool.js";
 
-const send = (img: Rgba) => Buffer.from(img.data).toString("base64");
 const rgb = (h: string | undefined): [number, number, number] | undefined => {
   const c = h ? parseHex(h) : undefined;
   return c ? [c.r, c.g, c.b] : undefined;
 };
 const asRgb = (c: RGBA): [number, number, number] => [c.r, c.g, c.b];
 
-/** Snaps every opaque pixel (base64 RGBA) to the nearest palette color. */
-function snapAll(b64: string, palette: RGBA[]): string {
-  const d = Buffer.from(b64, "base64");
+/** A copy of the image with every opaque pixel snapped to the nearest palette color. */
+function snapAll(img: Rgba, palette: RGBA[]): Rgba {
+  const d = new Uint8Array(img.data);
   const memo = new Map<number, RGBA>();
   for (let i = 0; i < d.length; i += 4) {
     if (d[i + 3] < 128) continue;
@@ -29,7 +28,7 @@ function snapAll(b64: string, palette: RGBA[]): string {
     d[i + 1] = c.g;
     d[i + 2] = c.b;
   }
-  return d.toString("base64");
+  return { width: img.width, height: img.height, data: d };
 }
 
 export const UI_TOOLS: Tool[] = [
@@ -59,12 +58,12 @@ export const UI_TOOLS: Tool[] = [
       if (!color) return failure(`Not a color: ${input.color}`);
       const font = loadFont(input.font ?? "aseprite");
       const img = renderText(input.text, font, { color, outline: rgb(input.outline), shadow: rgb(input.shadow), scale: input.scale });
-      const info = await spriteInfo(aseprite);
-      const { result } = await aseprite.request("execute_lua", { code: "return { w = app.sprite.width, h = app.sprite.height }", transaction: false });
-      const W = result.value.w, H = result.value.h;
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
+      const W = info.width, H = info.height;
       const x = (input.x ?? 0) - (input.align === "center" ? Math.floor(img.width / 2) : 0), y = input.y ?? 0;
       const canvas = stamp({ width: W, height: H, data: new Uint8Array(W * H * 4) }, img, x, y);
-      await aseprite.request("put_image", { new_layer: "text", frame: input.frame ?? info.frame, width: W, height: H, rgba: send(canvas) });
+      await doc.putImage(canvas, { newLayer: "text", frame: input.frame ?? info.frame });
       const clipped = x < 0 || y < 0 || x + img.width > W || y + img.height > H;
       return { content: [text(`Drew "${input.text}" (${img.width}x${img.height} px) at ${x},${y} on 'AI: text'.${clipped ? " Part of it is outside the canvas." : ""}`)] };
     },
@@ -117,10 +116,10 @@ export const UI_TOOLS: Tool[] = [
         return { image: stamp(p.image, t, x, y), center: p.center };
       };
       const name = input.name ?? input.kind;
-      let frames: { rgba: string; duration: number }[], tags: { name: string; from: number; to: number }[] = [], center;
+      let frames: AnimationFrame[], tags: { name: string; from: number; to: number }[] = [], center;
       if (input.kind === "panel") {
         const p = face(fillC);
-        frames = [{ rgba: send(p.image), duration: 100 }];
+        frames = [{ image: p.image, duration: 100 }];
         center = p.center;
       } else {
         const states = [
@@ -129,17 +128,18 @@ export const UI_TOOLS: Tool[] = [
           face(adjust(fillC, { lightness: -0.06 }), { pressed: true }),
           face(adjust(fillC, { chroma: -0.85, lightness: -0.05 }), { disabled: true }),
         ];
-        frames = states.map((s) => ({ rgba: send(s.image), duration: 100 }));
+        frames = states.map((s) => ({ image: s.image, duration: 100 }));
         tags = ["normal", "hover", "pressed", "disabled"].map((n, i) => ({ name: n, from: i + 1, to: i + 1 }));
         center = states[0].center;
       }
+      const doc = documentOf(aseprite);
       if (input.snap_to_palette !== false) {
-        const pal = (await spriteInfo(aseprite).catch(() => ({ palette: [] as RGBA[] }))).palette;
-        if (pal.length >= 2) frames = frames.map((f) => ({ ...f, rgba: snapAll(f.rgba, pal) }));
+        const pal = (await doc.info().catch(() => ({ palette: [] as RGBA[] }))).palette;
+        if (pal.length >= 2) frames = frames.map((f) => ({ ...f, image: snapAll(f.image, pal) }));
       }
-      const made = await aseprite.request("create_animation", { width: input.width, height: input.height, title: name, frames, tags });
+      const made = await doc.createAnimation(input.width, input.height, frames, { title: name, tags });
       await aseprite.request("set_slice", { name, x: 0, y: 0, w: input.width, h: input.height, center });
-      return { content: [text(`Made "${made.result.title}": a ${input.width}x${input.height} ${input.kind}${input.kind === "button" ? " with normal, hover, pressed and disabled frames" : ""}, ` +
+      return { content: [text(`Made "${made.title}": a ${input.width}x${input.height} ${input.kind}${input.kind === "button" ? " with normal, hover, pressed and disabled frames" : ""}, ` +
         `and a 9-patch slice '${name}' (stretchable center ${center.w}x${center.h} at ${center.x},${center.y}).`)] };
     },
   },

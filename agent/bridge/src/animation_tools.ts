@@ -1,27 +1,10 @@
 // Animation helpers as tools (#42): in-betweens for rigid parts along an
 // arc, clean rotation, squash and stretch, smear frames. Each writes a
-// layer's cels through put_image; no new colors are made.
+// layer's cels through the document; no new colors are made.
 import * as z from "zod/v4";
 import { along, smear, squashStretch, transform, type Easing } from "./animation.js";
-import type { Rgba } from "./pixel_grid.js";
-import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
-
-
-async function layerPixels(aseprite: AsepriteRequester, layer: string, frame: number): Promise<Rgba> {
-  const { result, binary } = await aseprite.request("snapshot", { layer, frame });
-  if (!binary) throw new Error("Aseprite sent no pixel data");
-  return { width: result.width, height: result.height, data: binary };
-}
-
-async function write(aseprite: AsepriteRequester, layer: string, frame: number, img: Rgba, label: string) {
-  await aseprite.request("put_image", { layer, frame, width: img.width, height: img.height, rgba: Buffer.from(img.data).toString("base64"), label });
-}
-
-async function frameCount(aseprite: AsepriteRequester): Promise<number> {
-  const { result } = await aseprite.request("execute_lua", { code: "return #app.sprite.frames", transaction: false });
-  if (!result.ok) throw new Error(result.error);
-  return result.value;
-}
+import { documentOf } from "./document.js";
+import { failure, text, type Tool } from "./tool.js";
 
 const moveSchema = z.object({
   dx: z.number().optional().describe("Pixels right."),
@@ -54,14 +37,15 @@ export const ANIMATION_TOOLS: Tool[] = [
     label: (a) => (a.layer ? `In-between ${a.layer}` : "In-between"),
     async run(input, aseprite) {
       if (input.to_frame <= input.from_frame) return failure("to_frame must come after from_frame.");
-      if (input.to_frame > (await frameCount(aseprite))) return failure("to_frame is past the last frame; add frames first.");
-      const base = await layerPixels(aseprite, input.layer, input.from_frame);
+      const doc = documentOf(aseprite);
+      if (input.to_frame > (await doc.info()).durations.length) return failure("to_frame is past the last frame; add frames first.");
+      const base = await doc.pixels(input.layer, input.from_frame);
       const m = input.move;
       const to = { dx: m.dx, dy: m.dy, angle: m.angle, sx: m.scale_x, sy: m.scale_y, px: m.pivot_x, py: m.pivot_y };
       const n = input.to_frame - input.from_frame;
       for (let f = input.from_frame + 1; f <= input.to_frame; f++) {
         const t = (f - input.from_frame) / n;
-        await write(aseprite, input.layer, f, transform(base, along(to, t, input.arc ?? 0, (input.easing ?? "ease-in-out") as Easing)), "In-between");
+        await doc.putImage(transform(base, along(to, t, input.arc ?? 0, (input.easing ?? "ease-in-out") as Easing)), { layer: input.layer, frame: f, label: "In-between" });
       }
       return { content: [text(`Animated ${input.layer} over frames ${input.from_frame + 1}-${input.to_frame} (${n} steps, ${input.easing ?? "ease-in-out"}${input.arc ? `, arc ${input.arc}px` : ""}).`)] };
     },
@@ -80,9 +64,10 @@ export const ANIMATION_TOOLS: Tool[] = [
     kind: "edit",
     label: (a) => `Rotate ${a.layer ?? ""} ${a.angle ?? ""}°`.trim(),
     async run(input, aseprite) {
+      const doc = documentOf(aseprite);
       for (const f of input.frames) {
-        const img = await layerPixels(aseprite, input.layer, f);
-        await write(aseprite, input.layer, f, transform(img, { angle: input.angle, px: input.pivot_x, py: input.pivot_y }), "Rotate");
+        const img = await doc.pixels(input.layer, f);
+        await doc.putImage(transform(img, { angle: input.angle, px: input.pivot_x, py: input.pivot_y }), { layer: input.layer, frame: f, label: "Rotate" });
       }
       return { content: [text(`Rotated ${input.layer} by ${input.angle}° in ${input.frames.length} frame(s).`)] };
     },
@@ -95,8 +80,9 @@ export const ANIMATION_TOOLS: Tool[] = [
     kind: "edit",
     label: (a) => ((a.amount ?? 0) < 0 ? "Squash" : "Stretch"),
     async run(input, aseprite) {
-      const img = await layerPixels(aseprite, input.layer, input.frame);
-      await write(aseprite, input.layer, input.frame, squashStretch(img, input.amount), input.amount < 0 ? "Squash" : "Stretch");
+      const doc = documentOf(aseprite);
+      const img = await doc.pixels(input.layer, input.frame);
+      await doc.putImage(squashStretch(img, input.amount), { layer: input.layer, frame: input.frame, label: input.amount < 0 ? "Squash" : "Stretch" });
       return { content: [text(`${input.amount < 0 ? "Squashed" : "Stretched"} ${input.layer} in frame ${input.frame} by ${Math.abs(input.amount * 100).toFixed(0)}%.`)] };
     },
   },
@@ -116,9 +102,10 @@ export const ANIMATION_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Smear frame",
     async run(input, aseprite) {
-      const a = await layerPixels(aseprite, input.layer, input.from_frame);
-      const b = await layerPixels(aseprite, input.layer, input.to_frame);
-      await write(aseprite, input.layer, input.frame, smear(a, b, input.steps), "Smear");
+      const doc = documentOf(aseprite);
+      const a = await doc.pixels(input.layer, input.from_frame);
+      const b = await doc.pixels(input.layer, input.to_frame);
+      await doc.putImage(smear(a, b, input.steps), { layer: input.layer, frame: input.frame, label: "Smear" });
       return { content: [text(`Frame ${input.frame} of ${input.layer} is now a smear from frame ${input.from_frame} to ${input.to_frame}.`)] };
     },
   },

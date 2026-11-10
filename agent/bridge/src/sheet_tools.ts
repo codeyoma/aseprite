@@ -2,12 +2,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { PNG } from "pngjs";
 import * as z from "zod/v4";
+import { documentOf } from "./document.js";
 import type { Rgba } from "./pixel_grid.js";
 import {
   detectBackground, detectCells, findSprites, frameImages, gridFrames, parseAtlas, removeBackground, tagsFromRows,
   type Align, type Frame, type Tag,
 } from "./sheet.js";
-import { failure, text, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type Tool } from "./tool.js";
 
 
 export function readPng(path: string): Rgba {
@@ -80,11 +81,9 @@ export const SHEET_TOOLS: Tool[] = [
       if (!frames.length) return failure("No frames found on the sheet.");
       const align = (input.align ?? "bottom-center") as Align;
       const out = frameImages(img, frames, mode === "grid" ? "top-left" : align, size);
-      const { result } = await aseprite.request("create_animation", {
-        width: out.width, height: out.height, title: input.name ?? "Imported sheet",
-        frames: out.images.map((d, i) => ({ rgba: Buffer.from(d).toString("base64"), duration: frames[i].duration ?? input.duration_ms ?? 100 })),
-        tags,
-      }, 120_000);
+      const result = await documentOf(aseprite).createAnimation(out.width, out.height,
+        out.images.map((d, i) => ({ image: { width: out.width, height: out.height, data: d }, duration: frames[i].duration ?? input.duration_ms ?? 100 })),
+        { title: input.name ?? "Imported sheet", tags });
       const bgText = bg.transparent ? "transparent background" : `background ${bg.color!.map((v) => v.toString(16).padStart(2, "0")).join("")} made transparent`;
       return {
         content: [text(`Imported ${frames.length} frames of ${out.width}x${out.height} (${how}; ${bgText}) as "${result.title}"` +

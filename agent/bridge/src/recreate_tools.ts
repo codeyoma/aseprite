@@ -3,11 +3,12 @@
 // layers by color role) and describe its style so new art can follow it.
 import * as z from "zod/v4";
 import { hex, mergeNear, tally } from "./color.js";
+import { documentOf } from "./document.js";
 import { detectGrid, resample, trim, type Rgba } from "./pixel_grid.js";
 import { detectBackground, findSprites, frameImages, removeBackground, tagsFromRows } from "./sheet.js";
 import { readPng } from "./sheet_tools.js";
 import { analyzeStyle, colorGroups, countColors, type Style } from "./style.js";
-import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type Tool } from "./tool.js";
 
 
 export const RIGHTS_NOTE =
@@ -28,12 +29,6 @@ function describeStyle(s: Style): string {
     "To draw new art in this style:",
     ...s.rules.map((r) => `- ${r}`),
   ].join("\n");
-}
-
-async function snapshotLayer(aseprite: AsepriteRequester, layer?: string, frame?: number): Promise<Rgba> {
-  const { result, binary } = await aseprite.request("snapshot", { layer, frame });
-  if (!binary) throw new Error("Aseprite sent no pixel data");
-  return { width: result.width, height: result.height, data: binary };
 }
 
 export const RECREATE_TOOLS: Tool[] = [
@@ -89,10 +84,9 @@ export const RECREATE_TOOLS: Tool[] = [
       if (!images.length || width < 1) return failure("No opaque pixels left after removing the background.");
       const first: Rgba = { width, height, data: images[0] };
       const palette = tally(images.flatMap((d) => countColors({ width, height, data: d })), 0).map(hex);
-      const { result } = await aseprite.request("create_animation", {
-        width, height, title: input.name ?? "Recreated", palette, tags,
-        frames: images.map((d) => ({ rgba: Buffer.from(d).toString("base64"), duration: 100 })),
-      }, 120_000);
+      const result = await documentOf(aseprite).createAnimation(width, height,
+        images.map((d) => ({ image: { width, height, data: d }, duration: 100 })),
+        { title: input.name ?? "Recreated", palette, tags });
       let split = "";
       if (input.split_layers !== false) {
         const groups = colorGroups(first);
@@ -131,7 +125,7 @@ export const RECREATE_TOOLS: Tool[] = [
         img = removeBackground(readPng(input.path));
         const g = detectGrid(img);
         if (g.cellX > 1) img = resample(img, g);
-      } else img = await snapshotLayer(aseprite, input.layer, input.frame);
+      } else img = await documentOf(aseprite).pixels(input.layer, input.frame);
       const t = trim(img);
       if (t.width < 1 || !countColors(t).length) return failure("No opaque pixels.");
       return { content: [text(describeStyle(analyzeStyle(t)))] };
@@ -147,7 +141,7 @@ export const RECREATE_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Split layer by color",
     async run(input, aseprite) {
-      const img = await snapshotLayer(aseprite, input.layer);
+      const img = await documentOf(aseprite).pixels(input.layer);
       const groups = colorGroups(img);
       if (groups.length < 2) return failure("This layer has only one color group; nothing to split.");
       const r = await aseprite.request("split_layer_by_colors", { layer: input.layer, groups });

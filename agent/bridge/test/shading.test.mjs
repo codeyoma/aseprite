@@ -68,7 +68,7 @@ test("shade_sprite and outline_sprite write through put_image", async () => {
   const fake = {
     async request(m, p) {
       calls.push({ m, p });
-      if (m === "execute_lua") return { result: { ok: true, value: { frames: 2, frame: 1, layer: "Body", palette: ["#181425", "#3caa50"] } } };
+      if (m === "get_state") return { result: { activeFrame: 1, activeLayerId: "L1", activeSprite: { filename: "Sprite", width: 24, height: 24, frames: [100, 100].map((durationMs) => ({ durationMs })), layers: [{ id: "L1", name: "Body" }], tags: [], palette: { colors: ["#181425", "#3caa50"] } } } };
       if (m === "snapshot") return { result: { width: 24, height: 24 }, binary: Buffer.from(img.data) };
       return { result: { layer: "L9", name: "AI: x" } };
     },

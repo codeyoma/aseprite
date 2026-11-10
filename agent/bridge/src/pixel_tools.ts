@@ -4,9 +4,10 @@ import { readFileSync } from "node:fs";
 import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { hex, kMeans, mergeNear, tally, type Counted } from "./color.js";
+import { documentOf, type Document } from "./document.js";
 import { detectGrid, resample, trim, type Grid, type Rgba } from "./pixel_grid.js";
 import { encodeSnapshot } from "./png.js";
-import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type Tool } from "./tool.js";
 
 
 const sourceSchema = z.object({
@@ -17,15 +18,13 @@ const sourceSchema = z.object({
 });
 type Source = z.infer<typeof sourceSchema>;
 
-async function readPixels(src: Source, aseprite: AsepriteRequester): Promise<Rgba> {
+async function readPixels(src: Source, doc: Document): Promise<Rgba> {
   if (src.path && src.source !== "sprite" && src.source !== "layer") {
     if (!/\.png$/i.test(src.path)) throw new Error("Only PNG files can be read; attach the image as PNG");
     const png = PNG.sync.read(readFileSync(src.path));
     return { width: png.width, height: png.height, data: png.data };
   }
-  const { result, binary } = await aseprite.request("snapshot", { frame: src.frame, layer: src.source === "layer" ? src.layer : undefined });
-  if (!binary) throw new Error("Aseprite sent no pixel data");
-  return { width: result.width, height: result.height, data: binary };
+  return doc.pixels(src.source === "layer" ? src.layer : undefined, src.frame);
 }
 
 function describe(g: Grid): string {
@@ -72,7 +71,7 @@ export const PIXEL_TOOLS: Tool[] = [
     kind: "read",
     label: () => "Detect pixel grid",
     async run(input, aseprite) {
-      const img = await readPixels(input, aseprite);
+      const img = await readPixels(input, documentOf(aseprite));
       const g = detectGrid(img);
       const size = g.cellX > 1 ? ` -> about ${Math.round(img.width / g.cellX)}x${Math.round(img.height / g.cellY)} px at native size` : "";
       return { content: [text(`${img.width}x${img.height} image: ${describe(g)}${size}.`)] };
@@ -98,7 +97,8 @@ export const PIXEL_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Fix pixel art",
     async run(input, aseprite) {
-      const img = await readPixels(input, aseprite);
+      const doc = documentOf(aseprite);
+      const img = await readPixels(input, doc);
       let g = detectGrid(img);
       if (input.cell) g = { cellX: input.cell, cellY: input.cell, offsetX: input.offset_x ?? 0, offsetY: input.offset_y ?? 0, confidence: 1 };
       if (g.cellX <= 1 && g.cellY <= 1) {
@@ -122,10 +122,7 @@ export const PIXEL_TOOLS: Tool[] = [
       }
       if (input.trim !== false) out = trim(out);
       const colors = tally(countColors(out), 0);
-      const { result } = await aseprite.request("create_sprite", {
-        width: out.width, height: out.height, rgba: Buffer.from(out.data).toString("base64"),
-        title: input.name ?? "Fixed pixel art", palette: colors.map(hex),
-      });
+      const result = await doc.createSprite(out, { title: input.name ?? "Fixed pixel art", palette: colors.map(hex) });
       const preview = encodeSnapshot(Buffer.from(out.data), out.width, out.height, Math.max(1, Math.floor(256 / Math.max(out.width, out.height))), "checker");
       return {
         content: [

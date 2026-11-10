@@ -1,53 +1,24 @@
 // Ramps, auto-shading and outlines as tools (#39). Pixels come from the
-// layer's snapshot and go back through put_image, onto new 'AI:' layers.
+// document and go back onto new 'AI:' layers.
 import * as z from "zod/v4";
-import { hex, parseHex, toOklch, type RGBA } from "./color.js";
+import { hex, parseHex, toOklch } from "./color.js";
+import { documentOf } from "./document.js";
 import type { Rgba } from "./pixel_grid.js";
 import { makeRamp, outline, shadeFlat, type LightDir } from "./shading.js";
 import { findOutline } from "./style.js";
-import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
-
+import { failure, text, type Tool } from "./tool.js";
 
 const framesSchema = z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional()
   .describe("Frames: 3, [1,2] or '1-4'. Default: the active frame.");
 
-export function frameList(spec: unknown, count: number, active: number): number[] {
-  if (spec === undefined) return [active];
-  if (typeof spec === "number") return [spec];
-  if (Array.isArray(spec)) return spec as number[];
-  const m = /^(\d+)-(\d+)$/.exec(String(spec));
-  if (m) return Array.from({ length: +m[2] - +m[1] + 1 }, (_, i) => +m[1] + i).filter((f) => f <= count);
-  if (String(spec) === "all") return Array.from({ length: count }, (_, i) => i + 1);
-  return [Number(spec)];
-}
-
-export async function layerPixels(aseprite: AsepriteRequester, layer: string | undefined, frame: number): Promise<Rgba> {
-  const { result, binary } = await aseprite.request("snapshot", { layer, frame });
-  if (!binary) throw new Error("Aseprite sent no pixel data");
-  return { width: result.width, height: result.height, data: binary };
-}
-
-export async function spriteInfo(aseprite: AsepriteRequester): Promise<{ frames: number; frame: number; layer: string; palette: RGBA[] }> {
-  const { result } = await aseprite.request("execute_lua", {
-    code: `local s = app.sprite if not s then error("No active sprite") end
-      local p, o = s.palettes[1], {}
-      for i = 0, #p - 1 do local c = p:getColor(i) if c.alpha > 0 then o[#o + 1] = string.format("#%02x%02x%02x", c.red, c.green, c.blue) end end
-      return { frames = #s.frames, frame = app.frame and app.frame.frameNumber or 1, layer = app.layer and app.layer.name or "", palette = o }`,
-    transaction: false,
-  });
-  if (!result.ok) throw new Error(result.error);
-  const v = result.value;
-  return { frames: v.frames, frame: v.frame, layer: v.layer, palette: (v.palette as string[]).map((h) => parseHex(h)!) };
-}
-
 /** Only the pixels that differ from `before` (the rest transparent). */
-function changedOnly(before: Rgba, after: Rgba): Uint8Array {
+function changedOnly(before: Rgba, after: Rgba): Rgba {
   const out = new Uint8Array(after.data.length);
   for (let i = 0; i < out.length; i += 4) {
     const same = before.data[i + 3] === after.data[i + 3] && before.data[i] === after.data[i] && before.data[i + 1] === after.data[i + 1] && before.data[i + 2] === after.data[i + 2];
     if (!same) out.set(after.data.subarray(i, i + 4), i);
   }
-  return out;
+  return { width: after.width, height: after.height, data: out };
 }
 
 export const SHADING_TOOLS: Tool[] = [
@@ -95,22 +66,20 @@ export const SHADING_TOOLS: Tool[] = [
     kind: "edit",
     label: (a) => `Shade${a.light ? ` from ${a.light}` : ""}`,
     async run(input, aseprite) {
-      const info = await spriteInfo(aseprite);
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
       const layer = input.layer ?? info.layer;
-      const frames = frameList(input.frames, info.frames, info.frame);
+      const frames = await doc.frames(input.frames);
       let ramps = 0;
       for (const f of frames) {
-        const img = await layerPixels(aseprite, layer, f);
+        const img = await doc.pixels(layer, f);
         const keep = findOutline(img).colors;
         const { image, ramps: r } = shadeFlat(img, {
           light: input.light as LightDir | undefined, bands: input.bands, rim: input.rim, perColor: !input.whole_shape, keep,
           palette: input.snap_to_palette ? info.palette : undefined,
         });
         ramps = Math.max(ramps, r.size);
-        await aseprite.request("put_image", {
-          new_layer: `shaded ${layer}`, above: layer, hide_source: true, frame: f,
-          width: image.width, height: image.height, rgba: Buffer.from(image.data).toString("base64"),
-        });
+        await doc.putImage(image, { newLayer: `shaded ${layer}`, above: layer, hideSource: true, frame: f });
       }
       return { content: [text(`Shaded ${layer} in ${frames.length} frame(s) from ${input.light ?? "top-left"} with ${input.bands ?? 3} bands ` +
         `(${ramps} color ramps) on 'AI: shaded ${layer}'; the original is hidden.`)] };
@@ -133,19 +102,17 @@ export const SHADING_TOOLS: Tool[] = [
     kind: "edit",
     label: (a) => `Outline${a.color === "selout" ? " (selout)" : ""}`,
     async run(input, aseprite) {
-      const info = await spriteInfo(aseprite);
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
       const layer = input.layer ?? info.layer;
-      const frames = frameList(input.frames, info.frames, info.frame);
+      const frames = await doc.frames(input.frames);
       let pixels = 0;
       for (const f of frames) {
-        const img = await layerPixels(aseprite, layer, f);
+        const img = await doc.pixels(layer, f);
         const out = outline(img, { mode: input.mode, connectivity: input.connectivity, color: input.color ?? "darkest", palette: info.palette });
         const only = changedOnly(img, out);
-        for (let i = 3; i < only.length; i += 4) if (only[i]) pixels++;
-        await aseprite.request("put_image", {
-          new_layer: "outline", above: layer, frame: f,
-          width: out.width, height: out.height, rgba: Buffer.from(only).toString("base64"),
-        });
+        for (let i = 3; i < only.data.length; i += 4) if (only.data[i]) pixels++;
+        await doc.putImage(only, { newLayer: "outline", above: layer, frame: f });
       }
       return { content: [text(`Drew a ${input.mode ?? "outer"} ${input.color ?? "darkest"} outline (${pixels} px over ${frames.length} frame(s)) on 'AI: outline' above ${layer}.`)] };
     },

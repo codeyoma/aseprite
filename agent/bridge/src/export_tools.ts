@@ -4,21 +4,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import * as z from "zod/v4";
+import { documentOf } from "./document.js";
 import { godotSpriteFrames, jsonHash, pack, phaserAnims, placeLike, unityMeta, type Anim, type SheetInfo } from "./export.js";
 import type { Rgba } from "./pixel_grid.js";
-import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
+import { text, type Tool } from "./tool.js";
 
 
 function writePng(path: string, img: Rgba) {
   const png = new PNG({ width: img.width, height: img.height });
   png.data.set(img.data);
   writeFileSync(path, PNG.sync.write(png));
-}
-
-async function snap(aseprite: AsepriteRequester, frame: number, layer?: string): Promise<Rgba> {
-  const { result, binary } = await aseprite.request("snapshot", { frame, layer });
-  if (!binary) throw new Error("Aseprite sent no pixel data");
-  return { width: result.width, height: result.height, data: binary };
 }
 
 const HOWTO: Record<string, (n: string) => string> = {
@@ -74,33 +69,26 @@ export const EXPORT_TOOLS: Tool[] = [
     kind: "edit",
     label: (a) => (a.engine ? `Export for ${a.engine}` : "Export for engine"),
     async run(input, aseprite) {
-      const { result } = await aseprite.request("execute_lua", {
-        code: `local s = app.sprite if not s then error("No active sprite") end
-          local d, t, normal = {}, {}, nil
-          for i, f in ipairs(s.frames) do d[i] = math.floor(f.duration * 1000 + 0.5) end
-          for _, g in ipairs(s.tags) do t[#t + 1] = { name = g.name, from = g.fromFrame.frameNumber - 1, to = g.toFrame.frameNumber - 1, dir = g.aniDir, repeats = g.repeats or 0 } end
-          for _, l in ipairs(s.layers) do if l.name:match("^AI: normal") then normal = l.name end end
-          return { durations = d, tags = t, normal = normal, title = app.fs.fileTitle(s.filename) }`,
-        transaction: false,
-      });
-      if (!result.ok) return failure(result.error);
-      const info = result.value;
-      const durations: number[] = info.durations;
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
+      const durations = info.durations;
+      const normal = info.layers.find((l) => l.name.startsWith("AI: normal"));
       const frames: Rgba[] = [];
-      for (let f = 1; f <= durations.length; f++) frames.push(await snap(aseprite, f));
+      for (let f = 1; f <= durations.length; f++) frames.push(await doc.pixels(undefined, f));
       const opts = { trim: input.trim, padding: input.padding, extrude: input.extrude, scale: input.scale, powerOfTwo: input.power_of_two, columns: input.columns };
       const { sheet, placed } = pack(frames, opts);
       const name = (input.name ?? info.title ?? "sprite").replace(/[^\w-]+/g, "_");
-      const dirs: Record<number, Anim["direction"]> = { 0: "forward", 1: "reverse", 2: "pingpong", 3: "pingpong" };
-      const anims: Anim[] = (info.tags ?? []).map((t: any) => ({ name: t.name, from: t.from, to: t.to, direction: dirs[t.dir] ?? "forward", loop: (t.repeats ?? 0) === 0 }));
+      const dirs: Record<string, Anim["direction"]> = { forward: "forward", reverse: "reverse", pingpong: "pingpong", pingpong_reverse: "pingpong" };
+      // Anim frames are 0-based; the document's tags are 1-based.
+      const anims: Anim[] = info.tags.map((t) => ({ name: t.name, from: t.from - 1, to: t.to - 1, direction: dirs[t.direction] ?? "forward", loop: t.repeat === 0 }));
       const pivots: Record<string, [number, number]> = { "bottom-center": [0.5, 1], center: [0.5, 0.5], "top-left": [0, 0] };
       const s: SheetInfo = { name, image: `${name}.png`, placed, durations, anims, width: sheet.width, height: sheet.height, pivot: pivots[input.pivot ?? "bottom-center"] };
       mkdirSync(input.dir, { recursive: true });
       const files = [`${name}.png`];
       writePng(join(input.dir, `${name}.png`), sheet);
-      if (info.normal) {
+      if (normal) {
         const normals: Rgba[] = [];
-        for (let f = 1; f <= durations.length; f++) normals.push(await snap(aseprite, f, info.normal));
+        for (let f = 1; f <= durations.length; f++) normals.push(await doc.pixels(normal.id, f));
         writePng(join(input.dir, `${name}_n.png`), placeLike(normals, placed, sheet.width, sheet.height, opts));
         files.push(`${name}_n.png`);
       }

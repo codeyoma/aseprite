@@ -62,7 +62,7 @@ test("presets: JSON hash round-trips, Phaser, Godot and Unity metadata", () => {
 test("export_for_engine writes the files for each engine", async () => {
   const fake = {
     async request(m, p) {
-      if (m === "execute_lua") return { result: { ok: true, value: { durations: [100, 100, 200], tags: [{ name: "idle", from: 0, to: 2, dir: 0, repeats: 0 }], normal: "AI: normal Hero", title: "Hero" } } };
+      if (m === "get_state") return { result: { activeFrame: 1, activeLayerId: "L1", activeSprite: { filename: "Hero.aseprite", width: 16, height: 16, frames: [100, 100, 200].map((durationMs) => ({ durationMs })), layers: [{ id: "L2", name: "AI: normal Hero" }, { id: "L1", name: "Hero" }], tags: [{ name: "idle", from: 1, to: 3, direction: "forward", repeat: 0 }], palette: { colors: [] } } } };
       if (m === "snapshot") return { result: { width: 16, height: 16 }, binary: Buffer.from(frames[(p.frame ?? 1) - 1].data) };
       return { result: {} };
     },

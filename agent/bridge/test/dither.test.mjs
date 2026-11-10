@@ -58,7 +58,7 @@ test("export_palette_lut writes the index, the LUT and a shader", async () => {
   const img = Buffer.from([...blue.flatMap((c) => [c.r, c.g, c.b, 255]), 0, 0, 0, 0]);
   const fake = {
     async request(m) {
-      if (m === "execute_lua") return { result: { ok: true, value: { frames: 1, frame: 1, layer: "Hero", palette: ["#1d2b53", "#29adff"] } } };
+      if (m === "get_state") return { result: { activeFrame: 1, activeLayerId: "L1", activeSprite: { filename: "Sprite", width: 3, height: 1, frames: [100].map((durationMs) => ({ durationMs })), layers: [{ id: "L1", name: "Hero" }], tags: [], palette: { colors: ["#1d2b53", "#29adff"] } } } };
       if (m === "snapshot") return { result: { width: 3, height: 1 }, binary: img };
       return { result: {} };
     },

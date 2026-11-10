@@ -5,17 +5,16 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { PNG } from "pngjs";
 import * as z from "zod/v4";
+import { documentOf, type Document } from "./document.js";
 import type { Rgba } from "./pixel_grid.js";
 import { readPng } from "./sheet_tools.js";
 import { buildTileset, godotTileset, jsonTileset, renderMap, seamScore, tiledTileset } from "./tiles.js";
-import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type Tool } from "./tool.js";
 
 
-async function pixels(aseprite: AsepriteRequester, input: { path?: string; layer?: string; frame?: number }): Promise<Rgba> {
+async function pixels(doc: Document, input: { path?: string; layer?: string; frame?: number }): Promise<Rgba> {
   if (input.path) return readPng(input.path);
-  const { result, binary } = await aseprite.request("snapshot", { layer: input.layer, frame: input.frame });
-  if (!binary) throw new Error("Aseprite sent no pixel data");
-  return { width: result.width, height: result.height, data: binary };
+  return doc.pixels(input.layer, input.frame);
 }
 
 function writePng(path: string, img: Rgba) {
@@ -35,8 +34,6 @@ export const SAMPLE_MAP = [
   "...XXX......",
   "............",
 ].map((r) => [...r].map((c) => c === "X"));
-
-const send = (img: Rgba) => Buffer.from(img.data).toString("base64");
 
 export const TILE_TOOLS: Tool[] = [
   {
@@ -62,7 +59,8 @@ export const TILE_TOOLS: Tool[] = [
     kind: "edit",
     label: (a) => `Make ${a.kind ?? 47}-tile set`,
     async run(input, aseprite) {
-      const tpl = await pixels(aseprite, input);
+      const doc = documentOf(aseprite);
+      const tpl = await pixels(doc, input);
       // The template sits at the top-left: 5 tiles of `tile` px.
       let tile = input.tile;
       if (!tile) {
@@ -74,11 +72,11 @@ export const TILE_TOOLS: Tool[] = [
       const kind = (input.kind ?? 47) as 47 | 16;
       const ts = buildTileset(tpl, tile, kind, input.columns ?? 8);
       const name = input.name ?? "terrain";
-      const made = await aseprite.request("create_sprite", { width: ts.image.width, height: ts.image.height, rgba: send(ts.image), title: `${name} ${kind}-tile set` });
-      const lines = [`Made a ${kind}-tile set of ${tile}x${tile} tiles (${ts.columns} columns) as "${made.result.title}".`];
+      const made = await doc.createSprite(ts.image, { title: `${name} ${kind}-tile set` });
+      const lines = [`Made a ${kind}-tile set of ${tile}x${tile} tiles (${ts.columns} columns) as "${made.title}".`];
       if (input.preview !== false) {
         const map = renderMap(ts, SAMPLE_MAP, kind);
-        await aseprite.request("create_sprite", { width: map.width, height: map.height, rgba: send(map), title: `${name} preview` });
+        await doc.createSprite(map, { title: `${name} preview` });
         lines.push(`Opened "${name} preview": a sample map with straight edges, outer and inner corners and a hole. Look at it for seams.`);
       }
       if (input.export_dir) {
@@ -100,7 +98,7 @@ export const TILE_TOOLS: Tool[] = [
     kind: "read",
     label: () => "Check tile wrap",
     async run(input, aseprite) {
-      const s = seamScore(await pixels(aseprite, input));
+      const s = seamScore(await pixels(documentOf(aseprite), input));
       const pct = (x: number) => `${Math.round(x * 100)}%`;
       const ok = s.horizontal < 0.1 && s.vertical < 0.1;
       return { content: [text(`Left/right edges clash on ${pct(s.horizontal)} of rows, top/bottom on ${pct(s.vertical)} of columns${ok ? ": it wraps well." : ". Blend the clashing edges so it repeats without a visible seam."}`)] };

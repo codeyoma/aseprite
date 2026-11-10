@@ -3,19 +3,9 @@
 // isometric grid guide.
 import * as z from "zod/v4";
 import { directionPlan, isoGrid, isoProject, mirroredTagName, MIRROR, tagDirection } from "./directions.js";
+import { documentOf } from "./document.js";
 import { trim, type Rgba } from "./pixel_grid.js";
-import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
-
-
-async function tagNames(aseprite: AsepriteRequester): Promise<{ tags: string[]; width: number; height: number }> {
-  const { result } = await aseprite.request("execute_lua", {
-    code: `local s = app.sprite if not s then error("No active sprite") end
-      local o = {} for _, t in ipairs(s.tags) do o[#o + 1] = t.name end return { tags = o, width = s.width, height = s.height }`,
-    transaction: false,
-  });
-  if (!result.ok) throw new Error(result.error);
-  return { tags: result.value.tags ?? [], width: result.value.width, height: result.value.height };
-}
+import { failure, text, type Tool } from "./tool.js";
 
 export const DIRECTION_TOOLS: Tool[] = [
   {
@@ -28,8 +18,8 @@ export const DIRECTION_TOOLS: Tool[] = [
     kind: "read",
     label: () => "Plan directions",
     async run({ count }, aseprite) {
-      const { tags } = await tagNames(aseprite);
-      const p = directionPlan(tags, (count ?? 8) as 4 | 8);
+      const { tags } = await documentOf(aseprite).info();
+      const p = directionPlan(tags.map((t) => t.name), (count ?? 8) as 4 | 8);
       const have = Object.entries(p.have).map(([d, t]) => `${d} (${t})`);
       return {
         content: [text([
@@ -73,16 +63,15 @@ export const DIRECTION_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Project to isometric",
     async run(input, aseprite) {
-      const { result, binary } = await aseprite.request("snapshot", { layer: input.layer, frame: input.frame });
-      if (!binary) return failure("Aseprite sent no pixel data");
-      const t = trim({ width: result.width, height: result.height, data: binary });
+      const doc = documentOf(aseprite);
+      const t = trim(await doc.pixels(input.layer, input.frame));
       const side = Math.max(t.width, t.height);
       // Square the trimmed art so the diamond is symmetric.
       const sq = new Uint8Array(side * side * 4);
       for (let y = 0; y < t.height; y++) sq.set(t.data.subarray(y * t.width * 4, (y + 1) * t.width * 4), y * side * 4);
       const iso: Rgba = isoProject({ width: side, height: side, data: sq });
-      const r = await aseprite.request("create_sprite", { width: iso.width, height: iso.height, rgba: Buffer.from(iso.data).toString("base64"), title: "Isometric" });
-      return { content: [text(`Projected a ${side}x${side} tile to a ${iso.width}x${iso.height} isometric diamond ("${r.result.title}").`)] };
+      const r = await doc.createSprite(iso, { title: "Isometric" });
+      return { content: [text(`Projected a ${side}x${side} tile to a ${iso.width}x${iso.height} isometric diamond ("${r.title}").`)] };
     },
   },
   {
@@ -93,9 +82,9 @@ export const DIRECTION_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Isometric grid",
     async run({ tile }, aseprite) {
-      const { width, height } = await tagNames(aseprite);
-      const g = isoGrid(width, height, tile ?? 32);
-      await aseprite.request("put_image", { new_layer: "iso grid", width, height, rgba: Buffer.from(g.data).toString("base64") });
+      const doc = documentOf(aseprite);
+      const { width, height } = await doc.info();
+      await doc.putImage(isoGrid(width, height, tile ?? 32), { newLayer: "iso grid" });
       return { content: [text(`Added a ${tile ?? 32}x${(tile ?? 32) / 2} isometric grid on 'AI: iso grid'. Hide or delete it before export.`)] };
     },
   },
