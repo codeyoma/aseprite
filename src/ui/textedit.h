@@ -32,7 +32,23 @@ public:
   bool isReadOnly() const;
   void setPlaceholder(const std::string& placeholder);
 
+  // Soft word wrap: long lines wrap at the view's width. The widget
+  // text keeps only real newlines; wrapped rows are visual only.
+  void setWordWrap(bool state);
+  bool wordWrap() const { return m_wordWrap; }
+
+  // When enabled, Enter emits Submit instead of inserting a newline
+  // (Shift+Enter still inserts one).
+  void setSubmitOnEnter(bool state) { m_submitOnEnter = state; }
+
+  // Number of visual rows and the height of one row.
+  int rowCount() const { return int(m_lines.size()); }
+  int rowHeight() const;
+
   obs::signal<void()> Change;
+  obs::signal<void()> Submit;
+  // The number of visual rows changed without a text change (re-wrap on resize).
+  obs::signal<void()> RowsChange;
 
 protected:
   bool onProcessMessage(Message* msg) override;
@@ -41,6 +57,7 @@ protected:
   void onSizeHint(SizeHintEvent& ev) override;
   void onSetText() override;
   void onSetFont() override;
+  void onResize(ResizeEvent& ev) override;
 
   bool onKeyDown(const KeyMessage* keymsg);
   bool onMouseMove(const MouseMessage* mouseMessage);
@@ -48,6 +65,9 @@ protected:
 private:
   struct Line {
     std::string text;
+    // True when this row is a soft wrap of the next one (no newline
+    // character between them in the widget text).
+    bool softBreak = false;
     std::vector<TextBlob::Utf8Range> utfSize;
     int glyphCount = 0;
     text::TextBlobRef blob;
@@ -180,6 +200,12 @@ private:
   // Get the selection rect for the given line, if any
   gfx::RectF getSelectionRect(const Line& line, const gfx::PointF& offset) const;
   Caret caretFromPosition(const gfx::Point& position);
+
+  // Word wrap helpers.
+  Caret caretFromAbsolute(int absPos);
+  int currentWrapWidth() const;
+  void rebuildLines();
+  void setTextKeepingCaret(const std::string& newText, int caretAbsPos);
   void insertCharacter(base::codepoint_t character);
   void deleteSelection();
   void ensureCaretVisible();
@@ -197,6 +223,9 @@ private:
 
   std::vector<Line> m_lines;
   std::string m_placeholder;
+  bool m_wordWrap = false;
+  bool m_submitOnEnter = false;
+  int m_wrapWidth = 0;
 
   // Whether or not we're currently in read only mode
   bool m_readOnly = false;

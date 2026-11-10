@@ -60,6 +60,7 @@ Changes to Aseprite's C++ source are for personal use or for proposing a contrib
 - `src/app/ui/main_window.cpp`: `dockScriptPanel` / `undockScriptPanel` dock next to the workspace (`dockRelativeTo`). Panels are re-docked after every layout change (default, mirrored, user layouts). Their side and size are stored in the `[ScriptPanels]` config section, not in layout XML.
 - `src/app/ui/layout.cpp`: script panels are skipped when saving layouts, and unknown elements are skipped when loading, so layout files stay compatible with stock Aseprite.
 - New command `SetWorkspaceLayout{ layout = "default" | "mirrored" | <user layout id> }` switches layouts without the selector UI, for scripts and agents.
+- `dlg:textedit{ id, text, placeholder, wordwrap = true, minlines = 1, maxlines = 5, onchange, onsubmit }` exposes `ui::TextEdit` to scripts. `ui::TextEdit` gained soft word wrap (rows with a `softBreak` flag; the widget text keeps only real newlines) and an optional Enter-to-submit mode (Shift+Enter inserts a newline). The box grows with its content up to `maxlines`.
 - Stock Aseprite ignores the `dockable` and `id` fields, so `chat_panel.lua` works there as a floating dialog.
 
 Verified live: docking at startup, switching to the mirrored layout and back, closing with `dlg:close()`, reopening, typing into the docked entry (the active tool stays unchanged), a full chat while docked, and the side and size surviving a restart.

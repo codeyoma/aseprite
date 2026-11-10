@@ -235,6 +235,7 @@ return function(deps)
   function Panel.isBusy() return busy end
   function Panel.isOpen() return dlg ~= nil end
   function Panel.promptText() return dlg and dlg.data.prompt or nil end
+  function Panel.setPrompt(text) if dlg then dlg:modify{ id = "prompt", text = text } end end
   function Panel.close() if dlg then dlg:close() end end
   function Panel.entries() return entries end
 
@@ -266,13 +267,22 @@ return function(deps)
     dlg:newrow()
     dlg:label{ id = "status", text = deps.isConnected() and "" or "Bridge not connected", hexpand = true }
     dlg:newrow()
-    dlg:entry{
-      id = "prompt",
-      text = "",
-      placeholder = "Draw, edit or animate...",
-      focus = true,
-      hexpand = true,
-    }
+    -- Multi-line box that wraps and grows (this fork's dlg:textedit);
+    -- stock Aseprite falls back to a single-line entry.
+    local hasTextEdit = pcall(function()
+      dlg:textedit{
+        id = "prompt",
+        text = "",
+        placeholder = "Draw, edit or animate...",
+        minlines = 1,
+        maxlines = 5,
+        focus = true,
+        onsubmit = function() send() end,   -- Enter sends, Shift+Enter adds a line
+      }
+    end)
+    if not hasTextEdit then
+      dlg:entry{ id = "prompt", text = "", placeholder = "Draw, edit or animate...", focus = true, hexpand = true }
+    end
     dlg:newrow()
     dlg:combobox{ id = "provider", options = providers, option = deps.preferences.provider or providers[1] }
     dlg:button{ id = "send", text = "&Send", onclick = send }

@@ -52,9 +52,11 @@
 #include "ui/separator.h"
 #include "ui/slider.h"
 #include "ui/system.h"
+#include "ui/textedit.h"
 #include "ui/view.h"
 
 #include <functional>
+#include <limits>
 #include <map>
 #include <stack>
 #include <string>
@@ -1008,6 +1010,103 @@ int Dialog_entry(lua_State* L)
   return Dialog_add_widget(L, widget);
 }
 
+// Multi-line text box: dlg:textedit{ id, text, placeholder, wordwrap=true,
+// minlines=1, maxlines=5, onchange, onsubmit }. It grows with its content
+// up to maxlines rows, then scrolls. With onsubmit, Enter submits and
+// Shift+Enter inserts a newline.
+int Dialog_textedit(lua_State* L)
+{
+  auto dlg = get_obj<Dialog>(L, 1);
+  auto* view = new ui::View();
+  auto* edit = new ui::TextEdit();
+  view->attachToView(edit);
+
+  int minLines = 1;
+  int maxLines = 5;
+  bool wordWrap = true;
+
+  if (lua_istable(L, 2)) {
+    int type = lua_getfield(L, 2, "text");
+    if (type == LUA_TSTRING) {
+      if (const auto* p = lua_tostring(L, -1))
+        edit->setText(p);
+    }
+    lua_pop(L, 1);
+
+    type = lua_getfield(L, 2, "placeholder");
+    if (type == LUA_TSTRING) {
+      if (const auto* p = lua_tostring(L, -1))
+        edit->setPlaceholder(p);
+    }
+    lua_pop(L, 1);
+
+    type = lua_getfield(L, 2, "wordwrap");
+    if (type != LUA_TNIL)
+      wordWrap = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+
+    type = lua_getfield(L, 2, "minlines");
+    if (type == LUA_TNUMBER)
+      minLines = std::max(1, int(lua_tointeger(L, -1)));
+    lua_pop(L, 1);
+
+    type = lua_getfield(L, 2, "maxlines");
+    if (type == LUA_TNUMBER)
+      maxLines = std::max(minLines, int(lua_tointeger(L, -1)));
+    lua_pop(L, 1);
+
+    type = lua_getfield(L, 2, "onchange");
+    if (type == LUA_TFUNCTION) {
+      Dialog_connect_signal(L, 1, edit->Change, [](lua_State*) {});
+    }
+    lua_pop(L, 1);
+
+    type = lua_getfield(L, 2, "onsubmit");
+    if (type == LUA_TFUNCTION) {
+      edit->setSubmitOnEnter(true);
+      Dialog_connect_signal(L, 1, edit->Submit, [](lua_State*) {});
+    }
+    lua_pop(L, 1);
+  }
+
+  edit->setWordWrap(wordWrap);
+
+  // Grow from minLines to maxLines rows as the text gets longer.
+  auto fit = [view, edit, minLines, maxLines]() {
+    const int rows = std::clamp(edit->rowCount(), minLines, maxLines);
+    const int h = rows * edit->rowHeight() + edit->border().height() + view->border().height();
+    if (view->minSize().h == h)
+      return;
+    view->setMinSize(gfx::Size(0, h));
+    view->setMaxSize(gfx::Size(std::numeric_limits<int>::max(), h));
+    if (auto* win = view->window())
+      win->layout();
+  };
+  edit->Change.connect(fit);
+  edit->RowsChange.connect(fit);
+  fit();
+
+  const int result = Dialog_add_widget(L, view);
+
+  // Dialog_add_widget registered the view; data/modify must reach the
+  // text box itself, and so must keyboard focus.
+  if (lua_istable(L, 2)) {
+    int type = lua_getfield(L, 2, "id");
+    if (type == LUA_TSTRING) {
+      if (const auto* id = lua_tostring(L, -1)) {
+        edit->setId(id);
+        dlg->dataWidgets[id] = edit;
+      }
+    }
+    lua_pop(L, 1);
+  }
+  if (view->isFocusMagnet()) {
+    view->setFocusMagnet(false);
+    edit->setFocusMagnet(true);
+  }
+  return result;
+}
+
 int Dialog_number(lua_State* L)
 {
   auto widget = new ExprEntry;
@@ -1942,6 +2041,7 @@ int Dialog_get_data(lua_State* L)
         }
         break;
       case ui::kLabelWidget: lua_pushstring(L, widget->text().c_str()); break;
+      case ui::kTextEditWidget: lua_pushstring(L, widget->text().c_str()); break;
       case ui::kSliderWidget:
         if (auto slider = dynamic_cast<const ui::Slider*>(widget)) {
           lua_pushinteger(L, slider->getValue());
@@ -2017,6 +2117,10 @@ int Dialog_set_data(lua_State* L)
       case ui::kButtonWidget:
       case ui::kCheckWidget:
       case ui::kRadioWidget:  widget->setSelected(lua_toboolean(L, -1)); break;
+      case ui::kTextEditWidget:
+        if (auto p = lua_tostring(L, -1))
+          widget->setText(p);
+        break;
       case ui::kEntryWidget:
         if (auto expr = dynamic_cast<ExprEntry*>(widget)) {
           if (expr->decimals() == 0)
@@ -2159,6 +2263,7 @@ const luaL_Reg Dialog_methods[] = {
   { "radio",     Dialog_radio     },
   { "menuItem",  Dialog_menuItem  },
   { "entry",     Dialog_entry     },
+  { "textedit",  Dialog_textedit  },
   { "number",    Dialog_number    },
   { "slider",    Dialog_slider    },
   { "combobox",  Dialog_combobox  },

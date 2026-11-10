@@ -831,6 +831,7 @@ function init(plugin)
     closePanel = function() Panel.close() end,
     isPanelOpen = function() return Panel.isOpen() end,
     promptText = function() return Panel.promptText() end,
+    setPrompt = function(text) Panel.setPrompt(text) end,
   }
 
   plugin:newMenuGroup{
