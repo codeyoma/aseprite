@@ -10,6 +10,7 @@
 #endif
 
 #include "app/ui/main_window.h"
+#include "app/ui/script_panel.h"
 
 #include "app/app.h"
 #include "app/app_menus.h"
@@ -443,6 +444,7 @@ void MainWindow::setDefaultLayout()
 
   m_customizableDock->center()->center()->dock(ui::CENTER, m_workspace.get());
   configureWorkspaceLayout();
+  redockScriptPanels();
 }
 
 void MainWindow::setMirroredDefaultLayout()
@@ -464,6 +466,7 @@ void MainWindow::setMirroredDefaultLayout()
                                                gfx::Size(64 * guiscale(), 64 * guiscale()));
   m_customizableDock->center()->center()->dock(ui::CENTER, m_workspace.get());
   configureWorkspaceLayout();
+  redockScriptPanels();
 }
 
 void MainWindow::loadUserLayout(const Layout* layout)
@@ -476,6 +479,9 @@ void MainWindow::loadUserLayout(const Layout* layout)
   if (!layout->loadLayout(m_customizableDock)) {
     LOG(WARNING, "Layout %s failed to load, resetting to default.\n", layout->id().c_str());
     setDefaultLayout();
+  }
+  else {
+    redockScriptPanels();
   }
 
   this->layout();
@@ -803,10 +809,100 @@ void MainWindow::saveColorBarConfiguration()
 void MainWindow::saveActiveLayout()
 {
   ASSERT(m_layoutSelector);
+  rememberScriptPanelSides();
 
   auto id = m_layoutSelector->activeLayoutId();
   auto layout = Layout::MakeFromDock(id, id, m_customizableDock);
   m_layoutSelector->updateActiveLayout(layout);
+}
+
+static const char* kScriptPanelsSection = "ScriptPanels";
+
+static const char* side_to_string(int side)
+{
+  switch (side) {
+    case ui::LEFT:   return "left";
+    case ui::TOP:    return "top";
+    case ui::BOTTOM: return "bottom";
+    default:         return "right";
+  }
+}
+
+static int side_from_string(const std::string& s)
+{
+  if (s == "left")
+    return ui::LEFT;
+  if (s == "top")
+    return ui::TOP;
+  if (s == "bottom")
+    return ui::BOTTOM;
+  return ui::RIGHT;
+}
+
+void MainWindow::dockScriptPanel(ScriptPanel* panel)
+{
+  if (std::find(m_scriptPanels.begin(), m_scriptPanels.end(), panel) == m_scriptPanels.end())
+    m_scriptPanels.push_back(panel);
+  if (panel->parent())
+    return; // Already docked
+
+  // Script panels are not saved in layout XML (stock Aseprite could not
+  // load them); their side and size are kept in the config instead.
+  const std::string& id = panel->panelId();
+  const int side = side_from_string(
+    get_config_string(kScriptPanelsSection, (id + ".side").c_str(), "right"));
+  const bool horizontal = (side == ui::LEFT || side == ui::RIGHT);
+  const int extent =
+    get_config_int(kScriptPanelsSection, (id + ".size").c_str(), horizontal ? 220 : 160);
+  const gfx::Size size = horizontal ? gfx::Size(extent, 0) : gfx::Size(0, extent);
+
+  m_customizableDock->dockRelativeTo(m_workspace.get(), side, panel, size);
+  layout();
+  invalidate();
+}
+
+void MainWindow::undockScriptPanel(ScriptPanel* panel)
+{
+  auto it = std::find(m_scriptPanels.begin(), m_scriptPanels.end(), panel);
+  if (it == m_scriptPanels.end())
+    return;
+  rememberScriptPanelSides();
+  m_scriptPanels.erase(it);
+  if (panel->parent()) {
+    m_customizableDock->undock(panel);
+    layout();
+    invalidate();
+  }
+}
+
+void MainWindow::redockScriptPanels()
+{
+  // A layout change (resetDocks) removes every docked widget; put the
+  // script panels back where the user left them.
+  auto panels = m_scriptPanels;
+  for (auto* panel : panels) {
+    if (!panel->parent())
+      dockScriptPanel(panel);
+  }
+}
+
+void MainWindow::rememberScriptPanelSides()
+{
+  for (auto* panel : m_scriptPanels) {
+    if (!panel->parent())
+      continue;
+    const int side = Dock::GetSide(panel);
+    if (side == 0 || side == ui::CENTER)
+      continue;
+    const std::string& id = panel->panelId();
+    set_config_string(kScriptPanelsSection, (id + ".side").c_str(), side_to_string(side));
+    const bool horizontal = (side == ui::LEFT || side == ui::RIGHT);
+    const gfx::Rect rc = panel->bounds();
+    if (!rc.isEmpty())
+      set_config_int(kScriptPanelsSection,
+                     (id + ".size").c_str(),
+                     (horizontal ? rc.w : rc.h) / ui::guiscale());
+  }
 }
 
 } // namespace app

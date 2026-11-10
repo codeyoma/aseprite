@@ -15,6 +15,7 @@
 #include "app/ui/context_bar.h"
 #include "app/ui/dock.h"
 #include "app/ui/main_window.h"
+#include "app/ui/script_panel.h"
 #include "app/ui/status_bar.h"
 #include "app/ui/timeline/timeline.h"
 #include "app/ui/toolbar.h"
@@ -34,6 +35,11 @@ using namespace tinyxml2;
 static void save_dock_layout(XMLElement* elem, const Dock* dock)
 {
   for (const auto* child : dock->children()) {
+    // Script panels are re-docked by MainWindow; keeping them out of the
+    // XML keeps layouts loadable by builds that don't know about them.
+    if (dynamic_cast<const ScriptPanel*>(child))
+      continue;
+
     const int side = dock->whichSideChildIsDocked(child);
     const gfx::Size size = dock->getUserDefinedSizeAtSide(side);
 
@@ -136,9 +142,10 @@ static void load_dock_layout(const XMLElement* elem, Dock* dock)
       childElem = childElem->NextSiblingElement();
     }
   }
-  else {
+  else if (widget) {
     dock->dock(side, widget, size);
   }
+  // Unknown element names (e.g. from a newer build) are skipped.
 }
 
 // static

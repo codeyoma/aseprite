@@ -42,7 +42,7 @@ agent/extension/  (Aseprite Lua extension)
 
 ## Chat panel inside Aseprite
 
-**File > Scripts > AI Agent > Open Chat Panel** opens a panel where you type requests, like pen.dev's chat. Choose `claude` or `codex`; the bridge runs that CLI with your own login, shows each tool call as it happens, and keeps the conversation going until you click **New chat**. Every message includes what you have selected (layer, frame, timeline range, pixel selection), so "this layer" and "the selected frames" work.
+**File > Scripts > AI Agent > Open Chat Panel** opens a panel where you type requests, like pen.dev's chat. In this fork it docks inside the main window next to the canvas (dockable script dialogs, see [docs/native-panel.md](docs/native-panel.md)); in stock Aseprite it floats. Choose `claude` or `codex`; the bridge runs that CLI with your own login, shows each tool call as it happens, and keeps the conversation going until you click **New chat**. Every message includes what you have selected (layer, frame, timeline range, pixel selection), so "this layer" and "the selected frames" work.
 
 ![chat panel](demos/output/7-chat-panel.png)
 

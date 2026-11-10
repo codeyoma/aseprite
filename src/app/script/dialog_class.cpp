@@ -28,6 +28,7 @@
 #include "app/ui/expr_entry.h"
 #include "app/ui/filename_field.h"
 #include "app/ui/main_window.h"
+#include "app/ui/script_panel.h"
 #include "app/ui/window_with_hand.h"
 #include "base/fs.h"
 #include "base/paths.h"
@@ -53,6 +54,7 @@
 #include "ui/system.h"
 #include "ui/view.h"
 
+#include <functional>
 #include <map>
 #include <stack>
 #include <string>
@@ -156,6 +158,58 @@ struct Dialog {
   int showRef = LUA_REFNIL;
   lua_State* L = nullptr;
 
+  // Dialog{ dockable=true, id="..." }: shown docked in the main window
+  // instead of as a floating window.
+  bool dockable = false;
+  std::string dockId;
+  std::unique_ptr<ScriptPanel> panel;
+
+  bool isDocked() { return panel && panel->content() == window.grid(); }
+
+  void dock()
+  {
+    auto* mainWindow = App::instance()->mainWindow();
+    if (!mainWindow)
+      return;
+    if (!panel) {
+      panel = std::make_unique<ScriptPanel>(dockId, window.text());
+      panel->CloseRequested.connect([this] { undockAndClose(); });
+    }
+    if (!isDocked()) {
+      window.removeChild(window.grid());
+      panel->setContent(window.grid());
+    }
+    mainWindow->dockScriptPanel(panel.get());
+
+    // A window focuses its focus-magnet widget when it opens; a docked
+    // panel has no open event, so do it here. Otherwise keys typed in
+    // the panel would go to the editor's shortcuts.
+    std::function<ui::Widget*(ui::Widget*)> findMagnet = [&](ui::Widget* w) -> ui::Widget* {
+      for (auto* child : w->children())
+        if (auto* found = findMagnet(child))
+          return found;
+      return w->isFocusMagnet() ? w : nullptr;
+    };
+    if (auto* magnet = findMagnet(window.grid())) {
+      if (auto* manager = ui::Manager::getDefault())
+        manager->setFocus(magnet);
+    }
+  }
+
+  // Closing a docked dialog: return the content to the window and run the
+  // same Close signal a floating dialog would (onclose, unref).
+  void undockAndClose()
+  {
+    if (!isDocked())
+      return;
+    if (auto* mainWindow = App::instance()->mainWindow())
+      mainWindow->undockScriptPanel(panel.get());
+    panel->setContent(nullptr);
+    window.addChild(window.grid());
+    ui::CloseEvent ev(nullptr);
+    window.Close(ev);
+  }
+
   Dialog(const ui::Window::Type windowType, const std::string& title, bool sizeable)
     : window(windowType, title)
     , currentGrid(window.grid())
@@ -164,7 +218,17 @@ struct Dialog {
     all_dialogs.push_back(this);
   }
 
-  ~Dialog() { base::remove_from_container(all_dialogs, this); }
+  ~Dialog()
+  {
+    if (panel) {
+      if (isDocked()) {
+        panel->setContent(nullptr);
+        window.addChild(window.grid());
+      }
+      panel.reset();
+    }
+    base::remove_from_container(all_dialogs, this);
+  }
 
   ui::View* view() { return window.view(); }
 
@@ -384,6 +448,20 @@ int Dialog_new(lua_State* L)
   auto dlg = push_new<Dialog>(L, windowType, title, sizeable);
   dlg->setAutofit(autofit);
 
+  if (lua_istable(L, 1)) {
+    int type = lua_getfield(L, 1, "dockable");
+    if (type != LUA_TNIL && lua_toboolean(L, -1))
+      dlg->dockable = true;
+    lua_pop(L, 1);
+
+    type = lua_getfield(L, 1, "id");
+    if (type == LUA_TSTRING)
+      dlg->dockId = lua_tostring(L, -1);
+    lua_pop(L, 1);
+    if (dlg->dockId.empty())
+      dlg->dockId = title;
+  }
+
   // The uservalue of the dialog userdata will contain a table that
   // stores all the callbacks to handle events. As these callbacks can
   // reference the dialog itself, it's important to store callbacks in
@@ -439,6 +517,13 @@ int Dialog_show(lua_State* L)
 {
   auto dlg = get_obj<Dialog>(L, 1);
   dlg->refShow(L);
+
+  // Docked dialogs never block: they live inside the main window.
+  if (dlg->dockable && App::instance()->mainWindow()) {
+    dlg->dock();
+    lua_pushvalue(L, 1);
+    return 1;
+  }
 
   gfx::Rect initialBounds;
 
@@ -564,6 +649,11 @@ int Dialog_showMenu(lua_State* L)
 int Dialog_close(lua_State* L)
 {
   auto dlg = get_obj<Dialog>(L, 1);
+  if (dlg->isDocked()) {
+    dlg->undockAndClose();
+    lua_pushvalue(L, 1);
+    return 1;
+  }
   dlg->window.closeWindow(nullptr);
   lua_pushvalue(L, 1);
   return 1;

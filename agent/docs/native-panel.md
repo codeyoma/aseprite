@@ -1,5 +1,7 @@
 # Native dockable chat panel: investigation (#8)
 
+**Status:** option B is implemented in this fork (#11). See "Implementation" at the end.
+
 The chat panel (`agent/extension/chat_panel.lua`) is a script `Dialog`, so it floats above the editor. This note records how Aseprite's own panels are docked and what it would take to dock the chat panel the same way.
 
 ## How Aseprite docks its panels
@@ -50,3 +52,14 @@ About 2–3 days for a working version in this fork (steps 1–6), plus tests of
 ## Licensing note
 
 Changes to Aseprite's C++ source are for personal use or for proposing a contribution (EULA section 2(g)). Option B is designed to be proposed upstream. Do not distribute compiled builds of this fork.
+
+## Implementation (#11)
+
+- `src/app/ui/script_panel.h/.cpp`: `ScriptPanel : ui::VBox, Dockable` with a title and close button. It hosts the dialog's grid and never deletes it.
+- `src/app/script/dialog_class.cpp`: `Dialog{ dockable = true, id = "..." }`. `dlg:show{}` moves the grid into a `ScriptPanel` and docks it; `dlg:close()` and the panel's close button move it back and fire the dialog's normal `Close` signal (so `onclose` runs). Docking focuses the dialog's focus-magnet widget, as a window does on open, so typing in the panel does not trigger editor shortcuts.
+- `src/app/ui/main_window.cpp`: `dockScriptPanel` / `undockScriptPanel` dock next to the workspace (`dockRelativeTo`). Panels are re-docked after every layout change (default, mirrored, user layouts). Their side and size are stored in the `[ScriptPanels]` config section, not in layout XML.
+- `src/app/ui/layout.cpp`: script panels are skipped when saving layouts, and unknown elements are skipped when loading, so layout files stay compatible with stock Aseprite.
+- New command `SetWorkspaceLayout{ layout = "default" | "mirrored" | <user layout id> }` switches layouts without the selector UI, for scripts and agents.
+- Stock Aseprite ignores the `dockable` and `id` fields, so `chat_panel.lua` works there as a floating dialog.
+
+Verified live: docking at startup, switching to the mirrored layout and back, closing with `dlg:close()`, reopening, typing into the docked entry (the active tool stays unchanged), a full chat while docked, and the side and size surviving a restart.

@@ -828,6 +828,9 @@ function init(plugin)
     isBusy = function() return Panel.isBusy() end,
     entries = function() return Panel.entries() end,
     openPanel = function() Panel.open() end,
+    closePanel = function() Panel.close() end,
+    isPanelOpen = function() return Panel.isOpen() end,
+    promptText = function() return Panel.promptText() end,
   }
 
   plugin:newMenuGroup{

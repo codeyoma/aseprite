@@ -52,6 +52,10 @@ public:
   ~LayoutSelector();
 
   LayoutPtr activeLayout() const;
+
+  // Activates a layout by id (Layout::kDefault, Layout::kMirroredDefault or
+  // a user layout id), like choosing it in the layout combobox.
+  void switchToLayout(const std::string& layoutId);
   const std::string& activeLayoutId() const { return m_activeLayoutId; }
 
   void addLayout(const LayoutPtr& layout);

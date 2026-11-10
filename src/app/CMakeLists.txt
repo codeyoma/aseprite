@@ -526,6 +526,7 @@ target_sources(app-lib PRIVATE
   commands/quick_command.cpp
   commands/screenshot.cpp
   commands/set_playback_speed.cpp
+  commands/cmd_set_workspace_layout.cpp
   commands/show_menu.cpp
   commands/solo_layer.cpp
   commands/tileset_mode.cpp
@@ -686,6 +687,7 @@ target_sources(app-lib PRIVATE
   ui/rgbmap_algorithm_selector.cpp
   ui/sampling_selector.cpp
   ui/search_entry.cpp
+  ui/script_panel.cpp
   ui/select_shortcut.cpp
   ui/selection_mode_field.cpp
   ui/skin/skin_part.cpp

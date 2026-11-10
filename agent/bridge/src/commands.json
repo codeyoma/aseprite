@@ -2068,6 +2068,17 @@
   ]
  },
  {
+  "name": "SetWorkspaceLayout",
+  "title": "Set Workspace Layout",
+  "params": [
+   {
+    "name": "layout",
+    "type": "string",
+    "default": "std::string(\"default\")"
+   }
+  ]
+ },
+ {
   "name": "SetSameInk",
   "title": "Same Ink in All Tools",
   "params": []

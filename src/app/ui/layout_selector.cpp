@@ -332,6 +332,26 @@ LayoutPtr LayoutSelector::activeLayout() const
   return m_layouts.getById(m_activeLayoutId);
 }
 
+void LayoutSelector::switchToLayout(const std::string& layoutId)
+{
+  MainWindow* win = App::instance()->mainWindow();
+  if (const auto layout = m_layouts.getById(layoutId)) {
+    // A saved layout (user-defined, or a modified default/mirrored one).
+    setActiveLayoutId(layoutId);
+    win->loadUserLayout(layout.get());
+  }
+  else if (layoutId == Layout::kMirroredDefault) {
+    win->setMirroredDefaultLayout();
+    setActiveLayoutId(layoutId);
+  }
+  else {
+    win->setDefaultLayout();
+    setActiveLayoutId(Layout::kDefault);
+  }
+  win->layout();
+  win->invalidate();
+}
+
 void LayoutSelector::addLayout(const LayoutPtr& layout)
 {
   m_layouts.addLayout(layout);

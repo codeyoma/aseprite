@@ -39,6 +39,7 @@ Each `execute_lua` call is one undo step. If the code raises an error, everythin
 - **Commands:** `app.command.Name{ ui = false, ... }`. Always pass `ui = false`; otherwise a modal dialog blocks until the user closes it. Commands return `true` if they ran. Prefer `run_command` with `list_commands` to discover parameters.
 - **Commands act on the active objects.** Set `app.sprite`, `app.layer`, `app.frame` first. Filters (Outline, ReplaceColor, HueSaturation, ...) change only the active layer's cel in the active frame, so loop over frames to apply them everywhere.
 - **Tools:** `app.useTool{ tool = "pencil", color = Color(...), brush = Brush(1), points = { Point(x, y), ... }, layer = layer, frame = frame }`. Tool ids include `pencil`, `eraser`, `line`, `rectangle`, `filled_rectangle`, `ellipse`, `filled_ellipse`, `paint_bucket`, `spray`. Direct image edits are usually more precise than `useTool`.
+- **Workspace and panels:** switch layouts with `run_command SetWorkspaceLayout { layout = "default" | "mirrored" }`. Toggle panels and views with `Timeline`, `PaletteEditor`, `ShowGrid`, `ShowOnionSkin`, `ToggleWorkspaceLayout`, `FullscreenPreview`.
 - `app.transaction` needs an open sprite. When no sprite is open, `execute_lua` runs without one (no undo step).
 - Code that opens files (`app.open`), changes the active sprite, or calls `app.undo` should run with `transaction = false`.
 - `sprite:newFrame(n)` inserts a **copy** of frame `n` at position `n` (the original moves to `n + 1`). `sprite:newEmptyFrame(n)` inserts an empty frame.

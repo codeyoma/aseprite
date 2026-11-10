@@ -233,6 +233,9 @@ return function(deps)
   end
 
   function Panel.isBusy() return busy end
+  function Panel.isOpen() return dlg ~= nil end
+  function Panel.promptText() return dlg and dlg.data.prompt or nil end
+  function Panel.close() if dlg then dlg:close() end end
   function Panel.entries() return entries end
 
   function Panel.open()
@@ -240,12 +243,16 @@ return function(deps)
     dlg = Dialog{
       title = "AI Agent",
       resizeable = true,
+      -- Docks in the main window on this fork (dockable script dialogs);
+      -- stock Aseprite ignores these fields and shows a floating dialog.
+      dockable = true,
+      id = "aseprite-agent.chat",
       onclose = function() dlg = nil end,
     }
     dlg:canvas{
       id = "log",
-      width = 380,
-      height = 360,
+      width = 200,      -- minimum; the canvas expands with the dialog or dock
+      height = 240,
       hexpand = true,
       vexpand = true,
       onpaint = paint,
