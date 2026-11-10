@@ -28,7 +28,7 @@ Rules for this fork:
 
 ## What the AI can reach (verified against the API)
 
-- **All 183 built-in commands** via `app.command.<Name>{...}` — menus, dialogs, filters, and panels: `NewLayer`, `CanvasSize`, `SpriteSize`, `ColorQuantization`, `ChangePixelFormat`, `NewFrame`, `NewFrameTag`, `ReverseFrames`, `Outline`, `ReplaceColor`, `ExportSpriteSheet`, `Timeline`, `PaletteEditor`, `PlayAnimation`, `ShowGrid`, `ShowOnionSkin`, `SymmetryMode`, `GotoFrame`, and more. Source: `src/app/commands/commands_list.h`.
+- **Every built-in command** via `app.command.<Name>{...}` — menus, dialogs, filters, and panels: `NewLayer`, `CanvasSize`, `SpriteSize`, `ColorQuantization`, `ChangePixelFormat`, `NewFrame`, `NewFrameTag`, `ReverseFrames`, `Outline`, `ReplaceColor`, `ExportSpriteSheet`, `Timeline`, `PaletteEditor`, `PlayAnimation`, `ShowGrid`, `ShowOnionSkin`, `SymmetryMode`, `GotoFrame`, and more. Source: `src/app/commands/commands_list.h`.
 - **Tools and drawing**: `app.tool` (pencil, bucket, line, ellipse, …), `app.useTool{}` to simulate strokes, `app.fgColor` / `app.bgColor`, `app.brush`.
 - **Document model**: `Sprite`, `Layer`, `Frame`, `Cel`, `Tag`, `Palette`, `Image` (direct pixel access), `Selection`, `Slice`, `Tileset`.
 - **User context**: `app.site`, `app.range` (selected layers/frames/cels in the timeline), `sprite.selection`, `app.editor`.
@@ -57,7 +57,7 @@ Aseprite extension (Lua)
 | `get_state` | Open sprites, size, color mode, layers tree, frames + durations, tags, palette, active tool/colors |
 | `get_context` | What the user has selected: active layer/frame/cel, timeline range, pixel selection bounds |
 | `execute_lua` | Run Lua inside Aseprite in one transaction; returns printed output / returned value / error |
-| `run_command` | Call `app.command.<Name>` with params (typed shortcut for the 183 commands) |
+| `run_command` | Call `app.command.<Name>` with params (typed shortcut for every built-in command) |
 | `list_commands` | Names + known params for discovery |
 | `snapshot` | PNG of the sprite / a frame / a layer, upscaled nearest-neighbor, so the agent can see results |
 | `read_pixels` | Region as a palette-index or hex grid for precise edits |

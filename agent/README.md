@@ -7,7 +7,7 @@ Control [Aseprite](https://www.aseprite.org/) with natural language through your
 > "Change this animation from 10 frames to 20."
 > "Open the palette editor and switch to the bucket tool."
 
-The agent does not generate images with a diffusion model. It drives Aseprite itself: it calls Aseprite's 183 built-in commands, uses its tools, edits layers, frames, cels, tags and pixels through the Lua API, and looks at snapshots to check its work.
+The agent does not generate images with a diffusion model. It drives Aseprite itself: it calls any of Aseprite's built-in commands, uses its tools, edits layers, frames, cels, tags and pixels through the Lua API, and looks at snapshots to check its work.
 
 **Status:** early development. See [docs/PLAN.md](docs/PLAN.md).
 
@@ -134,7 +134,7 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `get_state` | Open sprites; layers, frames, tags, palette, selection, active tool and colors |
 | `get_context` | What the user selected: active layer/frame/cel, timeline range, pixel selection, tool and brush |
 | `execute_lua` | Runs Lua in Aseprite as one undo step; rolls back on error |
-| `run_command` | Runs any of Aseprite's 183 built-in commands with parameters (dialogs skipped by default) |
+| `run_command` | Runs any of Aseprite's built-in commands with parameters (dialogs skipped by default) |
 | `list_commands` | Finds commands and their parameters, generated from this fork's source |
 | `snapshot` | PNG of the sprite or a layer, upscaled so pixels are visible |
 | `read_pixels` | A region as a text grid with a color legend |
