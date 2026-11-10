@@ -133,7 +133,7 @@ export const UI_TOOLS: Tool[] = [
         if (pal.length >= 2) frames = frames.map((f) => ({ ...f, image: snapToPalette(f.image, pal) }));
       }
       const made = await doc.createAnimation(input.width, input.height, frames, { title: name, tags });
-      await aseprite.request("set_slice", { name, x: 0, y: 0, w: input.width, h: input.height, center });
+      await doc.setSlice({ name, x: 0, y: 0, w: input.width, h: input.height, center });
       return { content: [text(`Made "${made.title}": a ${input.width}x${input.height} ${input.kind}${input.kind === "button" ? " with normal, hover, pressed and disabled frames" : ""}, ` +
         `and a 9-patch slice '${name}' (stretchable center ${center.w}x${center.h} at ${center.x},${center.y}).`)] };
     },

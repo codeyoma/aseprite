@@ -8,7 +8,7 @@ import {
   adjust, describeToneDifference, hex, hueHistogram, matchPalettes, nearDuplicates, nearest, parseHex, quantize, ramps, remap,
   tally, toneStats, toneTowards, type Counted, type RGBA,
 } from "./color.js";
-import { documentOf } from "./document.js";
+import { documentOf, type Document } from "./document.js";
 import { findPalette, knownPalettes, parsePaletteFile } from "./palettes.js";
 import { decodePng as decodeImage, readPng, type Rgba } from "./image.js";
 import { findOutline } from "./style.js";
@@ -36,28 +36,23 @@ export function decodePng(buf: Buffer): Counted[] {
   return [...counts].map(([v, count]) => ({ r: v >>> 24, g: (v >>> 16) & 255, b: (v >>> 8) & 255, a: v & 255, count }));
 }
 
-export async function gatherColors(src: Source, aseprite: AsepriteRequester): Promise<Counted[]> {
+export async function gatherColors(src: Source, doc: Document): Promise<Counted[]> {
   if (src.source === "file") {
     if (!src.path) throw new Error("source 'file' needs a path");
     if (!/\.png$/i.test(src.path)) throw new Error("Only PNG files can be read; attach the image as PNG");
     return decodePng(readFileSync(src.path));
   }
-  const { result } = await aseprite.request("collect_colors", {
-    layer: src.layer, frames: src.frames, selection: src.source === "selection",
-  });
-  return (result.colors as { hex: string; count: number }[])
-    .map((c) => ({ ...parseHex(c.hex)!, count: c.count }));
+  return (await doc.colors({ layer: src.layer, frames: src.frames, selection: src.source === "selection" })).colors;
 }
 
 /** The source as one image for shape analysis: the file, or the layer (or sprite) in its first frame. */
-async function sourceImage(src: Source, aseprite: AsepriteRequester): Promise<Rgba | undefined> {
+async function sourceImage(src: Source, doc: Document): Promise<Rgba | undefined> {
   if (src.source === "file") {
     if (!src.path) return undefined;
     const img = readPng(src.path);
     return { ...img, data: new Uint8Array(img.data) };
   }
   if (src.source === "selection") return undefined;
-  const doc = documentOf(aseprite);
   const [frame] = await doc.frames(src.frames ?? undefined);
   return doc.pixels(src.source === "layer" || src.layer ? src.layer : undefined, frame);
 }
@@ -74,7 +69,7 @@ function pct(x: number): string {
 }
 
 /** The palette to remap to: a known palette by name, hex colors, a palette file, or the sprite's palette. */
-async function targetPalette(t: { palette?: string; colors?: string[]; file?: string }, aseprite: AsepriteRequester): Promise<{ name: string; colors: RGBA[] }> {
+async function targetPalette(t: { palette?: string; colors?: string[]; file?: string }, doc: Document): Promise<{ name: string; colors: RGBA[] }> {
   if (t.colors?.length) return { name: "the given colors", colors: t.colors.map((h) => parseHex(h)).filter((c): c is RGBA => !!c) };
   if (t.file) return { name: t.file, colors: parsePaletteFile(t.file) };
   if (t.palette && t.palette !== "sprite") {
@@ -82,8 +77,7 @@ async function targetPalette(t: { palette?: string; colors?: string[]; file?: st
     if (!p) throw new Error(`No palette named ${t.palette}. Known: ${knownPalettes().map((x) => x.name).slice(0, 40).join(", ")}…`);
     return p;
   }
-  const { result } = await aseprite.request("get_palette", {});
-  return { name: "the sprite palette", colors: (result.colors as string[]).map((h) => parseHex(h)!).filter((c) => c.a > 0) };
+  return { name: "the sprite palette", colors: (await doc.palette()).filter((c) => c.a > 0) };
 }
 
 export const COLOR_TOOLS: Tool[] = [
@@ -109,7 +103,8 @@ export const COLOR_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Extract palette",
     async run(input, aseprite) {
-      const counted = tally(await gatherColors(input, aseprite), input.ignore_alpha_below ?? 128);
+      const doc = documentOf(aseprite);
+      const counted = tally(await gatherColors(input, doc), input.ignore_alpha_below ?? 128);
       if (!counted.length) return failure(`No opaque pixels in ${describeSource(input)}.`);
       const pixelsCounted = counted.reduce((n, c) => n + c.count, 0);
       const all = input.min_share ? counted.filter((c) => c.count / pixelsCounted >= input.min_share!) : counted;
@@ -135,11 +130,11 @@ export const COLOR_TOOLS: Tool[] = [
           `- ${m.name} (${m.size} colors): ${pct(m.coverage)} of pixels match closely, mean error ${m.error.toFixed(3)}`));
       }
       if (input.set_palette) {
-        await aseprite.request("set_palette", { colors: ordered.map(hex), label: "Palette from image" });
+        await doc.setPalette(ordered, { label: "Palette from image" });
         lines.push(`Set the sprite palette to these ${ordered.length} colors.`);
       }
       if (input.swatches) {
-        await aseprite.request("draw_swatches", { colors: ordered.map(hex), name: "palette" });
+        await doc.drawSwatches(ordered, { name: "palette" });
         lines.push("Drew swatches on a new 'AI: palette' layer.");
       }
       const save = input.save ?? input.save_gpl;
@@ -160,7 +155,8 @@ export const COLOR_TOOLS: Tool[] = [
     kind: "read",
     label: () => "Compare tone",
     async run(input, aseprite) {
-      const counted = tally(await gatherColors(input, aseprite));
+      const doc = documentOf(aseprite);
+      const counted = tally(await gatherColors(input, doc));
       const a = toneStats(counted);
       const fmt = (s: ReturnType<typeof toneStats>) =>
         `${s.colors} colors, lightness ${s.lightness.toFixed(2)}, saturation ${s.chroma.toFixed(3)}, contrast ${s.contrast.toFixed(2)}, ` +
@@ -170,7 +166,7 @@ export const COLOR_TOOLS: Tool[] = [
       lines.push(`Hues: ${[...hist.hues.slice(0, 6).map((h) => `${h.name} ${pct(h.share)}`), ...(hist.neutral > 0.005 ? [`neutral ${pct(hist.neutral)}`] : [])].join(", ") || "none"}`);
       const groups = ramps(counted);
       lines.push(`Ramps: ${groups.length} (${groups.map((g) => `${g.name} ${g.colors.length} step${g.colors.length === 1 ? "" : "s"}`).join(", ")})`);
-      const img = await sourceImage(input, aseprite).catch(() => undefined);
+      const img = await sourceImage(input, doc).catch(() => undefined);
       if (img) {
         const o = findOutline(img);
         lines.push(o.present
@@ -178,7 +174,7 @@ export const COLOR_TOOLS: Tool[] = [
           : "Outline: none");
       }
       if (input.compare_to) {
-        const b = toneStats(tally(await gatherColors(input.compare_to, aseprite)));
+        const b = toneStats(tally(await gatherColors(input.compare_to, doc)));
         lines.push(`${describeSource(input.compare_to)}: ${fmt(b)}`);
         const diff = describeToneDifference(a, b);
         lines.push(diff.length ? `Compared with it, ${describeSource(input)} is ${diff.join(", ")}.` : "The tones match closely.");
@@ -205,20 +201,19 @@ export const COLOR_TOOLS: Tool[] = [
     kind: "edit",
     label: (a) => (a.palette ? `Remap to ${a.palette}` : "Remap to palette"),
     async run(input, aseprite) {
-      const target = await targetPalette(input, aseprite);
+      const doc = documentOf(aseprite);
+      const target = await targetPalette(input, doc);
       if (!target.colors.length) return failure("The target palette has no colors.");
-      const source = tally(await gatherColors({ source: "layer", layer: input.layer, frames: input.frames }, aseprite));
+      const source = tally(await gatherColors({ source: "layer", layer: input.layer, frames: input.frames }, doc));
       const map = remap(source, target.colors, input.preserve_ramps ?? true);
       const changes: Record<string, string> = {};
       for (const c of source) {
         const to = map.get(hex(c))!;
         if (hex(to) !== hex(c)) changes[hex(c)] = hex(to);
       }
-      if (input.set_palette) await aseprite.request("set_palette", { colors: target.colors.map(hex), label: `Palette ${target.name}` });
+      if (input.set_palette) await doc.setPalette(target.colors, { label: `Palette ${target.name}` });
       if (!Object.keys(changes).length) return { content: [text(`Already within ${target.name}; nothing changed.`)] };
-      const { result } = await aseprite.request("apply_color_map", {
-        map: changes, layer: input.layer, frames: input.frames, label: `Remap to ${target.name}`,
-      });
+      const result = await doc.applyColorMap(changes, { layer: input.layer, frames: input.frames, label: `Remap to ${target.name}` });
       const err = source.reduce((s, c) => s + nearest(c, target.colors).d * c.count, 0) / Math.max(1, source.reduce((s, c) => s + c.count, 0));
       return {
         content: [text(`Remapped ${Object.keys(changes).length} of ${source.length} colors to ${target.name} ` +
@@ -247,18 +242,19 @@ export const COLOR_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Adjust tone",
     async run(input, aseprite) {
-      const source = tally(await gatherColors({ source: "layer", layer: input.layer, frames: input.frames }, aseprite));
+      const doc = documentOf(aseprite);
+      const source = tally(await gatherColors({ source: "layer", layer: input.layer, frames: input.frames }, doc));
       let o: { lightness?: number; chroma?: number; contrast?: number; hue?: number; pivot?: number } = {
         lightness: input.lightness, chroma: input.saturation, contrast: input.contrast, hue: input.hue,
       };
       let before = "";
       if (input.match_to) {
-        const ref = toneStats(tally(await gatherColors(input.match_to, aseprite)));
+        const ref = toneStats(tally(await gatherColors(input.match_to, doc)));
         const now = toneStats(source);
         o = { ...toneTowards(now, ref, input.strength ?? 1), hue: input.hue };
         before = describeToneDifference(now, ref).join(", ");
       }
-      const palette = input.snap_to_palette ? (await targetPalette({}, aseprite)).colors : undefined;
+      const palette = input.snap_to_palette ? (await targetPalette({}, doc)).colors : undefined;
       const changes: Record<string, string> = {};
       const out: Counted[] = [];
       for (const c of source) {
@@ -268,10 +264,10 @@ export const COLOR_TOOLS: Tool[] = [
         if (hex(to) !== hex(c)) changes[hex(c)] = hex(to);
       }
       if (!Object.keys(changes).length) return { content: [text("Nothing to change.")] };
-      const { result } = await aseprite.request("apply_color_map", { map: changes, layer: input.layer, frames: input.frames, label: "Adjust tone" });
+      const result = await doc.applyColorMap(changes, { layer: input.layer, frames: input.frames, label: "Adjust tone" });
       const lines = [`Adjusted ${Object.keys(changes).length} colors (${result.changed} ${result.mode} changed). One undo step.`];
       if (input.match_to) {
-        const after = describeToneDifference(toneStats(tally(out)), toneStats(tally(await gatherColors(input.match_to, aseprite))));
+        const after = describeToneDifference(toneStats(tally(out)), toneStats(tally(await gatherColors(input.match_to, doc))));
         lines.push(`Before: ${before || "already close"}. After: ${after.length ? after.join(", ") : "the tones match closely"}.`);
       }
       return { content: [text(lines.join("\n"))] };

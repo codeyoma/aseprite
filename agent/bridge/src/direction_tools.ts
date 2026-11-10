@@ -50,7 +50,7 @@ export const DIRECTION_TOOLS: Tool[] = [
       const to = input.to ?? (from ? MIRROR[from] : undefined);
       if (!to) return failure(`Can't tell the direction of '${input.tag}' or it has no mirror; pass 'to'.`);
       const name = input.new_tag ?? mirroredTagName(input.tag, from ?? "", to);
-      const { result } = await aseprite.request("mirror_frames", { tag: input.tag, new_tag: name, keep_layers: input.keep_layers });
+      const result = await documentOf(aseprite).mirrorFrames({ tag: input.tag, newTag: name, keepLayers: input.keep_layers });
       return { content: [text(`Made ${name} (${to}) from ${input.tag}: frames ${result.from}-${result.to}, flipped` +
         (input.keep_layers?.length ? `, except ${input.keep_layers.join(", ")}` : "") + ".")] };
     },

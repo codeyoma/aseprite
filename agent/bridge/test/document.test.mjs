@@ -91,3 +91,45 @@ test("draw_text and layers_to_voxels through the document", async () => {
   assert.ok(!r.isError, textOf(r));
   assert.equal(vox.sprites.length, 2, "a new sprite with the render");
 });
+
+test("info is fresh after a palette write, a split and a slice in the same run", async () => {
+  const fake = fakeDocument({ width: 4, height: 2, palette: ["#000000"], layers: [{ name: "Art", frames: [rect(4, 2, [0, 0, 1, 1], [255, 0, 0])] }] });
+  const doc = documentOf(fake);
+  assert.equal((await doc.info()).palette.length, 1);
+  await doc.setPalette([{ r: 255, g: 0, b: 0, a: 255 }, { r: 0, g: 0, b: 255, a: 255 }]);
+  assert.deepEqual((await doc.info()).palette.map((c) => [c.r, c.g, c.b]), [[255, 0, 0], [0, 0, 255]]);
+  await doc.setPalette([{ r: 0, g: 0, b: 255, a: 255 }, { r: 0, g: 255, b: 0, a: 255 }], { append: true });
+  assert.equal((await doc.palette()).length, 3, "append skips colors the palette has");
+  await doc.splitByColors([{ name: "Red", colors: ["#ff0000"] }], { layer: "Art" });
+  assert.deepEqual((await doc.info()).layers.map((l) => l.name), ["Red"], "the emptied source layer is gone");
+  await doc.setSlice({ name: "all" });
+  assert.deepEqual((await doc.info()).slices, [{ name: "all", bounds: { x: 0, y: 0, w: 4, h: 2 }, center: undefined }], "w/h default to the sprite size");
+});
+
+test("document colors, color maps, mirror and swatches against the fake", async () => {
+  const W = 4, d = rect(W, 2, [0, 0, 0, 1], [255, 0, 0]);
+  d.set([0, 0, 255, 255], 1 * 4);
+  const fake = fakeDocument({ width: W, height: 2, frames: 2, tags: [{ name: "walk_E", from: 1, to: 1 }], layers: [{ name: "Art", frames: [d] }], selection: { x: 0, y: 0, width: 1, height: 1 } });
+  const doc = documentOf(fake);
+  const all = await doc.colors();
+  assert.deepEqual(all.colors.map((c) => [c.r, c.b, c.count]), [[255, 0, 2], [0, 255, 1]]);
+  assert.equal((await doc.colors({ selection: true })).pixels, 1);
+  assert.deepEqual(await doc.applyColorMap({ "#0000ff": "#00ff00" }), { changed: 1, mode: "pixels" });
+  assert.deepEqual(await doc.mirrorFrames({ tag: "walk_E", newTag: "walk_W" }), { from: 3, to: 3, frames: 1 });
+  const info = await doc.info();
+  assert.equal(info.durations.length, 3);
+  assert.deepEqual(info.tags.at(-1), { name: "walk_W", from: 3, to: 3, direction: "forward", repeat: 0 });
+  assert.deepEqual([...fake.cel("Art", 3).subarray((W - 1) * 4, W * 4)], [255, 0, 0, 255], "flipped");
+  await doc.drawSwatches([{ r: 1, g: 2, b: 3, a: 255 }]);
+  assert.ok((await doc.info()).layers.some((l) => l.name === "AI: palette"));
+});
+
+test("the fake refuses what the extension refuses: splitting groups or non-RGB sprites", async () => {
+  const groups = [{ name: "A", colors: ["#ff0000"] }];
+  const grp = documentOf(fakeDocument({ width: 2, height: 2, layers: [{ name: "Art", frames: [rect(2, 2, [0, 0, 1, 1], [255, 0, 0])] }, { name: "G", group: true }] }));
+  await assert.rejects(grp.splitByColors(groups, { layer: "G" }), /Pick an image layer/);
+  const idx = fakeDocument({ width: 2, height: 2, colorMode: "indexed", palette: ["#ff0000"], layers: [{ name: "Art", frames: [rect(2, 2, [0, 0, 1, 1], [255, 0, 0])] }] });
+  await assert.rejects(documentOf(idx).splitByColors(groups), /needs an RGB sprite/);
+  assert.deepEqual(await documentOf(idx).applyColorMap({ "#ff0000": "#00ff00" }), { changed: 1, mode: "palette entries" });
+  assert.deepEqual(idx.active.sprite.palette, ["#00ff00"]);
+});

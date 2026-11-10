@@ -1,6 +1,6 @@
 // match-tone: color_stats describes how a dark layer differs from a bright
 // reference; adjust_tone with match_to moves it towards the reference.
-import { fakeWithColors, rect, textOf } from "./_helpers.mjs";
+import { fakeDocument, rect, textOf } from "./_helpers.mjs";
 
 const W = 8;
 const ART = [[40, 60, 30], [70, 90, 50], [20, 30, 20]];
@@ -18,7 +18,7 @@ const luma = (d) => {
 
 export default {
   skill: "match-tone",
-  fixture: () => fakeWithColors({ width: W, height: W, layers: [{ name: "Ref", frames: [bands(REF)] }, { name: "Art", frames: [bands(ART)] }] }),
+  fixture: () => fakeDocument({ width: W, height: W, layers: [{ name: "Ref", frames: [bands(REF)] }, { name: "Art", frames: [bands(ART)] }] }),
   steps: [
     { tool: "color_stats", input: { source: "layer", layer: "Art", compare_to: { source: "layer", layer: "Ref" } } },
     { tool: "adjust_tone", input: { layer: "Art", match_to: { source: "layer", layer: "Ref" } } },

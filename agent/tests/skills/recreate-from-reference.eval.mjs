@@ -1,7 +1,7 @@
 // recreate-from-reference: a 3x screenshot of 3 poses on a solid background
 // becomes a 3-frame sprite at native size, split into color-role layers.
 import { join } from "node:path";
-import { colorsOf, fakeWithColors, tempDir, textOf, upscale, writePng } from "./_helpers.mjs";
+import { colorsOf, fakeDocument, tempDir, textOf, upscale, writePng } from "./_helpers.mjs";
 
 const path = join(tempDir("recreate"), "shot.png");
 const OUT = [24, 20, 37], G1 = [60, 170, 80], G2 = [120, 220, 120], G0 = [30, 110, 60];
@@ -29,7 +29,7 @@ export default {
   skill: "recreate-from-reference",
   fixture() {
     writePng(path, screenshot());
-    return fakeWithColors({ width: 8, height: 8, layers: [{ name: "Layer 1", frames: [new Uint8Array(8 * 8 * 4)] }] });
+    return fakeDocument({ width: 8, height: 8, layers: [{ name: "Layer 1", frames: [new Uint8Array(8 * 8 * 4)] }] });
   },
   steps: [
     { tool: "style_summary", input: { path } },

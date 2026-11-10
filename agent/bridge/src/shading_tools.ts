@@ -41,7 +41,7 @@ export const SHADING_TOOLS: Tool[] = [
       const base = parseHex(input.base);
       if (!base) return failure(`Not a color: ${input.base}`);
       const ramp = makeRamp(base, { steps: input.steps, hueShift: input.hue_shift });
-      if (input.add_to_palette) await aseprite.request("set_palette", { colors: ramp.map(hex), append: true, label: "Add ramp" });
+      if (input.add_to_palette) await documentOf(aseprite).setPalette(ramp, { append: true, label: "Add ramp" });
       return {
         content: [text(`Ramp (dark to light): ${ramp.map(hex).join(" ")} — lightness ${ramp.map((c) => toOklch(c).L.toFixed(2)).join(", ")}` +
           (input.add_to_palette ? ". Added to the palette." : "."))],

@@ -160,11 +160,7 @@ test("color_stats: hue histogram, ramps with steps, and the outline", async () =
     const ring = x === 1 || y === 1 || x === 8 || y === 8, inside = x > 1 && y > 1 && x < 8 && y < 8;
     d.set(ring ? [20, 30, 25, 255] : inside ? (y < 5 ? [90, 200, 110, 255] : [60, 170, 80, 255]) : [0, 0, 0, 0], i);
   }
-  const counts = new Map();
-  for (let i = 0; i < d.length; i += 4) if (d[i + 3]) { const k = [...d.subarray(i, i + 3)].map((v) => v.toString(16).padStart(2, "0")).join(""); counts.set(k, (counts.get(k) ?? 0) + 1); }
-  const fake = fakeDocument({ width: W, height: W, layers: [{ name: "Blob", frames: [d] }], extra: {
-    collect_colors: () => ({ colors: [...counts].map(([k, count]) => ({ hex: `#${k}`, count })) }),
-  } });
+  const fake = fakeDocument({ width: W, height: W, layers: [{ name: "Blob", frames: [d] }] });
   const r = await runTool(findTool("color_stats"), { source: "layer", layer: "Blob" }, fake);
   const t = r.content[0].text;
   assert.match(t, /Hues: green 50%, neutral 50%/);

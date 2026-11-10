@@ -110,14 +110,15 @@ export const RECREATE_TOOLS: Tool[] = [
       }
       if (!images.length || width < 1) return failure("No opaque pixels left after removing the background.");
       const first: Rgba = { width, height, data: images[0] };
-      const result = await openAnimation(documentOf(aseprite), width, height, images, input.name ?? "Recreated", tags);
+      const doc = documentOf(aseprite);
+      const result = await openAnimation(doc, width, height, images, input.name ?? "Recreated", tags);
       const palette = result.palette;
       let split = "";
       if (input.split_layers !== false) {
         const groups = colorGroups(first);
         if (groups.length > 1) {
-          const r = await aseprite.request("split_layer_by_colors", { groups });
-          split = ` Split into layers: ${r.result.layers.join(", ")}.`;
+          const r = await doc.splitByColors(groups);
+          split = ` Split into layers: ${r.layers.join(", ")}.`;
         }
       }
       const style = analyzeStyle(first);
@@ -166,11 +167,12 @@ export const RECREATE_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Split layer by color",
     async run(input, aseprite) {
-      const img = await documentOf(aseprite).pixels(input.layer);
+      const doc = documentOf(aseprite);
+      const img = await doc.pixels(input.layer);
       const groups = colorGroups(img);
       if (groups.length < 2) return failure("This layer has only one color group; nothing to split.");
-      const r = await aseprite.request("split_layer_by_colors", { layer: input.layer, groups });
-      return { content: [text(`Split into layers: ${r.result.layers.join(", ")}.`)] };
+      const r = await doc.splitByColors(groups, { layer: input.layer });
+      return { content: [text(`Split into layers: ${r.layers.join(", ")}.`)] };
     },
   },
   {

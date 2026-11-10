@@ -1,8 +1,9 @@
 // The document module (#52): what tool modules know about the active
-// sprite and how pixels go in and out, over the existing wire requests
-// (get_state, snapshot, put_image, create_sprite, create_animation). Tools
-// call documentOf(aseprite) instead of writing Lua or encoding pixels.
-import { parseHex, type RGBA } from "./color.js";
+// sprite and how pixels, colors, the palette and slices go in and out, over
+// the existing wire requests. Tools call documentOf(aseprite) instead of
+// writing Lua, encoding pixels or sending requests themselves; every write
+// goes through here, so the cached SpriteInfo is dropped after it.
+import { hex, parseHex, type Counted, type RGBA } from "./color.js";
 import type { Rgba } from "./pixel_grid.js";
 import type { AsepriteRequester } from "./tool.js";
 
@@ -81,6 +82,41 @@ export interface AnimationFrame {
   duration?: number;
 }
 
+/** Which cels a color request covers: a layer (or group) or all visible image layers, in frames (default all). */
+export interface ColorTarget {
+  layer?: string;
+  /** Frame spec (see resolveFrames); default all frames. */
+  frames?: unknown;
+}
+
+export interface CollectedColors {
+  /** Distinct colors with pixel counts, most used first. */
+  colors: Counted[];
+  pixels: number;
+  colorMode: "rgb" | "indexed" | "grayscale";
+}
+
+export interface MirrorFrames {
+  /** Mirror this tag's frames, or `frames` (a frame spec). */
+  tag?: string;
+  frames?: unknown;
+  /** Tag the new frames with this name. */
+  newTag?: string;
+  /** Layers copied unflipped. */
+  keepLayers?: string[];
+}
+
+export interface SetSlice {
+  name: string;
+  /** Default 0, 0 and the sprite size. */
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  /** The 9-patch center, relative to the slice. */
+  center?: { x: number; y: number; w: number; h: number };
+}
+
 export interface Document {
   /** The active sprite (read once per document; writes invalidate it). */
   info(): Promise<SpriteInfo>;
@@ -95,6 +131,22 @@ export interface Document {
   renderFontText(text: string, font: string, size: number): Promise<Rgba>;
   /** A new sprite with a tilemap layer: `set` cut into `count` tiles of `tile` px, placed by `map` (0-based indices, -1 empty). */
   createTilemap(set: Rgba, tile: number, columns: number, count: number, map: number[][], o?: { title?: string }): Promise<{ title: string; layer: string }>;
+  /** Distinct colors of the target cels (hidden layers too with `hidden`; only the selection with `selection`). */
+  colors(o?: ColorTarget & { selection?: boolean; hidden?: boolean }): Promise<CollectedColors>;
+  /** Every entry of the sprite palette, transparent ones included (info().palette skips those). */
+  palette(): Promise<RGBA[]>;
+  /** Replaces the sprite palette, or with `append` adds the colors it lacks. One undo step. */
+  setPalette(colors: RGBA[], o?: { append?: boolean; label?: string }): Promise<{ size: number }>;
+  /** Recolors the target cels with a "#from" -> "#to" map (indexed sprites: palette entries). One undo step. */
+  applyColorMap(map: Record<string, string>, o?: ColorTarget & { label?: string }): Promise<{ changed: number; mode: "pixels" | "palette entries" }>;
+  /** Copies frames to new frames at the end, flipped horizontally (keepLayers unflipped), as a new tag. One undo step. */
+  mirrorFrames(o: MirrorFrames): Promise<{ from: number; to: number; frames: number }>;
+  /** Splits an image layer (default the active one; RGB sprites only) into one layer per color group, across frames. One undo step. */
+  splitByColors(groups: { name: string; colors: string[] }[], o?: { layer?: string }): Promise<{ layers: string[] }>;
+  /** Adds a slice, replacing one of the same name. */
+  setSlice(o: SetSlice): Promise<{ slices: number }>;
+  /** Draws a swatch strip of colors on a new 'AI: <name>' layer (default 'palette'). One undo step. */
+  drawSwatches(colors: RGBA[], o?: { name?: string; size?: number }): Promise<{ layer?: string }>;
 }
 
 const encode = (img: Rgba) => Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength).toString("base64");
@@ -165,6 +217,14 @@ export function documentOf(aseprite: AsepriteRequester): Document {
   const wrote = () => {
     cached = undefined;
   };
+  /** A write request: the cached info is stale after it (even when it failed halfway). */
+  const write = async (method: string, params: Record<string, unknown>) => {
+    try {
+      return (await aseprite.request(method, params)).result;
+    } finally {
+      wrote();
+    }
+  };
   return {
     info,
     async frames(spec) {
@@ -217,6 +277,38 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       }, 120_000);
       wrote();
       return result;
+    },
+    async colors(o = {}) {
+      const { result } = await aseprite.request("collect_colors", { layer: o.layer, frames: o.frames, selection: o.selection, hidden: o.hidden });
+      return {
+        colors: ((result.colors ?? []) as { hex: string; count: number }[]).map((c) => ({ ...parseHex(c.hex)!, count: c.count })),
+        pixels: result.pixels ?? 0,
+        colorMode: result.colorMode ?? "rgb",
+      };
+    },
+    async palette() {
+      const { result } = await aseprite.request("get_palette", {});
+      return ((result.colors ?? []) as string[]).map((h) => parseHex(h)).filter((c): c is RGBA => !!c);
+    },
+    setPalette(colors, o = {}) {
+      return write("set_palette", { colors: colors.map(hex), append: o.append, label: o.label });
+    },
+    applyColorMap(map, o = {}) {
+      return write("apply_color_map", { map, layer: o.layer, frames: o.frames, label: o.label });
+    },
+    mirrorFrames(o) {
+      return write("mirror_frames", { tag: o.tag, frames: o.frames, new_tag: o.newTag, keep_layers: o.keepLayers });
+    },
+    splitByColors(groups, o = {}) {
+      return write("split_layer_by_colors", { layer: o.layer, groups });
+    },
+    async setSlice(o) {
+      // The wire wants every bound: the sprite size fills in w and h.
+      const size = o.w === undefined || o.h === undefined ? await info() : undefined;
+      return write("set_slice", { name: o.name, x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? size!.width, h: o.h ?? size!.height, center: o.center });
+    },
+    drawSwatches(colors, o = {}) {
+      return write("draw_swatches", { colors: colors.map(hex), name: o.name, size: o.size });
     },
   };
 }
