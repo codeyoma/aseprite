@@ -187,6 +187,7 @@ function init(plugin)
     -- The last sub-agent scope highlighted in the timeline (#33).
     agentCursor = function() return handlers.agentCursor() end,
     entries = function() return Panel.entries() end,
+    newChat = function() Panel.newChat() end,
     openPanel = function() Panel.open() end,
     closePanel = function() Panel.close() end,
     isPanelOpen = function() return Panel.isOpen() end,

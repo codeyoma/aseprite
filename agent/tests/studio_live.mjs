@@ -11,7 +11,9 @@ const provider = process.argv[3] ?? "claude";
 if (!dir) throw new Error("usage: studio_live.mjs <dir> [claude|codex]");
 const { lua, chat, check, soft, ranSkill, done } = await live({ provider });
 
-const spritesBefore = (await lua("return #app.sprites")) ?? 0;
+// A fresh conversation and an empty workspace, so nothing from an earlier run can be reused.
+await lua(`AsepriteAgent.newChat() for i = #app.sprites, 1, -1 do app.sprites[i]:close() end return true`);
+const spritesBefore = 0;
 await chat(`/skill:studio make a 32x32 knight with a walk cycle for Godot. Export the Godot files to ${dir}.`, { timeout: 45 * 60_000 });
 await ranSkill("studio");
 
@@ -29,7 +31,7 @@ check("the first reply is a brief with size, palette, view, light, outline and G
 // The chain: written as the plan (the agent's to-do tool), or at least stated as a chain of skills in its text.
 const plan = turn.some((e) => e.kind === "plan" && (e.count ?? 0) >= 3);
 const skillNames = ["brief", "animate", "shade-sprite", "review", "export-game", "pixel-art", "recipes", "concept", "make-directions"];
-const stated = texts.some((t) => skillNames.filter((n) => t.includes(n)).length >= 3);
+const stated = texts.some((t) => /chain/i.test(t) && skillNames.filter((n) => t.includes(n)).length >= 3);
 check("the chain is stated (plan or a chain of skills)", plan || stated, { plan, texts: texts.map((t) => t.slice(0, 200)) });
 soft("the chain was written as a plan", plan, turn.filter((e) => e.kind === "plan"));
 soft("it read a skill with read_guide when it reached it", steps.some((t) => /^Read guide: (animate|export-game|shade-sprite|review|pixel-art|recipes)$/i.test(t.trim())), steps);

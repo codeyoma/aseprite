@@ -154,6 +154,8 @@ for (const bench of benches) {
   const dir = join(runDir, bench.name);
   mkdirSync(dir, { recursive: true });
   const started = new Date();
+  // Each benchmark starts from a new chat with no sprites open, so nothing carries over.
+  await lua(`AsepriteAgent.newChat() for i = #app.sprites, 1, -1 do app.sprites[i]:close() end return true`);
   const n0 = (await lua("return { n = #app.sprites }")).n;
   let seen = (await entries()).length;
   await lua(`${linesOf(bench.fixture)}\nreturn { ok = true }`);

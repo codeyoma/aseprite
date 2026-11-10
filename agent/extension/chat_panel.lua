@@ -1147,6 +1147,14 @@ return function(deps)
     return false
   end
 
+  -- New chat: the bridge forgets the conversation ids and the panel its messages.
+  function Panel.newChat()
+    deps.request("chat.reset", {}, function() end)
+    conv:reset()
+    composer:newConversation()
+    if dlg then syncBusy(); updateStatus(""); changed() end
+  end
+
   function Panel.entries()
     local out = {}
     for _, e in ipairs(conv:entries()) do
@@ -1263,14 +1271,7 @@ return function(deps)
     dlg:button{ id = "stop", text = "S&top", enabled = false, onclick = function()
       deps.request("chat.stop", {}, function() end)
     end }
-    dlg:button{ id = "new", text = "&New chat", onclick = function()
-      deps.request("chat.reset", {}, function() end)
-      conv:reset()
-      composer:newConversation()
-      syncBusy()
-      updateStatus("")
-      changed()
-    end }
+    dlg:button{ id = "new", text = "&New chat", onclick = function() Panel.newChat() end }
     dlg:show{ wait = false }
     syncBusy()
     Panel.onConnectionChange(deps.isConnected())
