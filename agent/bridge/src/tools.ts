@@ -2,6 +2,7 @@
 // registration, the chat panel's step labels and the edit/read kind all
 // come from here. A tool without `run` forwards its input to the Aseprite
 // request method of the same name and returns the result as JSON.
+import { MODEL_TOOLS } from "./model_tools.js";
 import { VOXEL_TOOLS } from "./voxel_tools.js";
 import { UI_TOOLS } from "./ui_tools.js";
 import { EXPORT_TOOLS } from "./export_tools.js";
@@ -498,6 +499,8 @@ TOOLS.push(...EXPORT_TOOLS);
 TOOLS.push(...UI_TOOLS);
 // Voxels and 2.5D (#45).
 TOOLS.push(...VOXEL_TOOLS);
+// 3D model to pixel sprites (#44).
+TOOLS.push(...MODEL_TOOLS);
 
 // The bridge's sub-agent runner (#33), set by index.ts.
 let spawner: SubAgents | undefined;
