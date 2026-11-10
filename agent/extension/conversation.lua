@@ -70,6 +70,12 @@ end
 function Conversation:entries() return self.list end
 function Conversation:isBusy() return self.turnStart ~= nil end
 function Conversation:conversationId(provider) return self.ids[provider] end
+-- Every conversation id by key, for the bridge to pick from (#55).
+function Conversation:conversationIds()
+  local out = {}
+  for k, v in pairs(self.ids) do out[k] = v end
+  return out
+end
 
 -- Seconds since the running turn started, or nil.
 function Conversation:elapsed()
@@ -235,8 +241,9 @@ function Conversation:restore(data)
     end
     self.list[#self.list + 1] = e
   end
-  for _, k in ipairs({ "claude", "codex", "claude:dev", "codex:dev" }) do
-    if data.ids and data.ids[k] then self.ids[k] = data.ids[k] end
+  -- Conversation keys belong to the bridge; keep every one.
+  for k, v in pairs(data.ids or {}) do
+    if type(k) == "string" and type(v) == "string" then self.ids[k] = v end
   end
   self.turnStart = nil
 end

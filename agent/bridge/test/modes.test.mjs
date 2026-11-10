@@ -36,9 +36,9 @@ test("the ask endpoint lists only read tools and refuses edits", async () => {
 });
 
 test("mode notes go with the message", () => {
-  assert.equal(composeMessage("hi", "<s/>"), "<s/>\n\nhi");
-  assert.match(composeMessage("hi", "<s/>", "ask"), /^<mode>Ask:.*<\/mode>\n<s\/>\n\nhi$/s);
-  assert.match(composeMessage("hi", "", "plan"), /^<mode>Plan:.*numbered plan.*<\/mode>\n\nhi$/s);
+  assert.equal(composeMessage({ prompt: "hi", state: "<s/>" }), "<s/>\n\nhi");
+  assert.match(composeMessage({ prompt: "hi", state: "<s/>", mode: "ask" }), /^<mode>Ask:.*<\/mode>\n<s\/>\n\nhi$/s);
+  assert.match(composeMessage({ prompt: "hi", state: "", mode: "plan" }), /^<mode>Plan:.*numbered plan.*<\/mode>\n\nhi$/s);
   assert.equal(chatMode("plan"), "plan");
   assert.equal(chatMode("bogus"), "agent");
   assert.equal(chatMode(undefined), "agent");

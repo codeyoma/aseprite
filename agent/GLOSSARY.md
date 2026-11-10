@@ -13,6 +13,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Agent Provider**: one agent the chat panel can run (Claude Code, Codex). Each provider names its ACP agent package and how to pass the system prompt, and keeps a stream-json adapter (the CLI command plus a parser of its JSON output) as a fallback (`agent/bridge/src/providers`).
 
 **ACP Runtime**: how the chat runs agents by default: the Agent Client Protocol, through `claude-agent-acp` and `codex-acp`. One long-lived agent process per provider, one ACP session per Conversation; a message is `session/prompt`, Stop is `session/cancel`, and after a bridge restart the Conversation continues with `session/load` (`agent/bridge/src/acp.ts`, mapped to chat events by `acp_mapper.ts`). `ASEPRITE_AGENT_RUNTIME=stream` uses the stream-json CLIs instead.
+**Runtime seam**: how ChatRunner runs a turn (`agent/bridge/src/runtime.ts`): `start(turn, sink)`, `stop()`, with two adapters, the ACP runtime and the stream runtime. ChatRunner owns conversation keys (`claude`, `claude:dev`, ...), builds the agent's message from the parts the panel sends (prompt, state, changes, attachments, mode) and emits the turn's end; the panel sends its whole map of conversation ids and never computes keys.
 
 **Plan**: the agent's checklist for the running turn (ACP `plan` updates), shown in the Chat Panel and updated in place.
 

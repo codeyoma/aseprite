@@ -924,22 +924,20 @@ return function(deps)
     end
     deps.preferences.mode = mode:sub(1, 1):upper() .. mode:sub(2)
     deps.preferences.provider = provider
-    -- The document's state goes with every message (#18), after what changed
-    -- since the agent's last reply (#19), if anything.
+    -- The document's state goes with every message (#18), and what changed
+    -- since the agent's last reply (#19), if anything. The bridge builds
+    -- the agent's message from these parts (#55).
     local state = deps.stateBlock()
     local changes = lastTurn and lastTurn.sprite == app.sprite and deps.TurnHistory.changesSince(lastTurn) or nil
-    if changes then state = changes .. "\n" .. state end
 
     -- @[label] tokens become "label (aseprite://...)" for the agent (#20).
     local expanded = deps.Conversation.expandMentions(prompt, mentions)
     mentions = {}
     lastPrompt = ""
-    -- Attached images go as image blocks; the text says what each one is.
+    -- Attached images go as image blocks; the bridge adds a line for each.
     local attachments, shown = {}, prompt
-    for i, a in ipairs(pending) do
-      attachments[#attachments + 1] = { label = a.label, path = a.path }
-      -- The path lets tools read the image (source "file").
-      expanded = expanded .. string.format("\n[Attached image %d: %s%s, file %s]", i, a.label, a.uri and (" (" .. a.uri .. ")") or "", a.path)
+    for _, a in ipairs(pending) do
+      attachments[#attachments + 1] = { label = a.label, path = a.path, uri = a.uri }
       shown = shown .. "\nAttached: " .. a.label
     end
     if #pending > 0 then imageSent = true end
@@ -970,8 +968,8 @@ return function(deps)
     deps.ensureBridge(function(ok, err)
       if not ok then return fail(err or "Could not reach the bridge") end
       deps.request("chat.send", {
-        prompt = expanded, state = state, provider = provider,
-        sessionId = conv:conversationId(mode == "developer" and (provider .. ":dev") or provider) or "",
+        prompt = expanded, state = state, changes = changes, provider = provider,
+        sessions = conv:conversationIds(),
         attachments = #attachments > 0 and attachments or nil,
         mode = mode,
       }, function(_, error)

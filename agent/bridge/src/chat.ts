@@ -2,22 +2,21 @@
 // Aseprite. The CLI uses the user's own login and connects back to this
 // bridge over the localhost HTTP MCP endpoint. Everything provider-specific
 // (flags, output format) lives in an Agent Provider adapter (./providers).
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import type { AsepriteLink } from "./aseprite.js";
 import { log } from "./aseprite.js";
 import type { HttpEndpoint } from "./http.js";
 import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type ProviderId } from "./providers/index.js";
+import { AcpRuntime, StreamRuntime, which, type Runtime, type TurnSink } from "./runtime.js";
 import { sessionDir } from "./session.js";
 import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
 import { catalog, skillContext } from "./guide.js";
 import { SavedCommands } from "./saved_commands.js";
 import { build, devStatus, discard, DEVELOPER_PROMPT, ensureDevBranch, launch, asepriteBinary, repoRoot } from "./developer.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
-import { acpCommand, AcpRunner, type ChatMode, type PermissionOutcome, type PermissionRequest } from "./acp.js";
-import type { AcpEvent, PlanEntry } from "./providers/acp_mapper.js";
+import type { ChatMode, PermissionOutcome, PermissionRequest } from "./acp.js";
+import type { PlanEntry } from "./providers/acp_mapper.js";
 
 export type { ProviderId as Provider } from "./providers/index.js";
 
@@ -80,10 +79,29 @@ export function conversationKey(provider: ProviderId, mode: ChatMode): string {
   return mode === "developer" ? `${provider}:dev` : provider;
 }
 
-/** The text sent to the agent: the mode note and state block first, then the user's message. */
-export function composeMessage(prompt: string, state?: string, mode: ChatMode = "agent"): string {
-  const head = [MODE_NOTES[mode], state?.trim()].filter(Boolean).join("\n");
-  return head ? `${head}\n\n${prompt}` : prompt;
+/** What the panel sends with a message (#55); the bridge builds the agent's text from it. */
+export interface MessageParts {
+  prompt: string;
+  /** The <aseprite-state> block. */
+  state?: string;
+  /** The <changes-since-your-last-reply> block, when the user changed things. */
+  changes?: string;
+  /** Skill instructions for this message. */
+  skills?: string;
+  attachments?: (Attachment & { uri?: string })[];
+  mode?: ChatMode;
+}
+
+/**
+ * The text sent to the agent, built in one place: the mode note, what the
+ * user changed, the state block and skill context first, then the message
+ * and a line per attached image (its path lets tools read it).
+ */
+export function composeMessage(p: MessageParts): string {
+  const head = [MODE_NOTES[p.mode ?? "agent"], p.changes?.trim(), p.state?.trim(), p.skills?.trim()].filter(Boolean).join("\n");
+  const attached = (p.attachments ?? []).map((a, i) => `\n[Attached image ${i + 1}: ${a.label}${a.uri ? ` (${a.uri})` : ""}, file ${a.path}]`).join("");
+  const body = p.prompt + attached;
+  return head ? `${head}\n\n${body}` : body;
 }
 
 /** Maps a provider event to the event the panel shows. */
@@ -100,43 +118,60 @@ export function toChatEvent(ev: ProviderEvent, provider: ProviderId): ChatEvent 
   }
 }
 
-function which(cmd: string): string | undefined {
-  const r = spawnSync("/bin/sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" });
-  const out = r.stdout.trim();
-  return r.status === 0 && out ? out : undefined;
+export interface ChatRequest extends MessageParts {
+  provider: AgentProvider;
+  /** The panel's conversation ids by key (keys are the bridge's business). */
+  sessions?: Record<string, string>;
+  /** Older panels: the conversation id for this message's key. */
+  sessionId?: string;
+}
+
+export interface ChatRunnerOptions {
+  /** Directory to save raw CLI output to (fixtures); ASEPRITE_AGENT_RECORD. */
+  recordDir?: string;
+  /** The runtimes, preferred first (tests pass fakes). */
+  runtimes?: Runtime[];
+  /** Developer mode setup: the repository to work in, on a dev/ branch. */
+  developer?: (prompt: string) => { cwd: string; branch: string };
 }
 
 export class ChatRunner {
-  private proc?: ChildProcess;
-  // ACP runtime (preferred): one long-lived agent per provider.
-  // Keyed "claude" or "claude:dev" (Developer mode runs its own agent in the repository).
-  private acpRunners = new Map<string, AcpRunner>();
-  private acpTurn?: { key: string; stopped: boolean };
+  private runtimes: Runtime[];
+  private turn?: { key: string; runtime: Runtime; stopped: boolean };
   private permissions = new Map<string, { resolve: (o: PermissionOutcome) => void; timer: NodeJS.Timeout; options: PermissionRequest["options"] }>();
   private nextPermission = 1;
   // Conversation ids. The panel owns them (they survive bridge restarts) and
   // passes them with each message; new ones are reported with "session".
   private conversations: Record<string, string | undefined> = {};
   private readonly cwd = join(sessionDir, "workspace");
+  private readonly developer: (prompt: string) => { cwd: string; branch: string };
 
   constructor(
-    private readonly link: AsepriteLink,
-    private readonly endpoint: HttpEndpoint,
-    /** Directory to save raw CLI output to (fixtures); ASEPRITE_AGENT_RECORD. */
-    private readonly recordDir = process.env.ASEPRITE_AGENT_RECORD,
+    private readonly link: Pick<AsepriteLink, "notify">,
+    endpoint: HttpEndpoint,
+    opts: ChatRunnerOptions = {},
   ) {
+    const recordDir = opts.recordDir ?? process.env.ASEPRITE_AGENT_RECORD;
     mkdirSync(this.cwd, { recursive: true });
-    if (this.recordDir) mkdirSync(this.recordDir, { recursive: true });
+    if (recordDir) mkdirSync(recordDir, { recursive: true });
+    const acp = new AcpRuntime(endpoint, recordDir), stream = new StreamRuntime(endpoint, recordDir);
+    this.runtimes = opts.runtimes ?? (process.env.ASEPRITE_AGENT_RUNTIME === "stream" ? [stream] : [acp, stream]);
+    this.developer = opts.developer ?? ((prompt) => {
+      const root = repoRoot();
+      if (!root) throw new Error("Developer mode needs the bridge to run from a clone of the Aseprite fork");
+      return { cwd: root, branch: ensureDevBranch(root, prompt) };
+    });
   }
 
   get busy(): boolean {
-    return this.proc !== undefined || this.acpTurn !== undefined;
+    return this.turn !== undefined;
   }
 
-  /** "acp" unless ASEPRITE_AGENT_RUNTIME=stream or the ACP agent isn't installed. */
-  runtimeFor(provider: AgentProvider): "acp" | "stream" {
-    if (process.env.ASEPRITE_AGENT_RUNTIME === "stream") return "stream";
-    return acpCommand(provider) ? "acp" : "stream";
+  /** The first runtime that can run the provider. */
+  runtimeFor(provider: AgentProvider): Runtime {
+    const r = this.runtimes.find((r) => r.supports(provider));
+    if (!r) throw new Error(`${provider.executable} CLI not found on PATH`);
+    return r;
   }
 
   providers(): Record<ProviderId, boolean> {
@@ -147,7 +182,7 @@ export class ChatRunner {
 
   /** The provider of the running turn (sub-agents use the same agent), else Claude. */
   currentProvider(): AgentProvider {
-    const id = this.acpTurn?.key.split(":")[0];
+    const id = this.turn?.key.split(":")[0];
     return id === "codex" ? PROVIDERS.codex : PROVIDERS.claude;
   }
 
@@ -168,76 +203,19 @@ export class ChatRunner {
   /** Ends the agent processes (bridge shutdown). */
   dispose(): void {
     this.stop();
-    for (const r of this.acpRunners.values()) r.dispose();
-    this.acpRunners.clear();
+    for (const r of this.runtimes) r.dispose();
   }
 
+  /** Cancels the running turn; it then ends with "Stopped.". Safe to call twice. */
   stop(): void {
-    if (this.acpTurn) {
-      // Cancel the turn but keep the session; the prompt then ends with
-      // stopReason "cancelled" and reports "Stopped.".
-      this.acpTurn.stopped = true;
-      for (const [id, p] of this.permissions) {
-        clearTimeout(p.timer);
-        p.resolve({ outcome: "cancelled" });
-        this.permissions.delete(id);
-      }
-      void this.acpRunners.get(this.acpTurn.key)?.cancel();
-      return;
+    if (!this.turn || this.turn.stopped) return;
+    this.turn.stopped = true;
+    for (const [id, p] of this.permissions) {
+      clearTimeout(p.timer);
+      p.resolve({ outcome: "cancelled" });
+      this.permissions.delete(id);
     }
-    if (this.proc) {
-      this.proc.kill("SIGTERM");
-      this.proc = undefined;
-      this.emit({ type: "done", text: "Stopped." });
-    }
-  }
-
-  private sendAcp(prompt: string, state: string, provider: AgentProvider, images: ImageBlock[], mode: ChatMode): void {
-    const developer = mode === "developer";
-    const key = conversationKey(provider.id, mode);
-    let cwd = this.cwd;
-    if (developer) {
-      const root = repoRoot();
-      if (!root) throw new Error("Developer mode needs the bridge to run from a clone of the Aseprite fork");
-      cwd = root;
-      const branch = ensureDevBranch(root, prompt);
-      this.emit({ type: "status", text: `Developer mode on branch ${branch}` });
-    }
-    let runner = this.acpRunners.get(key);
-    if (!runner) {
-      const record = this.recordDir
-        ? join(this.recordDir, `acp-${key.replace(":", "-")}-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`)
-        : undefined;
-      runner = new AcpRunner(provider, this.endpoint, cwd, developer ? DEVELOPER_PROMPT : SYSTEM_PROMPT, {
-        onEvent: (ev: AcpEvent) => {
-          if (ev.type === "plan") this.emit({ type: "plan", entries: ev.entries });
-          else this.emit(toChatEvent(ev, provider.id));
-        },
-        onPermission: (req) => this.askPermission(req),
-      }, record, developer);
-      this.acpRunners.set(key, runner);
-    }
-
-    const turn = { key, stopped: false };
-    this.acpTurn = turn;
-    log(`chat: starting ${key} (acp)`);
-    this.emit({ type: "status", text: `${provider.id} is working...` });
-    runner
-      .prompt(composeMessage(prompt, state, mode), this.conversations[key], images, developer ? "agent" : mode)
-      .then(({ conversationId, stopReason }) => {
-        if (this.conversations[key] !== conversationId) {
-          this.conversations[key] = conversationId;
-          this.emit({ type: "session", provider: key, sessionId: conversationId });
-        }
-        if (stopReason === "cancelled" || turn.stopped) this.emit({ type: "done", text: "Stopped." });
-        else if (stopReason === "end_turn") this.emit({ type: "done" });
-        else this.emit({ type: "done", text: `The agent stopped early (${stopReason}).` });
-      })
-      .catch((err) => this.emit({ type: "error", text: err instanceof Error ? err.message : String(err) }))
-      .finally(() => {
-        if (this.acpTurn === turn) this.acpTurn = undefined;
-        log(`chat: ${key} (acp) turn ended`);
-      });
+    this.turn.runtime.stop();
   }
 
   /** Forwards a permission request to the panel and waits for the answer. */
@@ -264,80 +242,63 @@ export class ChatRunner {
     return true;
   }
 
-  send(prompt: string, state: string, provider: AgentProvider, conversationId?: string, images: ImageBlock[] = [], mode: ChatMode = "agent"): void {
+  /** Starts a turn; events and the end of the turn arrive as chat events. */
+  send(req: ChatRequest, images: ImageBlock[] = []): void {
     if (this.busy) throw new Error("The agent is still working. Stop it first.");
+    const mode = req.mode ?? "agent";
+    const provider = req.provider;
     // User skills (#27): "/skill:name" forces one; trigger words suggest them.
-    const skills = skillContext(prompt);
+    const skills = skillContext(req.prompt);
     if (!skills.message.trim()) throw new Error("Add a request after /skill:name");
-    prompt = skills.message;
-    if (skills.context) state = state ? `${state}\n${skills.context}` : skills.context;
-    if (skills.used.length) this.emit({ type: "status", text: `Using skill: ${skills.used.join(", ")}` });
     const key = conversationKey(provider.id, mode);
-    if (conversationId) this.conversations[key] = conversationId;
+    const known = req.sessions ? req.sessions[key] : req.sessionId;
+    if (known) this.conversations[key] = known;
     else delete this.conversations[key];
-    if (mode === "developer" && this.runtimeFor(provider) !== "acp") {
-      throw new Error("Developer mode needs the ACP runtime (unset ASEPRITE_AGENT_RUNTIME)");
+    const runtime = this.runtimeFor(provider);
+    if (mode === "developer" && runtime.name !== "acp") throw new Error("Developer mode needs the ACP runtime (unset ASEPRITE_AGENT_RUNTIME)");
+    let cwd = this.cwd;
+    if (mode === "developer") {
+      const dev = this.developer(skills.message);
+      cwd = dev.cwd;
+      this.emit({ type: "status", text: `Developer mode on branch ${dev.branch}` });
     }
-    if (this.runtimeFor(provider) === "acp") return this.sendAcp(prompt, state, provider, images, mode);
-    // The stream-json runtime sends text only.
-    if (images.length) prompt += `\n\n(${images.length} attached image(s) could not be sent: the stream runtime is text only.)`;
-    const bin = which(provider.executable);
-    if (!bin) throw new Error(`${provider.executable} CLI not found on PATH`);
+    if (skills.used.length) this.emit({ type: "status", text: `Using skill: ${skills.used.join(", ")}` });
 
-    const args = provider.command({
-      message: composeMessage(prompt, state, mode),
-      conversationId: this.conversations[provider.id],
-      mcpUrl: mode === "agent" ? this.endpoint.url : this.endpoint.askUrl,
-      mcpToken: this.endpoint.token,
-      systemPrompt: SYSTEM_PROMPT,
-    });
-    const parse = provider.parser();
-    const record = this.recordDir
-      ? join(this.recordDir, `${provider.id}-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`)
-      : undefined;
-
-    log(`chat: starting ${provider.id}`);
+    const turn = { key, runtime, stopped: false };
+    this.turn = turn;
+    const live = () => this.turn === turn;
+    log(`chat: starting ${key} (${runtime.name})`);
     this.emit({ type: "status", text: `${provider.id} is working...` });
-    const proc = spawn(bin, args, { cwd: this.cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env });
-    this.proc = proc;
-
-    let stderr = "";
-    proc.stderr!.on("data", (d) => {
-      stderr = (stderr + d).slice(-2000);
-    });
-    createInterface({ input: proc.stdout! }).on("line", (line) => {
-      if (!line.trim()) return;
-      if (record) appendFileSync(record, line + "\n");
-      let json: unknown;
-      try {
-        json = JSON.parse(line);
-      } catch {
-        return;
-      }
-      try {
-        for (const ev of parse(json)) {
-          if (ev.type === "conversation") {
-            if (this.conversations[provider.id] === ev.id) continue;
-            this.conversations[provider.id] = ev.id;
-          }
-          this.emit(toChatEvent(ev, provider.id));
+    const sink: TurnSink = {
+      event: (ev) => {
+        if (!live()) return;
+        if (ev.type === "plan") return this.emit({ type: "plan", entries: ev.entries });
+        if (ev.type === "conversation") {
+          if (this.conversations[key] === ev.id) return;
+          this.conversations[key] = ev.id;
+          return this.emit({ type: "session", provider: key, sessionId: ev.id });
         }
-      } catch (err) {
-        log(`chat: bad event: ${String(err)}`);
-      }
-    });
-    proc.on("close", (code) => {
-      log(`chat: ${provider.id} finished with code ${code}`);
-      if (this.proc !== proc) return; // stopped
-      this.proc = undefined;
-      if (code === 0) this.emit({ type: "done" });
-      else this.emit({ type: "error", text: `${provider.id} exited with code ${code}. ${stderr.trim().split("\n").slice(-3).join(" ")}` });
-    });
-    proc.on("error", (err) => {
-      if (this.proc !== proc) return;
-      this.proc = undefined;
-      this.emit({ type: "error", text: err.message });
-    });
+        this.emit(toChatEvent(ev, provider.id));
+      },
+      permission: (r) => (live() && !turn.stopped ? this.askPermission(r) : Promise.resolve({ outcome: "cancelled" })),
+    };
+    const message = composeMessage({ ...req, prompt: skills.message, skills: skills.context, mode });
+    runtime
+      .start({ key, provider, message, conversationId: this.conversations[key], images, mode, cwd, systemPrompt: mode === "developer" ? DEVELOPER_PROMPT : SYSTEM_PROMPT }, sink)
+      .then((r) => {
+        if (r.conversationId && this.conversations[key] !== r.conversationId) {
+          this.conversations[key] = r.conversationId;
+          this.emit({ type: "session", provider: key, sessionId: r.conversationId });
+        }
+        if (r.stop === "cancelled" || turn.stopped) this.emit({ type: "done", text: "Stopped." });
+        else if (r.stop === "end") this.emit({ type: "done" });
+        else this.emit({ type: "done", text: `The agent stopped early (${r.detail}).` });
+      })
+      .catch((err) => this.emit({ type: "error", text: err instanceof Error ? err.message : String(err) }))
+      .finally(() => {
+        if (this.turn === turn) this.turn = undefined;
+        log(`chat: ${key} (${runtime.name}) turn ended`);
+      });
   }
 }
 
@@ -410,12 +371,20 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
     "chat.info": () => ({ providers: chat.providers(), busy: chat.busy, version }),
     // `state` is the extension's <aseprite-state> block; `context` is the
     // one-line summary older extensions send.
-    // `attachments` are image files to show the agent (#21).
+    // `attachments` are image files to show the agent (#21); `changes` is what
+    // the user changed since the last reply; `sessions` the panel's conversation ids.
     // `mode`: "agent" (default), "ask" or "plan" (#24).
-    "chat.send": (p: { prompt: string; state?: string; context?: string; provider?: string; sessionId?: string; attachments?: Attachment[]; mode?: string }) => {
+    "chat.send": (p: {
+      prompt: string; state?: string; changes?: string; context?: string; provider?: string;
+      sessions?: Record<string, string>; sessionId?: string; attachments?: (Attachment & { uri?: string })[]; mode?: string;
+    }) => {
       if (!p.prompt?.trim()) throw new Error("Empty prompt");
-      const state = p.state ?? (p.context ? `[Context] ${p.context}` : "");
-      chat.send(p.prompt, state, providerFor(p.provider), p.sessionId || undefined, loadAttachments(p.attachments), chatMode(p.mode));
+      const images = loadAttachments(p.attachments);
+      chat.send({
+        prompt: p.prompt, state: p.state ?? (p.context ? `[Context] ${p.context}` : ""), changes: p.changes,
+        attachments: p.attachments, mode: chatMode(p.mode), provider: providerFor(p.provider),
+        sessions: p.sessions, sessionId: p.sessionId || undefined,
+      }, images);
       return { started: true };
     },
     "chat.permission": (p: { requestId: string; optionId?: string | null }) => ({
