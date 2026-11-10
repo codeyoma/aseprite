@@ -17,7 +17,7 @@ export default {
     assert.deepEqual([s.width, s.height], [24, 24]);
     assert.equal(s.durations.length, 16, "4 directions x 4 frames of a 1 s clip at 4 fps");
     assert.deepEqual(s.tags.map((t) => [t.name, t.from, t.to]), [["wave_S", 1, 4], ["wave_W", 5, 8], ["wave_N", 9, 12], ["wave_E", 13, 16]]);
-    for (const [i, c] of s.layers[0].cels.entries()) assert.ok(opaque(c) > 20, `frame ${i + 1} has the robot`);
-    assert.ok(!Buffer.from(s.layers[0].cels[0]).equals(Buffer.from(s.layers[0].cels[2])), "the clip animates");
+    for (const [i, c] of fake.images(s.layers[0]).entries()) assert.ok(opaque(c) > 20, `frame ${i + 1} has the robot`);
+    assert.ok(!Buffer.from(fake.image(s.layers[0], 1)).equals(Buffer.from(fake.image(s.layers[0], 3))), "the clip animates");
   },
 };

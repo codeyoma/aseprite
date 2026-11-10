@@ -1,0 +1,158 @@
+{
+  "scenarios": [
+    {
+      "name": "get_state describes layers, groups, cels, frames, tags, palette, slices and the selection",
+      "fixture": {
+        "title": "fixture", "width": 4, "height": 2, "durations": [100, 150],
+        "palette": ["#000000", "#ff0000", "#00ff00", "#0000ff"],
+        "layers": [
+          { "name": "Top", "visible": false, "cels": { "1": ["r...", "...."] } },
+          { "name": "G", "group": true, "layers": [{ "name": "Inner", "cels": { "2": ["....", ".g.."] } }] },
+          { "name": "Body", "cels": { "1": ["bbbb", "bbbb"] } }
+        ],
+        "tags": [{ "name": "walk", "from": 1, "to": 2, "direction": "pingpong" }],
+        "slices": [{ "name": "btn", "x": 0, "y": 0, "w": 4, "h": 2, "center": { "x": 1, "y": 0, "w": 2, "h": 2 } }, { "name": "icon", "x": 1, "y": 1, "w": 1, "h": 1 }],
+        "selection": { "x": 1, "y": 0, "w": 2, "h": 1 },
+        "activeLayer": "Inner", "activeFrame": 2
+      },
+      "steps": [
+        { "state": {
+          "title": "fixture", "width": 4, "height": 2, "colorMode": "rgb", "durations": [100, 150],
+          "activeFrame": 2, "activeLayer": "Inner",
+          "layers": [
+            { "name": "Top", "visible": false, "group": false, "cels": [1], "tilemap": false },
+            { "name": "G", "visible": true, "group": true, "layers": [{ "name": "Inner", "visible": true, "cels": [2] }] },
+            { "name": "Body", "visible": true, "group": false, "cels": [1] }
+          ],
+          "tags": [{ "name": "walk", "from": 1, "to": 2, "direction": "ping-pong" }],
+          "palette": ["#000000", "#ff0000", "#00ff00", "#0000ff"],
+          "slices": [
+            { "name": "btn", "bounds": { "x": 0, "y": 0, "width": 4, "height": 2 }, "center": { "x": 1, "y": 0, "width": 2, "height": 2 } },
+            { "name": "icon", "bounds": { "x": 1, "y": 1, "width": 1, "height": 1 }, "center": { "$absent": true } }
+          ],
+          "selection": { "x": 1, "y": 0, "width": 2, "height": 1 }
+        } },
+        { "request": "get_state", "params": {}, "result": { "activeLayerId": { "$layerId": "Inner" }, "activeLayer": "G/Inner", "activeFrame": 2 } }
+      ]
+    },
+    {
+      "name": "snapshot: the sprite blends visible layers (hidden groups hide their children); a layer alone; errors",
+      "legend": { "p": "#80007f" },
+      "fixture": {
+        "width": 3, "height": 1,
+        "layers": [
+          { "name": "Hidden", "visible": false, "cels": { "1": ["..r"] } },
+          { "name": "HG", "group": true, "visible": false, "layers": [{ "name": "Kid", "cels": { "1": [".g."] } }] },
+          { "name": "Top", "cels": { "1": ["h.."] } },
+          { "name": "Bottom", "cels": { "1": ["b.b"] } }
+        ]
+      },
+      "steps": [
+        { "pixels": {}, "rows": ["p.b"] },
+        { "pixels": { "frame": 1 }, "rows": ["p.b"] },
+        { "pixels": { "layer": "Hidden" }, "rows": ["..r"] },
+        { "pixels": { "layer": "Kid" }, "rows": [".g."] },
+        { "pixels": { "layer": { "$id": "Top" } }, "rows": ["h.."] },
+        { "request": "snapshot", "params": { "frame": 1 }, "result": { "width": 3, "height": 1, "frame": 1 } },
+        { "request": "snapshot", "params": { "layer": "HG" }, "error": "Snapshot of a group layer is not supported" },
+        { "request": "snapshot", "params": { "frame": 2 }, "error": "Frame 2 is out of range (1-1)" },
+        { "request": "snapshot", "params": { "layer": "Nope" }, "error": "Layer not found: Nope" }
+      ]
+    },
+    {
+      "name": "put_image keeps the cel's position: off-canvas pixels stay in the cel (colors, recolor, mirror)",
+      "fixture": {
+        "width": 4, "height": 2, "durations": [100, 100],
+        "layers": [{ "name": "Art", "cels": { "1": ["....", "...."] } }]
+      },
+      "steps": [
+        { "request": "put_image", "params": { "layer": "Art", "width": 3, "height": 1, "rgba": { "rows": ["rgb"] }, "x": -1, "y": 1 },
+          "result": { "layer": { "$layerId": "Art" }, "name": "Art" } },
+        { "pixels": { "layer": "Art" }, "rows": ["....", "gb.."] },
+        { "request": "collect_colors", "params": { "layer": "Art" },
+          "result": { "pixels": 3, "colorMode": "rgb", "colors": { "$set": [{ "hex": "#ff0000", "count": 1 }, { "hex": "#00ff00", "count": 1 }, { "hex": "#0000ff", "count": 1 }] } } },
+        { "request": "apply_color_map", "params": { "map": { "#ff0000": "#ffff00" }, "layer": "Art" }, "result": { "changed": 1, "mode": "pixels" } },
+        { "request": "put_image", "params": { "layer": { "$id": "Art" }, "frame": 2, "width": 2, "height": 2, "rgba": { "rows": ["rg", "rg"] }, "x": 3, "y": 0 } },
+        { "pixels": { "layer": "Art", "frame": 2 }, "rows": ["...r", "...r"] },
+        { "request": "mirror_frames", "params": { "frames": [2] }, "result": { "from": 3, "to": 3, "frames": 1 } },
+        { "pixels": { "layer": "Art", "frame": 3 }, "rows": ["r...", "r..."] },
+        { "request": "put_image", "params": { "width": 1, "height": 1, "rgba": { "rows": ["b"] } } },
+        { "pixels": { "layer": "Art", "frame": 3 }, "rows": ["b...", "...."] },
+        { "state": { "durations": [100, 100, 100], "activeFrame": 3, "layers": [{ "name": "Art", "cels": [1, 2, 3] }] } }
+      ]
+    },
+    {
+      "name": "put_image onto a new 'AI:' layer: above a source (hiding it), reused by later frames, else above the active layer",
+      "fixture": {
+        "width": 4, "height": 1, "durations": [100, 100],
+        "layers": [
+          { "name": "Fx" },
+          { "name": "Art", "cels": { "1": ["rr.."] } }
+        ],
+        "activeLayer": "Fx"
+      },
+      "steps": [
+        { "request": "put_image", "params": { "new_layer": "shade", "above": "Art", "hide_source": true, "width": 4, "height": 1, "rgba": { "rows": ["bb.."] } },
+          "result": { "name": "AI: shade", "layer": { "$layerId": "AI: shade" } } },
+        { "state": { "activeLayer": "AI: shade", "layers": [
+          { "name": "Fx", "visible": true, "cels": [] },
+          { "name": "AI: shade", "visible": true, "cels": [1] },
+          { "name": "Art", "visible": false, "cels": [1] }
+        ] } },
+        { "request": "put_image", "params": { "new_layer": "shade", "above": { "$id": "Art" }, "frame": 2, "width": 4, "height": 1, "rgba": { "rows": [".b.."] } },
+          "result": { "name": "AI: shade", "layer": { "$layerId": "AI: shade" } } },
+        { "request": "put_image", "params": { "new_layer": "glow", "hide": true, "width": 4, "height": 1, "rgba": { "rows": ["...y"] } } },
+        { "state": { "activeLayer": "AI: glow", "layers": [
+          { "name": "Fx", "visible": true, "cels": [] },
+          { "name": "AI: glow", "visible": false, "cels": [1] },
+          { "name": "AI: shade", "visible": true, "cels": [1, 2] },
+          { "name": "Art", "visible": false, "cels": [1] }
+        ] } },
+        { "pixels": {}, "rows": ["bb.."] },
+        { "pixels": { "frame": 2 }, "rows": [".b.."] }
+      ]
+    },
+    {
+      "name": "put_image: errors, and a new layer above a layer in a group goes into the group",
+      "fixture": {
+        "width": 2, "height": 1,
+        "layers": [
+          { "name": "G", "group": true, "layers": [{ "name": "Kid", "cels": { "1": ["r."] } }] },
+          { "name": "Art", "cels": { "1": [".g"] } }
+        ]
+      },
+      "steps": [
+        { "request": "put_image", "params": { "layer": "G", "width": 2, "height": 1, "rgba": { "rows": ["bb"] } }, "error": "No image layer to write to" },
+        { "request": "put_image", "params": { "layer": "Art", "width": 2, "height": 1, "rgba": { "rows": ["b"] } }, "error": "Expected 8 bytes, got 4" },
+        { "request": "put_image", "params": { "layer": "Nope", "width": 1, "height": 1, "rgba": { "rows": ["b"] } }, "error": "Layer not found: Nope" },
+        { "request": "put_image", "params": { "frame": 3, "width": 1, "height": 1, "rgba": { "rows": ["b"] } }, "error": "Frame 3 is out of range (1-1)" },
+        { "request": "put_image", "params": { "bogus": 1, "width": 1, "height": 1, "rgba": { "rows": ["b"] } }, "error": "put_image: unknown param 'bogus'" },
+        { "request": "put_image", "params": { "width": 1, "rgba": { "rows": ["b"] } }, "error": "put_image: 'height' is required" },
+        { "request": "put_image", "params": { "new_layer": "x", "above": "Kid", "width": 2, "height": 1, "rgba": { "rows": [".b"] } } },
+        { "state": { "activeLayer": "AI: x", "layers": [
+          { "name": "G", "group": true, "layers": [{ "name": "AI: x", "cels": [1] }, { "name": "Kid", "cels": [1] }] },
+          { "name": "Art", "cels": [1] }
+        ] } },
+        { "pixels": {}, "rows": ["rb"] }
+      ]
+    },
+    {
+      "name": "put_image into an indexed sprite stores palette indexes",
+      "fixture": {
+        "width": 3, "height": 1, "colorMode": "indexed", "palette": ["#000000", "#ff0000", "#00ff00"],
+        "layers": [{ "name": "Art", "cels": { "1": ["r.."] } }]
+      },
+      "steps": [
+        { "request": "put_image", "params": { "layer": "Art", "width": 3, "height": 1, "rgba": { "rows": ["gr."] } } },
+        { "pixels": { "layer": "Art" }, "rows": ["gr."] },
+        { "request": "collect_colors", "params": {},
+          "result": { "colorMode": "indexed", "pixels": 2, "colors": { "$set": [{ "hex": "#ff0000", "count": 1 }, { "hex": "#00ff00", "count": 1 }] } } },
+        { "request": "set_palette", "params": { "colors": ["#000000", "#0000ff", "#00ff00"] }, "result": { "size": 3 } },
+        { "pixels": {}, "rows": ["gb."] },
+        { "request": "put_image", "params": { "layer": "Art", "width": 1, "height": 1, "rgba": { "rows": ["y"] } },
+          "fakeUnsupported": "Aseprite maps a color that is not in the palette to the nearest entry; the fake only takes exact palette colors",
+          "result": { "name": "Art" } }
+      ]
+    }
+  ]
+}

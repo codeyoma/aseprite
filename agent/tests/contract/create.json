@@ -1,0 +1,79 @@
+{
+  "scenarios": [
+    {
+      "name": "create_sprite opens a new RGB sprite with one layer and the given palette",
+      "fixture": { "width": 1, "height": 1, "layers": [{ "name": "Old" }] },
+      "steps": [
+        { "request": "create_sprite", "params": { "width": 2, "height": 1, "rgba": { "rows": ["rg"] }, "title": "hero.png", "palette": ["#ff0000", "#00ff00"] },
+          "result": { "width": 2, "height": 1, "title": "hero" } },
+        { "state": {
+          "title": "hero.png", "width": 2, "height": 1, "colorMode": "rgb", "durations": [100], "activeFrame": 1, "activeLayer": "Layer 1",
+          "layers": [{ "name": "Layer 1", "visible": true, "group": false, "cels": [1] }],
+          "tags": [], "slices": [], "palette": ["#ff0000", "#00ff00"]
+        } },
+        { "pixels": {}, "rows": ["rg"] },
+        { "request": "get_palette", "params": {}, "result": { "colors": ["#ff0000", "#00ff00"] } }
+      ]
+    },
+    {
+      "name": "create_sprite checks the byte count; without a palette the sprite has Aseprite's default one",
+      "fixture": { "width": 1, "height": 1, "layers": [{ "name": "Old" }] },
+      "steps": [
+        { "request": "create_sprite", "params": { "width": 2, "height": 2, "rgba": { "rows": ["rg"] } }, "error": "Expected 16 bytes, got 8" },
+        { "request": "create_sprite", "params": { "width": 1, "height": 1, "rgba": { "rows": ["b"] } }, "result": { "title": "Sprite" } },
+        { "state": { "title": "Sprite", "width": 1, "height": 1, "layers": [{ "name": "Layer 1", "cels": [1] }] } },
+        { "request": "get_palette", "params": {},
+          "fakeUnsupported": "the default palette of a new sprite comes from Aseprite's preferences (256 black entries in batch mode)" }
+      ]
+    },
+    {
+      "name": "create_animation: frames with durations, tags (invalid ones skipped, pingpong reported as ping-pong)",
+      "fixture": { "width": 1, "height": 1, "layers": [{ "name": "Old" }] },
+      "steps": [
+        { "request": "create_animation", "params": {
+          "width": 2, "height": 1, "title": "anim", "palette": ["#ff0000", "#00ff00", "#0000ff"],
+          "frames": [{ "rgba": { "rows": ["r."] }, "duration": 120 }, { "rgba": { "rows": [".g"] } }, { "rgba": { "rows": ["bb"] }, "duration": 80 }],
+          "tags": [
+            { "name": "a", "from": 1, "to": 2, "direction": "pingpong" },
+            { "name": "b", "from": 3, "to": 3, "direction": "reverse" },
+            { "name": "bad", "from": 2, "to": 5 }
+          ] },
+          "result": { "frames": 3, "tags": 2, "title": "anim" } },
+        { "state": {
+          "title": "anim", "width": 2, "height": 1, "durations": [120, 100, 80], "activeFrame": 1, "activeLayer": "Layer 1",
+          "layers": [{ "name": "Layer 1", "cels": [1, 2, 3] }],
+          "tags": [{ "name": "a", "from": 1, "to": 2, "direction": "ping-pong" }, { "name": "b", "from": 3, "to": 3, "direction": "reverse" }],
+          "palette": ["#ff0000", "#00ff00", "#0000ff"]
+        } },
+        { "pixels": { "frame": 2 }, "rows": [".g"] },
+        { "pixels": { "layer": "Layer 1", "frame": 3 }, "rows": ["bb"] }
+      ]
+    },
+    {
+      "name": "create_animation errors",
+      "fixture": { "width": 1, "height": 1, "layers": [{ "name": "Old" }] },
+      "steps": [
+        { "request": "create_animation", "params": { "width": 1, "height": 1, "frames": [] }, "error": "No frames" },
+        { "request": "create_animation", "params": { "width": 2, "height": 1, "frames": [{ "rgba": { "rows": ["rr"] } }, { "rgba": { "rows": ["r"] } }] },
+          "error": "Frame 2: expected 8 bytes, got 4" }
+      ]
+    },
+    {
+      "name": "create_tilemap: a sprite with one tilemap layer drawing the map",
+      "fixture": { "width": 1, "height": 1, "layers": [{ "name": "Old" }] },
+      "steps": [
+        { "request": "create_tilemap", "params": {
+          "tile": 2, "width": 4, "height": 2, "rgba": { "rows": ["rrgg", "rrgg"] }, "columns": 2, "count": 2,
+          "map": [[0, 1, -1], [1, 0, 0]], "title": "Ground" },
+          "result": { "title": "Ground", "tiles": 2, "layer": { "$layerId": "Ground" } } },
+        { "state": { "title": "Ground", "width": 6, "height": 4, "durations": [100], "activeLayer": "Ground",
+          "layers": [{ "name": "Ground", "group": false, "tilemap": true, "cels": [1] }] } },
+        { "pixels": {}, "rows": ["rrgg..", "rrgg..", "ggrrrr", "ggrrrr"] },
+        { "request": "create_tilemap", "params": { "tile": 2, "width": 4, "height": 2, "rgba": { "rows": ["rrgg"] }, "columns": 2, "count": 2, "map": [[0]] },
+          "error": "Expected 32 bytes, got 16" },
+        { "pixels": { "layer": "Ground" }, "rows": ["......", "......", "......", "......"],
+          "fakeUnsupported": "a snapshot of a tilemap layer: the extension's pixels.lua toRgbImage does not convert tilemap images, so Aseprite returns it blank" }
+      ]
+    }
+  ]
+}

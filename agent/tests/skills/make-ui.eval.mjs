@@ -18,7 +18,7 @@ export default {
     assert.equal(s.slices?.length, 1);
     assert.equal(s.slices[0].name, "play");
     assert.deepEqual(s.slices[0].center, { x: 2, y: 2, width: 44, height: 12 });
-    const button = s.layers[0].cels;
+    const button = fake.images(s.layers[0]);
     for (const [i, f] of button.entries()) for (const c of colorsOf(f)) assert.ok(PICO.includes(c), `frame ${i + 1}: ${c} is not in the palette`);
     assert.ok(!Buffer.from(button[0]).equals(Buffer.from(button[2])), "pressed differs from normal");
     const label = fake.cel("AI: text");

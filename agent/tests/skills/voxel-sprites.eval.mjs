@@ -35,11 +35,11 @@ export default {
     assert.deepEqual([m.sz, m.voxels.length], [2, 17]);
     const stacked = fake.sprites[1];
     assert.equal(stacked.durations.length, 1);
-    assert.ok(opaque(stacked.layers[0].cels[0]) > 0);
+    assert.ok(opaque(fake.image(stacked.layers[0], 1, stacked)) > 0);
     const s = fake.active.sprite;
     assert.equal(s.durations.length, 4);
     assert.deepEqual(s.tags.map((t) => t.name), ["SE", "SW", "NW", "NE"]);
     assert.match(textOf(results[1]), /3x3x3 model \(27 voxels\)/);
-    for (const c of s.layers[0].cels) assert.ok(colorsOf(c).size >= 2, "faces are shaded");
+    for (const c of fake.images(s.layers[0])) assert.ok(colorsOf(c).size >= 2, "faces are shaded");
   },
 };

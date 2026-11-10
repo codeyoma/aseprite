@@ -22,7 +22,7 @@ export default {
     const s = fake.active.sprite;
     assert.deepEqual([s.width, s.height, s.durations.length], [16, 16, 8]);
     assert.deepEqual(s.tags.map((t) => [t.name, t.from, t.to]), [["idle", 1, 4], ["walk", 5, 8]]);
-    const counts = s.layers[0].cels.map(opaque);
+    const counts = fake.images(s.layers[0]).map(opaque);
     assert.deepEqual(counts, [6, 8, 10, 8, 8, 12, 8, 8].map((w) => w * 12), "each cell's shape lands in its frame");
   },
 };

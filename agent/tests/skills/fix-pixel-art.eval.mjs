@@ -32,7 +32,7 @@ export default {
     assert.equal(s.title, "Fixed pixel art");
     const want = trim(native());
     assert.deepEqual([s.width, s.height], [want.width, want.height], "native size");
-    const got = s.layers[0].cels[0];
+    const got = fake.image(s.layers[0]);
     assert.deepEqual(colorsOf(got), colorsOf(want.data));
     assert.ok(Buffer.from(got).equals(Buffer.from(want.data)), "pixel for pixel");
     assert.equal(s.palette.length, 4);

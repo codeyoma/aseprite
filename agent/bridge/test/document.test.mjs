@@ -128,8 +128,8 @@ test("the fake refuses what the extension refuses: splitting groups or non-RGB s
   const groups = [{ name: "A", colors: ["#ff0000"] }];
   const grp = documentOf(fakeDocument({ width: 2, height: 2, layers: [{ name: "Art", frames: [rect(2, 2, [0, 0, 1, 1], [255, 0, 0])] }, { name: "G", group: true }] }));
   await assert.rejects(grp.splitByColors(groups, { layer: "G" }), /Pick an image layer/);
-  const idx = fakeDocument({ width: 2, height: 2, colorMode: "indexed", palette: ["#ff0000"], layers: [{ name: "Art", frames: [rect(2, 2, [0, 0, 1, 1], [255, 0, 0])] }] });
+  const idx = fakeDocument({ width: 2, height: 2, colorMode: "indexed", palette: ["#000000", "#ff0000"], layers: [{ name: "Art", frames: [rect(2, 2, [0, 0, 1, 1], [255, 0, 0])] }] });
   await assert.rejects(documentOf(idx).splitByColors(groups), /needs an RGB sprite/);
   assert.deepEqual(await documentOf(idx).applyColorMap({ "#ff0000": "#00ff00" }), { changed: 1, mode: "palette entries" });
-  assert.deepEqual(idx.active.sprite.palette, ["#00ff00"]);
+  assert.deepEqual(idx.active.sprite.palette, ["#000000", "#00ff00"]);
 });

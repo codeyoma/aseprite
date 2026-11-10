@@ -21,7 +21,7 @@ export default {
     const s = fake.active.sprite;
     assert.equal(s.title, "Isometric");
     assert.deepEqual([s.width, s.height], [16, 8], "an 8x8 tile becomes a 16x8 diamond");
-    const d = s.layers[0].cels[0];
+    const d = fake.image(s.layers[0]);
     assert.deepEqual([...colorsOf(d)], ["#008751"], "colors are kept exactly");
     const b = bounds(d, 16);
     assert.ok(b.h === 8 && b.w >= 14, `diamond bounds ${JSON.stringify(b)}`);

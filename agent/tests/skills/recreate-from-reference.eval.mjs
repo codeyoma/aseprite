@@ -46,9 +46,9 @@ export default {
     assert.match(textOf(results[2]), /^3 sprites in 1 row .*similar sizes/, "the poses are found before recreating");
     assert.match(textOf(results[3]), /\(the reference was scaled 3x\), 4 colors as the palette, background removed/);
     assert.equal(s.layers.at(-1).name, "Outline", "the outline layer is on top");
-    assert.deepEqual([...colorsOf(s.layers.at(-1).cels[0])], ["#181425"]);
+    assert.deepEqual([...colorsOf(fake.image(s.layers.at(-1)))], ["#181425"]);
     const all = new Set();
-    for (const l of s.layers) for (const c of l.cels) for (const x of colorsOf(c)) all.add(x);
+    for (const l of s.layers) for (const c of fake.images(l)) for (const x of colorsOf(c)) all.add(x);
     assert.ok(!all.has("#5a8cc8"), "the background is gone");
     assert.equal(all.size, 4);
   },

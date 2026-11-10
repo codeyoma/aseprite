@@ -1,0 +1,108 @@
+{
+  "scenarios": [
+    {
+      "name": "collect_colors: which layers, frames and pixels count",
+      "notes": "Without a layer, every visible image layer counts, also those inside a hidden group (imageLayers does not look at group visibility). A hidden layer counts only when named with hidden: true.",
+      "fixture": {
+        "width": 3, "height": 1, "durations": [100, 100],
+        "layers": [
+          { "name": "Hidden", "visible": false, "cels": { "1": ["r.."] } },
+          { "name": "HG", "group": true, "visible": false, "layers": [{ "name": "Kid", "cels": { "1": ["g.."] } }] },
+          { "name": "Art", "cels": { "1": ["bb."], "2": ["y.h"] } }
+        ],
+        "selection": { "x": 0, "y": 0, "w": 1, "h": 1 }
+      },
+      "steps": [
+        { "request": "collect_colors", "params": {}, "result": { "pixels": 5, "colorMode": "rgb", "colors": { "$set": [
+          { "hex": "#0000ff", "count": 2 }, { "hex": "#00ff00", "count": 1 }, { "hex": "#ffff00", "count": 1 }, { "hex": "#ff000080", "count": 1 }] } } },
+        { "request": "collect_colors", "params": { "layer": "Hidden" }, "result": { "pixels": 0, "colors": [] } },
+        { "request": "collect_colors", "params": { "layer": "Hidden", "hidden": true }, "result": { "pixels": 1, "colors": [{ "hex": "#ff0000", "count": 1 }] } },
+        { "request": "collect_colors", "params": { "layer": "HG" }, "result": { "pixels": 1, "colors": [{ "hex": "#00ff00", "count": 1 }] } },
+        { "request": "collect_colors", "params": { "frames": "2" }, "result": { "pixels": 2 } },
+        { "request": "collect_colors", "params": { "layer": "Art", "frames": [1], "selection": true }, "result": { "pixels": 1, "colors": [{ "hex": "#0000ff", "count": 1 }] } },
+        { "request": "collect_colors", "params": { "frames": "1-3" }, "error": "Frame 3 is out of range (1-2)" }
+      ]
+    },
+    {
+      "name": "get_palette and set_palette (replace, append, errors)",
+      "fixture": { "width": 1, "height": 1, "palette": ["#000000", "#ff0000"], "layers": [{ "name": "Art" }] },
+      "steps": [
+        { "request": "get_palette", "params": {}, "result": { "colors": ["#000000", "#ff0000"] } },
+        { "request": "set_palette", "params": { "colors": ["#ff0000", "#00ff00"], "append": true }, "result": { "size": 2 } },
+        { "request": "get_palette", "params": {}, "result": { "colors": ["#000000", "#ff0000", "#00ff00"] } },
+        { "request": "set_palette", "params": { "colors": ["#0000ff", "#ffffff80"] }, "result": { "size": 2 } },
+        { "state": { "palette": ["#0000ff", "#ffffff80"] } },
+        { "request": "set_palette", "params": { "colors": [] }, "error": "No colors" },
+        { "request": "set_palette", "params": { "colors": ["nope"] }, "error": "Invalid color: nope" },
+        { "request": "set_palette", "params": { "colors": ["#0000FF"], "append": true }, "result": { "size": 1 } },
+        { "request": "get_palette", "params": {}, "result": { "colors": ["#0000ff", "#ffffff80", "#0000ff"] } }
+      ],
+      "notes": "append compares the given strings with the palette's lowercase hex, so '#0000FF' is added again."
+    },
+    {
+      "name": "apply_color_map recolors pixels of RGB sprites: a layer and frames, or every visible image layer",
+      "fixture": {
+        "width": 3, "height": 1, "durations": [100, 100],
+        "layers": [
+          { "name": "Hidden", "visible": false, "cels": { "1": ["r.."] } },
+          { "name": "Art", "cels": { "1": ["rr."], "2": ["r.."] } },
+          { "name": "Other", "cels": { "1": ["..r"] } }
+        ]
+      },
+      "steps": [
+        { "request": "apply_color_map", "params": { "map": { "#ff0000": "#00ff00" }, "layer": "Art", "frames": "1" }, "result": { "changed": 2, "mode": "pixels" } },
+        { "pixels": { "layer": "Art" }, "rows": ["gg."] },
+        { "pixels": { "layer": "Art", "frame": 2 }, "rows": ["r.."] },
+        { "request": "apply_color_map", "params": { "map": { "#ff0000": "#0000ff" } }, "result": { "changed": 2, "mode": "pixels" } },
+        { "pixels": { "layer": "Hidden" }, "rows": ["r.."] },
+        { "pixels": { "layer": "Other" }, "rows": ["..b"] },
+        { "pixels": { "layer": "Art", "frame": 2 }, "rows": ["b.."] },
+        { "request": "apply_color_map", "params": { "map": { "#ff0000": "#0000ff" }, "layer": "Hidden" }, "result": { "changed": 1 } },
+        { "request": "apply_color_map", "params": { "map": { "#ff0000": "bad" } }, "error": "Invalid color: bad" }
+      ]
+    },
+    {
+      "name": "apply_color_map in an indexed sprite changes palette entries; splitting needs RGB",
+      "fixture": {
+        "width": 3, "height": 1, "colorMode": "indexed", "palette": ["#000000", "#ff0000", "#00ff00"],
+        "layers": [{ "name": "Art", "cels": { "1": ["rg."] } }]
+      },
+      "steps": [
+        { "request": "apply_color_map", "params": { "map": { "#ff0000": "#0000ff" } }, "result": { "changed": 1, "mode": "palette entries" } },
+        { "pixels": { "layer": "Art" }, "rows": ["bg."] },
+        { "state": { "colorMode": "indexed", "palette": ["#000000", "#0000ff", "#00ff00"] } },
+        { "request": "split_layer_by_colors", "params": { "groups": [{ "name": "A", "colors": ["#0000ff"] }] }, "error": "Splitting by color needs an RGB sprite" }
+      ]
+    },
+    {
+      "name": "grayscale sprites: no recoloring or splitting",
+      "fixture": { "width": 2, "height": 1, "colorMode": "grayscale", "layers": [{ "name": "Art" }] },
+      "steps": [
+        { "state": { "colorMode": "grayscale", "layers": [{ "name": "Art", "cels": [] }] } },
+        { "request": "apply_color_map", "params": { "map": { "#ff0000": "#0000ff" } }, "error": "Recoloring needs an RGB or indexed sprite" },
+        { "request": "split_layer_by_colors", "params": { "groups": [{ "name": "A", "colors": ["#0000ff"] }] }, "error": "Splitting by color needs an RGB sprite" }
+      ]
+    },
+    {
+      "name": "draw_swatches: a new 'AI:' layer above the active one each time (even with the same name)",
+      "fixture": {
+        "width": 4, "height": 2,
+        "layers": [{ "name": "Top" }, { "name": "Art", "cels": { "1": ["....", "...."] } }],
+        "activeLayer": "Art"
+      },
+      "steps": [
+        { "request": "draw_swatches", "params": { "colors": ["#ff0000", "#00ff00"] }, "result": { "layer": { "$layerId": "AI: palette" } } },
+        { "pixels": { "layer": "AI: palette" }, "rows": ["rrgg", "rrgg"] },
+        { "request": "draw_swatches", "params": { "colors": ["#0000ff", "#ffff00", "#ff0000"], "size": 1, "name": "pal" }, "result": { "layer": { "$layerId": "AI: pal" } } },
+        { "pixels": { "layer": "AI: pal" }, "rows": ["byr.", "...."] },
+        { "request": "draw_swatches", "params": { "colors": ["#0000ff", "#ffff00", "#ff0000"], "size": 2, "name": "wrap" } },
+        { "pixels": { "layer": "AI: wrap" }, "rows": ["bbyy", "bbyy"] },
+        { "request": "draw_swatches", "params": { "colors": ["#0000ff"], "size": 1 } },
+        { "state": { "activeLayer": "AI: palette", "layers": [
+          { "name": "Top" }, { "name": "AI: palette", "cels": [1] }, { "name": "AI: wrap" }, { "name": "AI: pal" }, { "name": "AI: palette", "cels": [1] }, { "name": "Art" }
+        ] } },
+        { "request": "draw_swatches", "params": { "colors": ["#zzzzzz"] }, "error": "Invalid color" }
+      ]
+    }
+  ]
+}

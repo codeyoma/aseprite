@@ -223,7 +223,7 @@ test("find_sprites: boxes in reading order, cut into bottom-aligned frames or on
   assert.deepEqual([anim.width, anim.height, anim.durations.length], [12, 14, 3]);
   assert.deepEqual(anim.tags.map((t) => t.name), ["idle", "walk"]);
   assert.deepEqual(anim.palette.sort(), ["#29adff", "#ff004d"]);
-  const f2 = anim.layers[0].cels[1]; // the 8x10 sprite, centered on the bottom line
+  const f2 = fake.image(anim.layers[0], 2); // the 8x10 sprite, centered on the bottom line
   assert.equal(f2[(13 * 12 + 2) * 4 + 3], 255);
   assert.equal(f2[(3 * 12 + 2) * 4 + 3], 0);
   assert.equal(opaqueCount(f2), 80);
