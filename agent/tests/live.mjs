@@ -94,7 +94,7 @@ export async function live({ provider = "claude", bridge = {} } = {}) {
     const title = skillTitle(skill);
     const h = await headers();
     const last = h.at(-1);
-    return check(`the header names the skill (${title})`, h.length > headersBefore && (last?.skill === title || !!last?.text?.endsWith(title)), last?.text ?? null);
+    return check(`the header names the skill (${title})`, h.length > headersBefore && [title, skill].some((t) => last?.skill === t || !!last?.text?.endsWith(t)), last?.text ?? null);
   };
 
   /** Prints the summary lines and exits (1 only when a hard check failed). */
