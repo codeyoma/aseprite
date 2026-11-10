@@ -69,3 +69,92 @@ test("normal_map writes a hidden layer per frame; export writes matching sheets"
   assert.deepEqual([b.width, b.height], [a.width, a.height]);
   assert.ok(existsSync(join(dir, "ball_n.png")));
 });
+
+// Emission and specular masks (#67).
+import { emissionMask, quantizeLevel, specularMask } from "../dist/masks.js";
+import { fakeDocument, rect } from "./helpers/fake_document.mjs";
+
+// A dull body (8x8) with a bright yellow lamp (2x2) and a gray metal ramp row.
+const M = 8;
+function lamp() {
+  const d = rect(M, M, [0, 0, 7, 7], [70, 60, 90]);
+  for (const [x, y] of [[3, 3], [4, 3], [3, 4], [4, 4]]) d.set([255, 230, 60, 255], (y * M + x) * 4);
+  [[40, 40, 48], [110, 110, 120], [200, 200, 210], [250, 250, 255]].forEach((c, x) => d.set([...c, 255], (7 * M + x) * 4));
+  d.set([0, 0, 0, 0], 0); // one transparent pixel
+  return { width: M, height: M, data: d };
+}
+const at = (img, x, y) => [...img.data.subarray((y * img.width + x) * 4, (y * img.width + x) * 4 + 4)];
+
+test("emission mask: threshold picks bright saturated pixels; colors, painted layer and keep_color", () => {
+  const img = lamp();
+  const e = emissionMask(img);
+  assert.deepEqual(at(e, 3, 3), [255, 255, 255, 255], "the lamp glows");
+  assert.deepEqual(at(e, 1, 1), [0, 0, 0, 255], "the body does not");
+  assert.deepEqual(at(e, 3, 7), [0, 0, 0, 255], "bright but gray does not");
+  assert.equal(at(e, 0, 0)[3], 0, "outside stays transparent");
+  const byColor = emissionMask(img, { colors: ["#463c5a"], keepColor: true });
+  assert.deepEqual(at(byColor, 1, 1), [70, 60, 90, 255], "a listed color glows in its own color");
+  assert.deepEqual(at(byColor, 3, 3), [0, 0, 0, 255]);
+  const painted = { width: M, height: M, data: rect(M, M, [6, 0, 6, 0], [255, 0, 0]) };
+  const p = emissionMask(img, { painted, keepColor: true });
+  assert.deepEqual(at(p, 6, 0), [255, 0, 0, 255], "painted pixels glow in the painted color");
+  assert.deepEqual(at(p, 3, 3), [0, 0, 0, 255], "with a painted layer only it glows");
+});
+
+test("specular mask: lightness steps, colors with flat values, quantized grays", () => {
+  assert.equal(quantizeLevel(0.4, 4), 1 / 3);
+  assert.equal(quantizeLevel(1.3, 4), 1);
+  const img = lamp();
+  const s = specularMask(img);
+  const grays = new Set();
+  for (let i = 0; i < s.data.length; i += 4) if (s.data[i + 3]) grays.add(s.data[i]);
+  assert.ok([...grays].every((g) => [0, 85, 170, 255].includes(g)), `4 steps: ${[...grays]}`);
+  assert.ok(at(s, 3, 7)[0] > at(s, 1, 7)[0], "lighter is shinier");
+  assert.equal(at(s, 0, 7)[0], 0, "the darkest metal is dull");
+  const metal = specularMask(img, { colors: ["#282830", "#6e6e78"], values: { "#6e6e78": 1 }, value: 0.5 });
+  assert.deepEqual(at(metal, 1, 7), [255, 255, 255, 255], "per-color value");
+  assert.equal(at(metal, 0, 7)[0], 170, "flat value 0.5 rounds to the nearest of 4 steps");
+  assert.equal(at(metal, 3, 3)[0], 0, "unlisted colors are not shiny");
+  assert.equal(at(metal, 0, 0)[3], 0);
+});
+
+test("lighting with masks: emission shows unlit, specular adds a highlight", () => {
+  const img = disc(), map = normalMap(img);
+  const white = (fill) => ({ width: W, height: W, data: rect(W, W, [0, 0, W - 1, W - 1], fill) });
+  const dark = light(img, map, { dir: [0, 0, 1], ambient: 0 }, "opengl");
+  const glow = light(img, map, { dir: [1, -1, 0.1], ambient: 0 }, "opengl", { emission: white([255, 255, 255]) });
+  assert.deepEqual(at(glow, 4, 11).slice(0, 3), [60, 170, 80], "glowing pixels keep their full color away from the light");
+  const shiny = light(img, map, { dir: [0, 0, 1], ambient: 0 }, "opengl", { specular: white([255, 255, 255]) });
+  assert.ok(at(shiny, 11, 11)[0] > at(dark, 11, 11)[0] + 100, `${at(shiny, 11, 11)} vs ${at(dark, 11, 11)}`);
+});
+
+test("make_masks writes hidden layers per frame; preview and both exports use them", async () => {
+  const fake = fakeDocument({ width: M, height: M, frames: 2, layers: [{ name: "Robot", frames: [lamp().data, lamp().data] }] });
+  let r = await runTool(findTool("normal_map"), { layer: "Robot" }, fake);
+  r = await runTool(findTool("make_masks"), { layer: "Robot", specular: { colors: ["#c8c8d2", "#fafaff"], value: 1 } }, fake);
+  assert.ok(!r.isError, r.content[0].text);
+  for (const k of ["emission", "specular"]) {
+    const l = fake.active.sprite.layers.find((x) => x.name === `AI: ${k} Robot`);
+    assert.ok(l && !l.visible, `hidden AI: ${k} Robot`);
+    assert.ok(fake.cel(`AI: ${k} Robot`, 2), "frame 2 too");
+  }
+  assert.deepEqual(at({ width: M, height: M, data: fake.cel("AI: emission Robot", 2) }, 4, 4), [255, 255, 255, 255]);
+  assert.deepEqual(at({ width: M, height: M, data: fake.cel("AI: specular Robot", 1) }, 2, 7), [255, 255, 255, 255]);
+  assert.match(r.content[0].text, /8 glowing px.*4 shiny px/);
+  const one = await runTool(findTool("make_masks"), { layer: "Robot", kind: "emission", emission: { colors: ["#123456"] } }, fake);
+  assert.match(one.content[0].text, /No emission pixels/);
+  await runTool(findTool("make_masks"), { layer: "Robot", kind: "emission" }, fake);
+  const prev = await runTool(findTool("light_preview"), { layer: "Robot" }, fake);
+  assert.match(prev.content[1].text, /with the emission and specular masks/);
+  const dir = mkdtempSync(join(tmpdir(), "msk-"));
+  await runTool(findTool("export_normal_sheet"), { layer: "Robot", dir }, fake);
+  for (const f of ["robot.png", "robot_n.png", "robot_e.png", "robot_s.png"]) assert.ok(existsSync(join(dir, f)), f);
+  const e = PNG.sync.read(readFileSync(join(dir, "robot_e.png")));
+  assert.deepEqual([e.width, e.height], [M * 2, M]);
+  const eng = mkdtempSync(join(tmpdir(), "msk-eng-"));
+  await runTool(findTool("export_for_engine"), { engine: "godot", dir: eng, name: "robot", padding: 1 }, fake);
+  const a = PNG.sync.read(readFileSync(join(eng, "robot.png"))), s = PNG.sync.read(readFileSync(join(eng, "robot_s.png")));
+  assert.ok(existsSync(join(eng, "robot_e.png")));
+  assert.deepEqual([s.width, s.height], [a.width, a.height], "masks placed like the color frames");
+  assert.match(readFileSync(join(eng, "HOW_TO_IMPORT.txt"), "utf8"), /robot_e\.png/);
+});

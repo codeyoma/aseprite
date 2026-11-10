@@ -94,8 +94,16 @@ export interface Light {
   color?: [number, number, number];
 }
 
-/** The sprite lit by a light through its normal map (Lambert), for previews. */
-export function light(albedo: Rgba, normals: Rgba, l: Light, convention: "opengl" | "directx" = "opengl"): Rgba {
+/** Optional masks for light(): emission shows unlit, specular adds a highlight. */
+export interface LightMasks {
+  /** White = the albedo glows; a colored pixel glows in that color. */
+  emission?: Rgba;
+  /** Gray = how shiny (white = full highlight). */
+  specular?: Rgba;
+}
+
+/** The sprite lit by a light through its normal map (Lambert, plus Blinn-Phong on the specular mask), for previews. */
+export function light(albedo: Rgba, normals: Rgba, l: Light, convention: "opengl" | "directx" = "opengl", masks: LightMasks = {}): Rgba {
   const { width: w, height: h } = albedo;
   const out = new Uint8Array(w * h * 4);
   const amb = l.ambient ?? 0.25;
@@ -120,7 +128,21 @@ export function light(albedo: Rgba, normals: Rgba, l: Light, convention: "opengl
       const len = Math.hypot(lx, ly, lz) || 1;
       const diff = Math.max(0, (nx * lx + ny * ly + nz * lz) / len);
       const k = Math.min(1.6, amb + diff);
-      out.set([0, 1, 2].map((c) => Math.min(255, Math.round(albedo.data[i + c] * k * col[c]))).concat([255]), i);
+      const rgb = [0, 1, 2].map((c) => albedo.data[i + c] * k * col[c]);
+      const s = masks.specular;
+      if (s && s.data[i + 3] >= 128 && s.data[i] > 0) {
+        // Half vector between the light and the viewer (0, 0, 1).
+        const hx = lx / len, hy = ly / len, hz = lz / len + 1, hl = Math.hypot(hx, hy, hz) || 1;
+        const spec = Math.max(0, (nx * hx + ny * hy + nz * hz) / hl) ** 16 * (s.data[i] / 255);
+        for (let c = 0; c < 3; c++) rgb[c] += 255 * spec * col[c];
+      }
+      const e = masks.emission;
+      if (e && e.data[i + 3] >= 128) {
+        const gray = e.data[i] === e.data[i + 1] && e.data[i + 1] === e.data[i + 2];
+        // Unlit: a glowing pixel shows at least its full color whatever the light.
+        for (let c = 0; c < 3; c++) rgb[c] = Math.max(rgb[c], gray ? (albedo.data[i + c] * e.data[i]) / 255 : e.data[i + c]);
+      }
+      out.set(rgb.map((v) => Math.min(255, Math.round(v))).concat([255]), i);
     }
   }
   return { width: w, height: h, data: out };

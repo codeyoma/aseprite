@@ -22,6 +22,7 @@ const HOWTO: Record<string, (n: string) => string> = {
 - Pixel art: Project Settings > Rendering > Textures > Default Texture Filter = Nearest.
 - Add an AnimatedSprite2D and set Sprite Frames to ${n}.tres; the animations are the sprite's tags.
 - Normal map (if ${n}_n.png exists): use a CanvasTexture with ${n}.png as diffuse and ${n}_n.png as normal, then rebuild the SpriteFrames on it, or apply it in a shader.
+- Masks (if ${n}_e.png / ${n}_s.png exist): ${n}_s.png is the CanvasTexture's specular texture; for the glow, draw ${n}_e.png on top with a CanvasItemMaterial set to Unshaded and Blend Mode Add (same frames).
 - 9-patch (if ${n}_ninepatch.tscn exists): instance it for a stretchable panel or button; its NinePatchRect keeps the slice's border.
 `,
   unity: (n) => `Unity
@@ -30,6 +31,7 @@ const HOWTO: Record<string, (n: string) => string> = {
 - Pixels Per Unit is set in the meta; change it in the import settings if your game uses another.
 - ${n}.json has the tags and durations for reference.
 - Normal map (if ${n}_n.png exists): add it as a Secondary Texture named _NormalMap on ${n}.png.
+- Masks (if ${n}_e.png / ${n}_s.png exist): add them as Secondary Textures (e.g. _Emission, _Specular) and sample them in a custom Sprite-Lit Shader Graph.
 - 9-patch: a slice with a center sets each sprite's Border, so Image components with Image Type Sliced stretch only the middle.
 `,
   phaser: (n) => `Phaser 3
@@ -54,7 +56,7 @@ export const EXPORT_TOOLS: Tool[] = [
       "animation per tag), 'unity' (.png.meta with sliced sprites, point filtering, pivots), 'phaser' (JSON atlas + " +
       "animations, also PixiJS), 'tiled' (.tsx), or 'json' (Aseprite's hash format). Options: trim, padding, extrude " +
       "(stops edge bleeding), integer scale, power-of-two size. If a layer 'AI: normal …' exists, a matching <name>_n.png " +
-      "is written too. Hidden layers are left out. Writes a HOW_TO_IMPORT.txt.",
+      "is written too (and <name>_e.png / <name>_s.png for 'AI: emission …' / 'AI: specular …'). Hidden layers are left out. Writes a HOW_TO_IMPORT.txt.",
     input: z.object({
       engine: z.enum(["godot", "unity", "phaser", "tiled", "json"]),
       dir: z.string(),
@@ -74,7 +76,7 @@ export const EXPORT_TOOLS: Tool[] = [
       const doc = documentOf(aseprite);
       const info = await doc.info();
       const durations = info.durations;
-      const normal = info.layers.find((l) => l.name.startsWith("AI: normal"));
+      const extra: [string, string][] = [["normal", "_n"], ["emission", "_e"], ["specular", "_s"]];
       const frames: Rgba[] = [];
       for (let f = 1; f <= durations.length; f++) frames.push(await doc.pixels(undefined, f));
       const opts = { trim: input.trim, padding: input.padding, extrude: input.extrude, scale: input.scale, powerOfTwo: input.power_of_two, columns: input.columns };
@@ -88,11 +90,13 @@ export const EXPORT_TOOLS: Tool[] = [
       mkdirSync(input.dir, { recursive: true });
       const files = [`${name}.png`];
       writePng(join(input.dir, `${name}.png`), sheet);
-      if (normal) {
-        const normals: Rgba[] = [];
-        for (let f = 1; f <= durations.length; f++) normals.push(await doc.pixels(normal.id, f));
-        writePng(join(input.dir, `${name}_n.png`), placeLike(normals, placed, sheet.width, sheet.height, opts));
-        files.push(`${name}_n.png`);
+      for (const [kind, suffix] of extra) {
+        const layer = info.layers.find((l) => l.name.startsWith(`AI: ${kind}`));
+        if (!layer) continue;
+        const imgs: Rgba[] = [];
+        for (let f = 1; f <= durations.length; f++) imgs.push(await doc.pixels(layer.id, f));
+        writePng(join(input.dir, `${name}${suffix}.png`), placeLike(imgs, placed, sheet.width, sheet.height, opts));
+        files.push(`${name}${suffix}.png`);
       }
       const write = (file: string, body: string) => {
         writeFileSync(join(input.dir, file), body);
