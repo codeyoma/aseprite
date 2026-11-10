@@ -1,0 +1,101 @@
+benchmark: make-ui
+skill: make-ui
+title: A three-state Play button and a 9-patch panel in a fixed palette
+provider: claude
+model: null
+commit: aa51e48d8
+date: "2026-11-10T21:44:17.144Z"
+seconds: 43
+passed: 5
+total: 5
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Pixel text and UI"
+      - Claude
+  - id: button
+    type: sprites
+    desc: a button sprite with 3 or more state frames and a 9-patch slice
+    pass: true
+    detail:
+      - panel 48x32 1f
+      - play_button 32x15 4f
+      - Sprite 64x64 1f
+  - id: panel
+    type: sprites
+    desc: a second sprite with a 9-patch slice (the panel)
+    pass: true
+    detail:
+      - panel 48x32 1f
+      - play_button 32x15 4f
+      - Sprite 64x64 1f
+  - id: button-palette
+    type: palette
+    desc: "the button uses only the palette's colors"
+    pass: true
+    detail: "8 colors"
+  - id: button-check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 3 warnings"
+steps:
+  - prompt: "/skill:make-ui Make a 'Play' button with normal, hover and pressed states, using this sprite's palette."
+    seconds: 30
+    header: "Claude · Pixel text and UI"
+    tools:
+      - tool: Make button
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I made the Play button as a new sprite, `play_button`. It is 32×15 px and uses only PICO-8 colors: green fill, black border, light-green highlight, navy shadow and off-white label.\n\n- **Frames:** frame 1 is normal, frame 2 is hover with a yellow label, and frame 3 is pressed with the bevel inverted and the label 1 px lower. Frame 4 is a disabled state that the button tool added. Delete it if you don't need it.\n- **Slice:** `play_button` is a 9-patch with a 28×11 stretchable center at (2,2).\n- **Fixes:** the new sprite came with the wrong palette, so I set it to PICO-8. I also made the hover label yellow because hover looked the same as normal. The color check now finds no errors."
+    errors: []
+  - prompt: "Now make a small 48x32 panel in the same style, with 9-patch slices, in the same palette."
+    seconds: 13
+    header: Claude
+    tools:
+      - tool: Make panel
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I made the panel as a new 48×32 sprite, `panel`, in the same style as the Play button. It uses the same colors: green fill, black border, light-green top and left highlight, and navy bottom and right shadow.\n\n- **Slice:** `panel` is a 9-patch with a 44×28 stretchable center at (2,2). The 2 px border stays fixed, so the engine can stretch the panel to any size.\n- **Palette:** I set the sprite's palette to PICO-8, the same as the button's. The color check finds no errors."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - result.aseprite
+  - extra-1.aseprite
+  - extra-2.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+  seconds: 27
+  scores:
+    readability: 2
+    form: 1
+    palette: 2
+    motion: null
+    fit: 1
+  overall: 1.5
+  note: "Block lettering and distinct hover/pressed treatments make the button states recognizable. The final frame has muddy text contrast and remains button-sized, with no visible 48×32 panel or 9-patch layout."

@@ -1,0 +1,118 @@
+benchmark: pixel-fx
+skill: pixel-fx
+title: "Frost nova timed to a mage's staff attack"
+provider: claude
+model: null
+commit: aa51e48d8
+date: "2026-11-10T21:45:26.588Z"
+seconds: 58
+passed: 8
+total: 8
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Pixel FX"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: null
+    pass: true
+    detail: "160x112"
+  - id: frames-kept
+    type: frames
+    desc: null
+    pass: true
+    detail: 8
+  - id: attack-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: attack 1-8
+  - id: fx-layer
+    type: layers
+    desc: "an AI: fx layer holds the effect"
+    pass: true
+    detail:
+      - "AI: fx recipe:frost-nova-tip"
+      - "AI: fx recipe:frost-nova-tip glow"
+  - id: hit-recorded
+    type: lua
+    desc: a hit stop is recorded on the sprite (fx.hits)
+    pass: true
+    detail: 1
+  - id: fx-check-clean
+    type: check_fx
+    desc: null
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 6 warnings"
+steps:
+  - prompt: "/skill:pixel-fx Add a frost nova to my mage's attack, bursting from the staff tip when it thrusts forward."
+    seconds: 43
+    header: "Claude · Pixel FX"
+    tools:
+      - tool: "Read guide: basics"
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Preview recipe
+        status: ok
+      - tool: Add effect from recipe
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check effects
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Snap fx alpha
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Frost nova is placed; running the final sprite check.\nFix the semi-transparent vapour pixels: threshold alpha.\nI added a frost nova that bursts from the staff tip at (92,60) when the thrust starts on frame 4 and ends empty after frame 6. Frame 4 shows a white flash, frame 5 an icy ring with frost flakes, and frame 6 the last fading bits.\n\n- **Effect:** a custom recipe, `recipe:frost-nova-tip`. It lasts 0.3 s and uses a dark-navy-to-white ice palette, whose 4 new colors were added to the sprite palette.\n- **Layers:** the effect is on [AI: fx recipe:frost-nova-tip](aseprite://layer/L1443), and its light is on [AI: fx recipe:frost-nova-tip glow](aseprite://layer/L1450), an Addition layer above it.\n- **Fix:** the first check found 17 partly transparent pixels on frame 6, which I made fully sol"
+    errors: []
+  - prompt: "Add a short hit stop on the impact frame, and make sure the effect ends cleanly."
+    seconds: 15
+    header: Claude
+    tools:
+      - tool: Hit-stop
+        status: ok
+      - tool: Check effects
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added an 80 ms hit stop on the impact frame, and the effect checks show it ends cleanly.\n\n- **Hit stop:** frame 4 is the flash and now holds for 140 ms instead of 100 ms. Two 20 ms shake frames follow it, at 5–6, where the mage moves 1 px and back while the burst holds still.\n- **Timeline:** [attack](aseprite://tag/attack) now covers frames 1–8 and runs 680 ms instead of 600 ms. The ring and fade moved to frames 7–8. The hit is saved on the sprite, so an engine export will include it.\n- **Clean ending:** the effect check found nothing wrong. Frame 8 has only a few fading flakes, its glow layer is already empty, and the effect layers are empty again when the loop returns to frame 1.\n\nThe full sprite check has no errors and 3 warnings, all left on purpose:\n- The two effect layers are empty"
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+  seconds: 21
+  scores:
+    readability: 2
+    form: 0
+    palette: 2
+    motion: 1
+    fit: 1
+  overall: 1.2
+  note: "The mage silhouette and bright staff-tip flash read clearly. The thrust feels stiff, the dark burst does not convincingly read as a frost nova, and lingering particles prevent a clean ending."

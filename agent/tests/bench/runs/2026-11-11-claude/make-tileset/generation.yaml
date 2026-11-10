@@ -1,0 +1,127 @@
+benchmark: make-tileset
+skill: make-tileset
+title: A 16x16 grass-on-dirt autotile set with a preview map
+provider: claude
+model: null
+commit: aa51e48d8
+date: "2026-11-10T21:42:00.532Z"
+seconds: 111
+passed: 6
+total: 6
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Make a terrain tileset"
+      - Claude
+  - id: set
+    type: sprites
+    desc: a 47-tile set sprite
+    pass: true
+    detail:
+      - grass_dirt preview 192x112 1f
+      - grass_dirt 47-tile set 128x96 1f
+      - grass_dirt_template 80x16 1f
+      - Sprite 16x16 1f
+  - id: set-size
+    type: sprites
+    desc: "16 px tiles in an 8x6 grid (128x96)"
+    pass: true
+    detail:
+      - grass_dirt preview 192x112 1f
+      - grass_dirt 47-tile set 128x96 1f
+      - grass_dirt_template 80x16 1f
+      - Sprite 16x16 1f
+  - id: preview
+    type: sprites
+    desc: a preview map on a tilemap layer
+    pass: true
+    detail:
+      - grass_dirt preview 192x112 1f
+      - grass_dirt 47-tile set 128x96 1f
+      - grass_dirt_template 80x16 1f
+      - Sprite 16x16 1f
+  - id: set-palette
+    type: palette
+    desc: "the set uses only the palette's colors"
+    pass: true
+    detail: "7 colors"
+  - id: set-check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 1 warnings"
+steps:
+  - prompt: "/skill:make-tileset Make a 16x16 grass-on-dirt autotile set (47 tiles) in this sprite's palette, with a preview map. Don't export files."
+    seconds: 58
+    header: "Claude · Make a terrain tileset"
+    tools:
+      - tool: "Read guide: basics"
+        status: ok
+      - tool: "Read guide: rules/tiles"
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Make 47-tile set
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I built the 47-tile grass-on-dirt set and a preview map. Nothing was exported.\n\n- **Template** (`grass_dirt_template`, 80×16): five tiles (island, vertical, horizontal, fill, inner corners) drawn only in your 9-color palette. The fill uses the same grass texture in every tile, and the light comes from the top-left: a bright rim on the grass, a dark lower edge, and a dirt shadow below and to the right.\n- **Tile set** (`grass_dirt 47-tile set`): 8 columns of 16×16 tiles.\n- **Preview** (`grass_dirt preview`): a tilemap layer that uses the set, so you can paint more terrain with it.\n\nIn the preview I found no seams or broken corners on the straight edges, outer and inner corners, the hole, or the one-tile strip.\n\nThe generated sprites came with the wrong palette, so I set your palette on all t"
+    errors: []
+  - prompt: "Make the grass edge more irregular, with a few grass tufts hanging over the dirt, and update the set and the preview."
+    seconds: 53
+    header: Claude
+    tools:
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Make 47-tile set
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "The grass edge is now irregular, with small tufts poking into the dirt on every side, and the tile set and preview are rebuilt from it.\n\n- **Edge shape:** the edge moves in and out by 1 px in a few places. A tuft reaches 2 px into the dirt once per side. Near the tile corners and at the middle of each side, the edge stays at its original position, so tiles still line up when placed side by side.\n- **Corners:** the island and inner-corner tiles kept their shapes, so corners still join cleanly.\n- **Rebuild:** I closed the old [grass_dirt 47-tile set](aseprite://layer/L728) and preview without saving, then made new ones with your palette.\n\nIn the new preview I found no seams or broken corners, and the palette check passes. Nothing was exported."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - result.aseprite
+  - extra-1.aseprite
+  - extra-2.aseprite
+  - extra-3.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+  seconds: 26
+  scores:
+    readability: 3
+    form: 1
+    palette: 3
+    motion: null
+    fit: 1
+  overall: 2
+  note: "The grass patches read clearly at 1x, with consistent pixel clusters and small irregular edge tufts. Shading gives little volume, and only a preview map is visible; the requested 47-tile set is missing from the images."

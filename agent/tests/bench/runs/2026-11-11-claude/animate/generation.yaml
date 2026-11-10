@@ -1,0 +1,112 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: aa51e48d8
+date: "2026-11-10T21:39:40.833Z"
+seconds: 90
+passed: 8
+total: 8
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · Animate a character or object"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check: no repeated frames, feet stay on the ground"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 65
+    header: "Claude · Animate a character or object"
+    tools:
+      - tool: "Read guide: basics"
+        status: ok
+      - tool: "Read guide: anim.timing.walk"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw 6-frame walk
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added a 6-frame walk cycle facing right, tagged [walk](aseprite://tag/walk), on [Hero](aseprite://layer/L380). Each arm swings opposite its leg.\n\nI redrew the frames in place on Hero in side view. The near limbs use the existing leg color and a light-blue sleeve. The far limbs use the darker navy. The feet now have toes pointing right.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 1 | Contact: near leg forward, near arm back | 120 ms |\n| 2 | Down: body 1 px lower, knees bent | 100 ms |\n| 3 | Pass: body 1 px higher, far leg swings through | 100 ms |\n| 4 | Contact: far leg forward, near arm forward | 120 ms |\n| 5 | Down | 100 ms |\n| 6 | Pass, which leads back into frame 1 | 100 ms |\n\nThe full cycle lasts 640 ms. The planted foot slides back 2 px per frame, so move the character at about **2"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 25
+    header: Claude
+    tools:
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw idle loop
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Adding idle frames 7-10.\nI added a 4-frame [idle](aseprite://tag/idle) loop in frames 7–10. The walk in frames 1–6 is unchanged.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 7 | Body up | 400 ms |\n| 8 | Body 1 px down; the hand lags, so the arm is 1 px shorter | 200 ms |\n| 9 | Body down; the arm settles | 400 ms |\n| 10 | Body back up; the hand lags, so the arm is 1 px longer | 200 ms |\n\nThe legs stay still and the feet stay on the same row, so only the head and torso bob. The loop lasts 1.2 s. `check` found no duplicate frames and no foot jitter in frames 7–10."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+  seconds: 49
+  scores:
+    readability: 2
+    form: 0
+    palette: 3
+    motion: 1
+    fit: 2
+  overall: 1.6
+  note: "Clean pixel clusters and a one-pixel idle bob work well. The walk feels mechanical, and the visible arm swings with the nearer leg instead of opposite it."

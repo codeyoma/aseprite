@@ -1,0 +1,125 @@
+benchmark: shade-sprite
+skill: shade-sprite
+title: "Shade a flat green ball, then outline it"
+provider: claude
+model: null
+commit: aa51e48d8
+date: "2026-11-10T21:47:42.232Z"
+seconds: 50
+passed: 7
+total: 7
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Shade and outline"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: null
+    pass: true
+    detail: "32x32"
+  - id: one-frame
+    type: frames
+    desc: still a single frame
+    pass: true
+    detail: 1
+  - id: ai-layer
+    type: layers
+    desc: "the result is on AI: layers"
+    pass: true
+    detail:
+      - "AI: shaded Body"
+      - "AI: outline"
+  - id: outline-pixel
+    type: lua
+    desc: an opaque pixel just outside the original circle (the outline)
+    pass: true
+    detail: 255
+  - id: lit-top-left
+    type: lua
+    desc: the top-left of the ball is brighter than the bottom-right
+    pass: true
+    detail:
+      br: 68.69999999999999
+      tl: 183.89999999999998
+  - id: check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 0 warnings"
+steps:
+  - prompt: "/skill:shade-sprite Shade this flat ball with light from the top left, 3 bands, using the palette's greens."
+    seconds: 35
+    header: "Claude · Shade and outline"
+    tools:
+      - tool: "Read guide: basics"
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Shade from top-left
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: "Clean sphere shading, 3 bands"
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Tighten highlight band
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Write 1 pixel rows
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "The auto result has ragged bands, so I'll redo it as clean sphere shading on the same layer.\nThe ball is now shaded on [AI: shaded Body](aseprite://layer/L1758), and the original [Body](aseprite://layer/L1735) is hidden. The light comes from the top-left in 3 bands, using only greens already in the palette: #8cdc6e for the highlight, #3caa50 for the mid tone and #1e5a3c for the shadow.\n\nThe `shade_sprite` tool gave ragged bands, so I redrew them from a sphere's surface angle to get clean curves. `check` passes with no errors or warnings. I didn't add an outline because you didn't ask for one."
+    errors: []
+  - prompt: "Now add a selout outline around it, darker than the shading."
+    seconds: 15
+    header: Claude
+    tools:
+      - tool: Outline (selout)
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Darken selout outline one step
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Selout used #3caa50 on the lit edge, which matches the mid band and isn't darker. Shifting each outline color one step darker.\nI added a selout outline around the ball on a new [AI: outline](aseprite://layer/L1819) layer, outside the original shape. Every outline pixel is now darker than the band it touches:\n- **Lit top-left edge:** #1e5a3c.\n- **Mid-tone edge:** #14281e.\n- **Shadow side:** #181425, the palette's darkest color.\n\nThe tool's first pass used #3caa50 on the lit edge, which matched the mid band. I darkened each outline color one step to fix that. `check` passes with no errors or warnings."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+  seconds: 45
+  scores:
+    readability: 4
+    form: 3
+    palette: 3
+    motion: null
+    fit: 3
+  overall: 3.25
+  note: "Three clean green bands establish convincing volume under top-left light, and the selout preserves readability at 1x. The dark outline becomes slightly heavy around the lower corners."
