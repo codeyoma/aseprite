@@ -115,7 +115,30 @@ export class AsepriteLink extends EventEmitter {
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
       return;
     }
+    if (req.method === "GET" && (req.url ?? "").split("?")[0] === "/files") {
+      void this.onFiles(req, res);
+      return;
+    }
     res.writeHead(426, { "content-type": "text/plain" }).end("Upgrade Required");
+  }
+
+  /**
+   * GET /files (Bearer token from the session file): the files the live
+   * window has open, so a Headless runner can refuse them (#85).
+   */
+  private async onFiles(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const send = (status: number, body: unknown): void => {
+      res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+    };
+    if (req.headers.authorization !== `Bearer ${this.token}`) return send(401, { error: "bad token" });
+    if (!this.connected) return send(200, { connected: false, files: [] });
+    try {
+      const state = (await this.request("get_state", {}, 5_000)).result;
+      const files = (state?.openSprites ?? []).map((s: { filename?: string }) => s.filename).filter((f: unknown) => typeof f === "string" && f);
+      send(200, { connected: true, files });
+    } catch (err) {
+      send(503, { error: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   private onConnection(socket: WebSocket): void {

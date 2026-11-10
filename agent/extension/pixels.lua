@@ -108,4 +108,18 @@ function M.base64Decode(s)
   return table.concat(out)
 end
 
+-- Bytes -> base64 (the headless runner carries binary results in JSON lines).
+local B64CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+function M.base64Encode(bytes)
+  local out = {}
+  for i = 1, #bytes, 3 do
+    local a, b, c = bytes:byte(i, i + 2)
+    local n = (a << 16) | ((b or 0) << 8) | (c or 0)
+    local q1, q2, q3, q4 = (n >> 18) & 63, (n >> 12) & 63, (n >> 6) & 63, n & 63
+    out[#out + 1] = B64CHARS:sub(q1 + 1, q1 + 1) .. B64CHARS:sub(q2 + 1, q2 + 1) ..
+      (b and B64CHARS:sub(q3 + 1, q3 + 1) or "=") .. (c and B64CHARS:sub(q4 + 1, q4 + 1) or "=")
+  end
+  return table.concat(out)
+end
+
 return M

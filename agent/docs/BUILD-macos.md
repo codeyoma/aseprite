@@ -55,6 +55,13 @@ agent/tests/run_lua_tests.sh            # all
 agent/tests/run_lua_tests.sh check pixels   # some, by name
 ```
 
+The Headless runner's tests in `npm test` start a real headless Aseprite only when `ASEPRITE` is set (CI has none; the rest of the file runs everywhere). Its benchmark renders 20 generated sprites through one runner and through 20 `aseprite -b` runs and prints both times:
+
+```bash
+cd agent/bridge && ASEPRITE="$PWD/../../build/bin/aseprite" npm test
+ASEPRITE=build/bin/aseprite node agent/tests/headless_bench.mjs
+```
+
 Regenerate the generated files (plugin copies, and the command catalog after updating from upstream); `npm test` fails when one is stale:
 
 ```bash

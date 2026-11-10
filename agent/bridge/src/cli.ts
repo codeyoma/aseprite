@@ -4,7 +4,9 @@
 // Live mode talks to the running Aseprite through a short-lived bridge (the
 // extension connects to the newest bridge and returns to the previous one
 // when this exits). File mode runs Aseprite headless (`aseprite -b`) on a
-// file and needs no GUI.
+// file and needs no GUI. Headless mode (`--headless`, or
+// ASEPRITE_AGENT_MODE=headless) runs state, snapshot, check and timeline on
+// files in one long-lived headless Aseprite (headless.ts), never as a fallback.
 //
 //   ase state [--json]                         document state (live)
 //   ase snapshot [--frame N] [--layer L] -o out.png
@@ -13,15 +15,17 @@
 //   ase timeline [--json]                      the timeline as text (live)
 //   ase render <file.aseprite> --sheet out.png [--data out.json] | --gif out.gif
 //   ase commands [filter]                      Aseprite's built-in commands (offline)
+//   ase --headless snapshot a.aseprite b.aseprite ... -o outdir/   (also state, check, timeline)
 //
 // --json prints one JSON object. Failures print "✗ <problem>" and
 // "Fix: <what to do>" and exit 1; `ase check` also exits 1 when it finds errors.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsepriteLink } from "./aseprite.js";
+import { HeadlessLink, headlessRequested, LiveFileError } from "./headless.js";
 import { findTool, formatCheck, runTool, toolContext, type AsepriteRequester, type ToolResult } from "./tools.js";
 import { VERSION } from "./server.js";
 
@@ -48,7 +52,9 @@ const VALUE_FLAGS = new Set(["frame", "layer", "o", "out", "e", "sheet", "data",
 
 /** argv (without node and script) -> command, positional args and flags. */
 export function parseArgs(argv: string[]): Parsed {
-  const [command = "help", ...rest] = argv;
+  // --headless may come before the command.
+  const headless = argv.includes("--headless");
+  const [command = "help", ...rest] = argv.filter((a) => a !== "--headless");
   const positional: string[] = [];
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < rest.length; i++) {
@@ -66,6 +72,7 @@ export function parseArgs(argv: string[]): Parsed {
       flags[key] = v;
     } else flags[key] = true;
   }
+  if (headless) flags.headless = true;
   return { command, positional, flags };
 }
 
@@ -78,9 +85,13 @@ export const USAGE = `ase ${VERSION}: Aseprite from the shell
   ase timeline [--json]                       the timeline as text
   ase render <file.aseprite> --sheet out.png [--data out.json] | --gif out.gif
   ase commands [filter]                       Aseprite's built-in commands
+  ase --headless state|check|timeline <files...> [--json]
+  ase --headless snapshot <files...> [--frame N] [--layer L] -o out.png|outdir/
 
 Live commands need Aseprite open with the Aseprite Agent extension.
-File commands run Aseprite headless; set ASEPRITE_BIN if \`aseprite\` is not on PATH.`;
+File commands run Aseprite headless; set ASEPRITE_BIN if \`aseprite\` is not on PATH.
+--headless (or ASEPRITE_AGENT_MODE=headless) runs every file in one headless
+Aseprite instead of the live window, and refuses files the live window has open.`;
 
 /** Text of a tool result. */
 function textOf(r: ToolResult): string {
@@ -119,6 +130,7 @@ export function asepriteBin(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
     process.env.ASEPRITE_BIN,
+    process.env.ASEPRITE,
     join(here, "../../../build/bin/aseprite"),
     "/Applications/Aseprite.app/Contents/MacOS/aseprite",
   ].filter(Boolean) as string[];
@@ -166,6 +178,77 @@ function checkFile(file: string): any {
 }
 
 // ---------------------------------------------------------------------------
+// Headless mode (#85): every file in one long-lived runner
+// ---------------------------------------------------------------------------
+
+const HEADLESS_COMMANDS = new Set(["state", "snapshot", "check", "timeline"]);
+
+/** Where snapshot i of n goes: -o itself for one file not ending in "/", else <dir>/<name>.png. */
+export function snapshotTarget(out: string, file: string, count: number): string {
+  const isDir = out.endsWith("/") || (existsSync(out) && !extname(out)) || count > 1;
+  return isDir ? join(out, `${basename(file, extname(file))}.png`) : out;
+}
+
+/** Headless mode; liveFiles replaces asking the live bridge (the benchmark's fresh temp files). */
+export async function runHeadlessMode(p: Parsed, opts: { liveFiles?: () => Promise<string[]> } = {}): Promise<Output> {
+  const f = p.flags;
+  if (!HEADLESS_COMMANDS.has(p.command)) {
+    throw new CliError(`${p.command} has no headless mode`, `Headless runs ${[...HEADLESS_COMMANDS].join(", ")}; drop --headless (and ASEPRITE_AGENT_MODE).`);
+  }
+  if (p.positional.length === 0) throw new CliError("No files given", "Headless mode works on files: pass one or more .aseprite files.");
+  const files = p.positional.map(needFile);
+  const out = (f.o ?? f.out) as string | undefined;
+  if (p.command === "snapshot" && !out) throw new CliError("No output", "Add -o out.png (one file) or -o outdir/.");
+  if (out && p.command === "snapshot" && snapshotTarget(out, files[0], files.length) !== out) mkdirSync(out, { recursive: true });
+
+  const link = new HeadlessLink({ bin: asepriteBin(), extensionDir: extensionDir(), liveFiles: opts.liveFiles });
+  await link.start();
+  const ctx = toolContext(link);
+  const results: { file: string; [k: string]: unknown }[] = [];
+  let errors = 0;
+  try {
+    for (const file of files) {
+      try {
+        await link.open(file);
+      } catch (e) {
+        if (e instanceof LiveFileError) throw new CliError(e.message, "Close it in Aseprite first, or work on it live (without --headless).");
+        throw new CliError(e instanceof Error ? e.message : String(e), "Check the file, and that the live Aseprite's bridge is current.");
+      }
+      if (p.command === "snapshot") {
+        const r = await runTool(findTool("snapshot")!, {
+          frame: f.frame ? Number(f.frame) : undefined,
+          layer: f.layer as string | undefined,
+          scale: f.scale ? Number(f.scale) : undefined,
+        }, ctx);
+        if (r.isError) throw new CliError(`${file}: ${textOf(r)}`, "Check --frame and --layer.");
+        const img = r.content.find((c) => c.type === "image") as { data: string };
+        const target = resolve(snapshotTarget(out!, file, files.length));
+        writeFileSync(target, Buffer.from(img.data, "base64"));
+        results.push({ file, out: target, info: textOf(r) });
+      } else if (p.command === "check") {
+        const r = (await link.request("check", {})).result;
+        errors += r.errors > 0 ? 1 : 0;
+        results.push({ file, ...r });
+      } else if (p.command === "state") {
+        results.push({ file, state: JSON.parse(textOf(await runTool(findTool("get_state")!, {}, ctx))) });
+      } else {
+        results.push({ file, text: textOf(await runTool(findTool("get_timeline_text")!, {}, ctx)) });
+      }
+      await link.close(file);
+    }
+  } finally {
+    await link.stop();
+  }
+  const text = results.map((r) => {
+    if (p.command === "snapshot") return `Saved ${r.out} (${r.info})`;
+    if (p.command === "check") return `${r.file}\n${formatCheck(r)}`;
+    if (p.command === "state") return `${r.file}\n${JSON.stringify(r.state, null, 2)}`;
+    return `${r.file}\n${String(r.text).trimEnd()}`;
+  }).join("\n");
+  return { json: { ok: true, headless: true, files: results }, text, exitCode: errors > 0 ? 1 : 0 };
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
@@ -178,6 +261,9 @@ export interface Output {
 
 export async function run(p: Parsed): Promise<Output> {
   const f = p.flags;
+  if (headlessRequested(f.headless) && !["help", "--help", "-h", "version", "--version", "commands"].includes(p.command)) {
+    return runHeadlessMode(p);
+  }
   switch (p.command) {
     case "state": {
       const r = await tool("get_state", {});

@@ -19,6 +19,8 @@ local ok, err = pcall(px.parseHex, "#abc")
 check("parseHex rejects short hex", not ok and tostring(err):find("Invalid color", 1, true), err)
 check("color", px.color("#00ff00").green == 255)
 check("base64Decode", px.base64Decode("AAEC/w==") == string.char(0, 1, 2, 255))
+check("base64Encode", px.base64Encode(string.char(0, 1, 2, 255)) == "AAEC/w==" and px.base64Encode("ab") == "YWI=" and px.base64Encode("") == "")
+check("base64 round trip", px.base64Decode(px.base64Encode(string.char(table.unpack({7, 0, 255, 128, 64, 3, 9})))) == string.char(7, 0, 255, 128, 64, 3, 9))
 
 local s = Sprite(4, 2, ColorMode.INDEXED)
 s.palettes[1]:setColor(1, Color(200, 100, 50, 255))

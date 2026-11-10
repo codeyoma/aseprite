@@ -135,6 +135,13 @@ ase check hero.aseprite          # exits 1 when there are errors
 ase render hero.aseprite --sheet hero.png --data hero.json
 ```
 
+Batch work on files, with no window: `--headless` (or `ASEPRITE_AGENT_MODE=headless`) runs `state`, `snapshot`, `check` and `timeline` over many files in one long-lived headless Aseprite, about 5x faster than one `aseprite -b` per file. It is only used when asked for, never because the window is missing, and it refuses a file the running Aseprite has open.
+
+```bash
+ase --headless snapshot sprites/*.aseprite -o previews/
+ase --headless check sprites/*.aseprite --json
+```
+
 Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to do>` and exit 1. Set `ASEPRITE_BIN` if `aseprite` isn't on PATH.
 
 ## Tools
