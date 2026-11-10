@@ -65,6 +65,7 @@ export class AcpRuntime implements Runtime {
   readonly name = "acp";
   private runners = new Map<string, AcpRunner>();
   private sinks = new Map<string, TurnSink>();
+  private cwds = new Map<string, string>(); // each runner's working directory
   private current?: string;
 
   constructor(private readonly endpoint: HttpEndpoint, private readonly recordDir?: string) {}
@@ -77,6 +78,14 @@ export class AcpRuntime implements Runtime {
     const developer = turn.mode === "developer";
     this.sinks.set(turn.key, sink);
     let runner = this.runners.get(turn.key);
+    // A new developer worktree: a new agent there, and a new conversation
+    // (the old one's files were in the other folder).
+    if (runner && this.cwds.get(turn.key) !== turn.cwd) {
+      runner.dispose();
+      this.runners.delete(turn.key);
+      runner = undefined;
+      turn = { ...turn, conversationId: undefined };
+    }
     if (!runner) {
       const record = this.recordDir ? join(this.recordDir, `acp-${turn.key.replace(":", "-")}-${stamp()}.jsonl`) : undefined;
       // Events go to the sink of the turn running on this key.
@@ -85,6 +94,7 @@ export class AcpRuntime implements Runtime {
         onPermission: (req) => this.sinks.get(turn.key)?.permission(req) ?? Promise.resolve({ outcome: "cancelled" } as PermissionOutcome),
       }, record, developer);
       this.runners.set(turn.key, runner);
+      this.cwds.set(turn.key, turn.cwd);
     }
     this.current = turn.key;
     try {

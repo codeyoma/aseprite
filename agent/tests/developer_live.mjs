@@ -1,7 +1,9 @@
 // Live test of Developer mode (#28), end to end: the agent changes the chat
-// panel's placeholder on a dev/ branch, Rebuild & Relaunch restarts
-// Aseprite with the change, the open sprite and the conversation survive,
-// and the conversation continues. Discard returns to the original branch.
+// panel's placeholder in its own worktree on a dev/ branch while this
+// checkout stays on its branch; Apply (Rebuild & Relaunch) fast-forwards the
+// branch and restarts Aseprite with the change; the open sprite and the
+// conversation survive and the conversation continues. Discard undoes the
+// applied commits. Needs this checkout clean (commit your work first).
 // Run with Aseprite open from build/bin:  node agent/tests/developer_live.mjs [claude|codex]
 // It leaves a dev/ branch with the agent's commit; delete it afterwards.
 import { spawnSync } from "node:child_process";
@@ -13,6 +15,8 @@ const NEW_TEXT = "Ask the pixel wizard...";
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 const branch = () => spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim();
 const startBranch = branch();
+const startSha = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+const devBranches = () => spawnSync("git", ["branch", "--list", "dev/*", "--sort=-committerdate", "--format=%(refname:short)"], { cwd: repo, encoding: "utf8" }).stdout.trim().split("\n").filter(Boolean);
 
 const { c, lua, chat, sleep, check, done } = await live({ provider });
 const answers = `AsepriteAgent.setDeveloperAnswers(function() return true end)
@@ -31,19 +35,23 @@ await chat(
   `Change the chat input's placeholder (PLACEHOLDER in agent/extension/chat_panel.lua) to "${NEW_TEXT}" and commit it. Only that change.`,
   { mode: "developer" },
 );
-const devBranch = branch();
-check("the agent works on a dev/ branch", devBranch.startsWith("dev/"), devBranch);
-const grep = spawnSync("git", ["grep", "-c", NEW_TEXT, "HEAD", "--", "agent/extension/chat_panel.lua"], { cwd: repo, encoding: "utf8" });
-check("the change is committed on it", grep.status === 0, grep.stdout);
-check("not loaded before relaunch", (await lua("return AsepriteAgent.placeholder()")) === before);
+check("this checkout stays on its branch", branch() === startBranch, branch());
+const devBranch = devBranches()[0] ?? "";
+const grep = spawnSync("git", ["grep", "-c", NEW_TEXT, devBranch, "--", "agent/extension/chat_panel.lua"], { cwd: repo, encoding: "utf8" });
+check("the agent committed the change on its dev/ branch", devBranch.startsWith("dev/") && grep.status === 0, { devBranch, out: grep.stdout });
+check("the checkout's files are untouched", spawnSync("git", ["grep", "-q", NEW_TEXT, "--", "agent/extension/chat_panel.lua"], { cwd: repo }).status !== 0);
+check("not loaded before applying", (await lua("return AsepriteAgent.placeholder()")) === before);
 
 // Apply: only Lua changed, so this relaunches without a build.
+const tracked = spawnSync("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+check("this checkout has no uncommitted changes (Apply needs that)", !tracked, tracked);
 await lua("return AsepriteAgent.applyDevChanges()");
 await sleep(5000); // Aseprite quits; the bridge starts it again
 for (let t = 0; t < 30 && (await c.call("get_state")).isError; t++) await sleep(2000);
 await sleep(3000);
 await lua(`${answers} return true`);
 check("the change is live after the relaunch", (await lua("return AsepriteAgent.placeholder()")) === NEW_TEXT);
+check("applying moved this checkout's branch to the agent's commit", branch() === startBranch && spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim() !== startSha);
 const px = await lua(`local s = app.sprite if not s then return nil end
   local img = Image(s.width, s.height, ColorMode.RGB); img:drawSprite(s, 1)
   return app.pixelColor.rgbaG(img:getPixel(5, 6))`);
@@ -57,7 +65,8 @@ check("the conversation continues", last.includes("pixel wizard"), last);
 
 await lua("return AsepriteAgent.discardDevChanges()");
 await sleep(2000);
-check("discard returns to the original branch", branch() === startBranch, branch());
+const now = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).stdout.trim();
+check("discard undoes the applied commits", branch() === startBranch && now === startSha, { branch: branch(), now, startSha });
 
 console.log(`(dev branch left for inspection: ${devBranch})`);
 done("DEVELOPER");

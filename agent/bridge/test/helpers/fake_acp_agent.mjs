@@ -31,7 +31,7 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
   }
   const { id, method, params } = msg;
   if (method === "initialize") return send({ id, result: { protocolVersion: 1, agentCapabilities: { loadSession: false } } });
-  if (method === "session/new") return send({ id, result: { sessionId: `fake-session-${nextSession++}` } });
+  if (method === "session/new") return send({ id, result: { sessionId: `fake-session-${process.pid}-${nextSession++}` } });
   if (method === "session/set_mode") return send({ id, result: {} });
   if (method === "session/cancel") {
     const p = prompts.get(params.sessionId);

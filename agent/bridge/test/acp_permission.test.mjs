@@ -85,3 +85,29 @@ test("Stop cancels a pending permission and the turn", async () => {
     chat.dispose();
   }
 });
+
+test("a new developer worktree gets a new agent and a new conversation", async () => {
+  const dirs = [mkdtempSync(join(tmpdir(), "wt-a-")), mkdtempSync(join(tmpdir(), "wt-b-"))];
+  let n = 0;
+  const events = [];
+  const chat = new ChatRunner({ notify: (_m, ev) => events.push(ev) }, { url: "http://x/mcp", token: "t" },
+    { developer: () => ({ cwd: dirs[Math.min(n++, 1)], branch: "dev/x" }) });
+  const turn = async (sessions) => {
+    events.length = 0;
+    chat.send({ prompt: "wait a bit", provider: PROVIDERS.claude, mode: "developer", sessions });
+    await new Promise((r) => setTimeout(r, 300));
+    chat.stop();
+    for (let i = 0; i < 50 && chat.busy; i++) await new Promise((r) => setTimeout(r, 20));
+    return events.find((e) => e.type === "session")?.sessionId;
+  };
+  try {
+    const before = readFileSync(logFile, "utf8").split("\n").filter((l) => l.includes('"method":"initialize"')).length;
+    const first = await turn({});
+    const again = await turn({ "claude:dev": first });
+    assert.ok(first && again && first !== again, `a new conversation in the new worktree (${first}, ${again})`);
+    const inits = readFileSync(logFile, "utf8").split("\n").filter((l) => l.includes('"method":"initialize"')).length - before;
+    assert.equal(inits, 2, "the agent restarted in the new folder");
+  } finally {
+    chat.dispose();
+  }
+});

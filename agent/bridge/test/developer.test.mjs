@@ -1,11 +1,12 @@
-// Developer mode (#28): branches, status, discard, and the agents' tools.
+// Developer mode (#28): the agent's worktree, status, apply, discard, and the agents' tools.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { currentBranch, devStatus, discard, ensureDevBranch, slug } from "../dist/developer.js";
+process.env.ASEPRITE_AGENT_DEV_DIR = mkdtempSync(join(tmpdir(), "devdir-"));
+const { applyDev, currentBranch, devState, devStatus, discard, ensureDevWorktree, slug } = await import("../dist/developer.js");
 import { chatMode, conversationKey } from "../dist/chat.js";
 import { PROVIDERS } from "../dist/providers/index.js";
 
@@ -28,28 +29,90 @@ test("slug", () => {
   assert.equal(slug("!!!"), "change");
 });
 
-test("a developer turn runs on a dev/ branch that remembers its base", () => {
-  const dir = repo();
-  const b = ensureDevBranch(dir, "Make the placeholder friendlier", new Date("2026-11-10T00:00:00Z"));
-  assert.equal(b, "dev/20261110-make-the-placeholder-friendlier");
-  assert.equal(currentBranch(dir), b);
-  assert.equal(ensureDevBranch(dir, "another request"), b, "stays on the dev branch");
+const read = (...p) => readFileSync(join(...p), "utf8");
+const commitAll = (cwd, msg) => { git(cwd, "add", "-A"); git(cwd, "commit", "-q", "-m", msg); };
 
-  writeFileSync(join(dir, "agent", "extension", "chat_panel.lua"), "local P = 'Hi'\n");
+test("the agent works in its own worktree; the user's checkout stays put", () => {
+  const dir = repo();
+  const w = ensureDevWorktree(dir, "Make the placeholder friendlier", new Date("2026-11-10T00:00:00Z"));
+  assert.equal(w.branch, "dev/20261110-make-the-placeholder-friendlier");
+  assert.notEqual(w.cwd, dir);
+  assert.equal(currentBranch(dir), "agent", "the user's checkout stays on its branch");
+  assert.equal(currentBranch(w.cwd), w.branch);
+  assert.deepEqual(ensureDevWorktree(dir, "another request"), w, "the same worktree for the next turn");
+
+  writeFileSync(join(w.cwd, "agent", "extension", "chat_panel.lua"), "local P = 'Hi'\n");
   let s = devStatus(dir);
-  assert.deepEqual([s.branch, s.base, s.files, s.needsBuild], [b, "agent", ["agent/extension/chat_panel.lua"], false]);
-  assert.match(s.diffStat, /chat_panel\.lua \| 2/, "the base branch is named like the agent/ folder");
-  mkdirSync(join(dir, "src"));
-  writeFileSync(join(dir, "src", "x.cpp"), "int x;\n");
+  assert.deepEqual([s.branch, s.base, s.files, s.uncommitted, s.needsBuild], [w.branch, "agent", ["agent/extension/chat_panel.lua"], ["agent/extension/chat_panel.lua"], false]);
+  assert.equal(read(dir, "agent", "extension", "chat_panel.lua"), "local P = 'Draw'\n", "the user's files are untouched");
+  assert.throws(() => applyDev(dir), /hasn't committed/);
+
+  commitAll(w.cwd, "friendlier");
+  mkdirSync(join(w.cwd, "src"));
+  writeFileSync(join(w.cwd, "src", "x.cpp"), "int x;\n");
+  commitAll(w.cwd, "c++");
   s = devStatus(dir);
-  assert.ok(s.needsBuild && s.files.includes("src/x.cpp"));
+  assert.ok(s.needsBuild && s.files.includes("src/x.cpp") && !s.uncommitted.length);
+  assert.match(s.diffStat, /chat_panel\.lua \| 2/, "the base branch is named like the agent/ folder");
+});
+
+test("apply fast-forwards the user's branch; discard undoes it while nothing changed since", () => {
+  const dir = repo();
+  const before = git(dir, "rev-parse", "HEAD").stdout.trim();
+  const w = ensureDevWorktree(dir, "fix");
+  writeFileSync(join(w.cwd, "agent", "extension", "chat_panel.lua"), "local P = 'Hi'\n");
+  commitAll(w.cwd, "hi");
+
+  // The user's checkout must be on its branch with no tracked changes.
+  writeFileSync(join(dir, "agent", "extension", "chat_panel.lua"), "local P = 'mine'\n");
+  assert.throws(() => applyDev(dir), /uncommitted changes/);
+  git(dir, "checkout", "--", ".");
+  writeFileSync(join(dir, "notes.txt"), "untracked files are fine\n");
+
+  const a = applyDev(dir);
+  assert.equal(a.commits, 1);
+  assert.equal(read(dir, "agent", "extension", "chat_panel.lua"), "local P = 'Hi'\n");
+  assert.equal(devState(dir).phase, "applied");
+  // More work, applied again.
+  writeFileSync(join(w.cwd, "agent", "extension", "chat_panel.lua"), "local P = 'Hello'\n");
+  commitAll(w.cwd, "hello");
+  assert.equal(applyDev(dir).commits, 1);
+  assert.equal(applyDev(dir).commits, 0, "nothing new");
 
   const d = discard(dir);
-  assert.equal(d.branch, "agent");
+  assert.ok(d.reverted);
+  assert.equal(git(dir, "rev-parse", "HEAD").stdout.trim(), before, "back where it was before the first apply");
+  assert.ok(existsSync(join(dir, "notes.txt")), "untracked files survive");
+  assert.ok(!existsSync(w.cwd), "the worktree is gone");
+  assert.equal(devState(dir), undefined);
+  assert.ok(git(dir, "rev-parse", "--verify", w.branch).status === 0, "the dev branch keeps the commits");
+});
+
+test("apply and discard refuse when the user's branch moved", () => {
+  const dir = repo();
+  const w = ensureDevWorktree(dir, "a change");
+  writeFileSync(join(w.cwd, "a.txt"), "agent\n");
+  commitAll(w.cwd, "agent work");
+  writeFileSync(join(dir, "b.txt"), "user\n");
+  commitAll(dir, "user work");
+  assert.throws(() => applyDev(dir), /moved since the agent started; ask it to rebase/);
+  git(w.cwd, "rebase", "-q", "agent");
+  applyDev(dir);
+  writeFileSync(join(dir, "c.txt"), "more user work\n");
+  commitAll(dir, "after apply");
+  assert.throws(() => discard(dir), /can't be undone safely/);
+});
+
+test("discard before apply stashes the agent's uncommitted work", () => {
+  const dir = repo();
+  const w = ensureDevWorktree(dir, "try");
+  writeFileSync(join(w.cwd, "draft.lua"), "-- draft\n");
+  const d = discard(dir);
+  assert.equal(d.stash, "stash@{0}");
+  assert.ok(!d.reverted);
+  assert.match(git(dir, "stash", "list").stdout, /aseprite-agent: discarded from dev\//);
+  assert.ok(!existsSync(w.cwd));
   assert.equal(currentBranch(dir), "agent");
-  assert.equal(readFileSync(join(dir, "agent", "extension", "chat_panel.lua"), "utf8"), "local P = 'Draw'\n");
-  assert.ok(!existsSync(join(dir, "src", "x.cpp")));
-  assert.match(git(dir, "stash", "list").stdout, /aseprite-agent: discarded from dev\//, "changes are kept in a stash");
 });
 
 test("developer conversations and tools are separate from normal ones", () => {

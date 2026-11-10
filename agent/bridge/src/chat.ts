@@ -13,7 +13,7 @@ import { sessionDir } from "./session.js";
 import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
 import { catalog, skillContext } from "./guide.js";
 import { SavedCommands } from "./saved_commands.js";
-import { build, devStatus, discard, DEVELOPER_PROMPT, ensureDevBranch, launch, asepriteBinary, repoRoot } from "./developer.js";
+import { applyDev, build, devStatus, discard, DEVELOPER_PROMPT, ensureDevWorktree, launch, asepriteBinary, repoRoot } from "./developer.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
 import type { ChatMode, PermissionOutcome, PermissionRequest } from "./acp.js";
 import type { PlanEntry } from "./providers/acp_mapper.js";
@@ -160,7 +160,7 @@ export class ChatRunner {
     this.developer = opts.developer ?? ((prompt) => {
       const root = repoRoot();
       if (!root) throw new Error("Developer mode needs the bridge to run from a clone of the Aseprite fork");
-      return { cwd: root, branch: ensureDevBranch(root, prompt) };
+      return ensureDevWorktree(root, prompt);
     });
   }
 
@@ -261,7 +261,7 @@ export class ChatRunner {
     if (mode === "developer") {
       const dev = this.developer(skills.message);
       cwd = dev.cwd;
-      this.emit({ type: "status", text: `Developer mode on branch ${dev.branch}` });
+      this.emit({ type: "status", text: `Developer mode on branch ${dev.branch} (its own worktree; your checkout is untouched until you apply)` });
     }
     if (skills.used.length) this.emit({ type: "status", text: `Using skill: ${skills.used.join(", ")}` });
 
@@ -332,6 +332,8 @@ export function developerMethods(chat: ChatRunner, link?: AsepriteLink): Record<
   };
   return {
     "dev.status": () => devStatus(root()),
+    // Fast-forwards the user's branch to the agent's work (before a rebuild or relaunch).
+    "dev.apply": () => applyDev(root()),
     // Answers at once; progress and the result arrive as chat events ("status", then "build").
     "dev.build": () => {
       const r = root();

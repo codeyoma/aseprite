@@ -1109,7 +1109,12 @@ return function(deps)
     deps.request("dev.status", {}, function(st, err)
       if err then app.tip(err.message or "Developer mode is not available"); return end
       if #st.files == 0 then app.tip("The agent hasn't changed anything yet"); return end
-      local lines = { "Branch " .. st.branch .. ": " .. #st.files .. " file(s) changed" }
+      if st.uncommitted and #st.uncommitted > 0 then
+        app.tip("The agent hasn't committed " .. #st.uncommitted .. " file(s) yet; ask it to commit, then apply")
+        return
+      end
+      local lines = { "Branch " .. st.branch .. ": " .. #st.files .. " file(s) changed",
+        "Applying moves your " .. (st.base or "branch") .. " branch to the agent's commits." }
       for i = 1, math.min(#st.files, 10) do lines[#lines + 1] = "  " .. st.files[i] end
       if #st.files > 10 then lines[#lines + 1] = "  ..." end
       lines[#lines + 1] = st.needsBuild and "C++ changed: Aseprite will be rebuilt, then restarted." or "Only scripts changed: Aseprite will restart."
@@ -1118,13 +1123,27 @@ return function(deps)
       else go = app.alert{ title = "Apply the agent's changes", text = lines,
         buttons = { st.needsBuild and "Rebuild && Relaunch" or "Relaunch", "Cancel" } } == 1 end
       if not go then return end
-      if st.needsBuild then
-        conv:note("status", "Building Aseprite...")
-        changed()
-        deps.request("dev.build", {}, function(_, e2) if e2 then conv:note("error", e2.message); changed() end end)
-      else
-        Panel.relaunch()
-      end
+      -- The agent works in its own worktree: bring its commits into the
+      -- user's checkout first, then build or relaunch from there.
+      deps.request("dev.apply", {}, function(applied, e1)
+        if e1 then
+          -- In the log too, so the agent (and tests) can see why.
+          conv:note("error", "Couldn't apply: " .. (e1.message or tostring(e1)))
+          changed()
+          app.alert{ title = "Apply the agent's changes", text = e1.message or tostring(e1) }
+          return
+        end
+        if applied and applied.commits and applied.commits > 0 then
+          conv:note("status", "Applied " .. applied.commits .. " commit(s) to " .. (st.base or "your branch") .. ".")
+        end
+        if st.needsBuild then
+          conv:note("status", "Building Aseprite...")
+          changed()
+          deps.request("dev.build", {}, function(_, e2) if e2 then conv:note("error", e2.message); changed() end end)
+        else
+          Panel.relaunch()
+        end
+      end)
     end)
     return true
   end
@@ -1142,14 +1161,16 @@ return function(deps)
     if Panel.confirmApply then yes = Panel.confirmApply({ discard = true })
     else
       yes = app.alert{ title = "Discard the agent's changes", text = {
-        "Uncommitted changes go into a git stash (git stash pop brings them back)",
-        "and the repository returns to the branch it was on. Commits on the dev/ branch stay.",
+        "The agent's worktree is removed; its uncommitted changes go into a git stash",
+        "(git stash pop brings them back) and the commits stay on its dev/ branch.",
+        "If you already applied them, your branch goes back to where it was.",
       }, buttons = { "Discard", "Cancel" } } == 1
     end
     if not yes then return false end
     deps.request("dev.discard", {}, function(r, err)
       if err then app.alert{ title = "Discard", text = err.message or tostring(err) }; return end
-      conv:note("status", "Discarded the changes (" .. (r.stash or "nothing uncommitted") .. "); back on " .. r.branch .. ".")
+      conv:note("status", "Discarded the agent's work (" .. (r.stash or "nothing uncommitted") .. ")"
+        .. (r.reverted and ("; " .. r.branch .. " is back where it was") or "") .. ".")
       changed()
     end)
     return true

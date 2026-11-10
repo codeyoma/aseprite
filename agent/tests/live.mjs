@@ -66,8 +66,8 @@ export async function live({ provider = "claude", bridge = {} } = {}) {
 
   /** Prints the summary line and exits (1 when a check failed). */
   const done = (label) => {
-    // A Developer mode turn switches the repository to a dev/ branch; work
-    // committed afterwards would land there. Only developer tests may.
+    // Work committed after a test must land on the branch it started on;
+    // nothing in a live test should switch it (Developer mode uses its own worktree).
     const now = branch();
     if (now !== startBranch && !/^developer/.test(label.toLowerCase())) {
       check(`the repository stays on ${startBranch} (now ${now}: a turn ran in Developer mode)`, false);
