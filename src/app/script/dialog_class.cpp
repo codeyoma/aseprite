@@ -29,6 +29,7 @@
 #include "app/ui/filename_field.h"
 #include "app/ui/main_window.h"
 #include "app/ui/script_panel.h"
+#include "app/ui/skin/skin_theme.h"
 #include "app/ui/window_with_hand.h"
 #include "base/fs.h"
 #include "base/paths.h"
@@ -60,6 +61,7 @@
 #include <map>
 #include <stack>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #define TRACE_DIALOG(...) // TRACEARGS(__VA_ARGS__)
@@ -680,6 +682,26 @@ void set_widget_flags(lua_State* L, int idx, Widget* widget)
   type = lua_getfield(L, idx, "visible");
   if (type != LUA_TNIL) {
     widget->setVisible(lua_toboolean(L, -1));
+  }
+  lua_pop(L, 1);
+  // Font: font = "system" uses the operating system's UI font (with its
+  // fallbacks for scripts like Korean), sized by fontsize (default 12).
+  type = lua_getfield(L, idx, "font");
+  if (type == LUA_TSTRING && std::string_view(lua_tostring(L, -1)) == "system") {
+    float size = 12.0f;
+    if (lua_getfield(L, idx, "fontsize") == LUA_TNUMBER)
+      size = float(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+    if (auto* theme = skin::SkinTheme::instance()) {
+      if (auto font = theme->fontMgr()->defaultFont(size * ui::guiscale())) {
+        widget->setFont(font);
+        // A text box is wrapped in a view; the font belongs to the box.
+        if (auto* view = dynamic_cast<ui::View*>(widget)) {
+          if (auto* attached = view->attachedWidget())
+            attached->setFont(font);
+        }
+      }
+    }
   }
   lua_pop(L, 1);
 }

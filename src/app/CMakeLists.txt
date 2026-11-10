@@ -603,6 +603,7 @@ target_sources(app-lib PRIVATE
   transformation.cpp
   ui/alpha_entry.cpp
   ui/alpha_slider.cpp
+  ui/agent_button.cpp
   ui/app_menuitem.cpp
   ui/backup_indicator.cpp
   ui/best_fit_criteria_selector.cpp

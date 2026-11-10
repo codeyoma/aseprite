@@ -857,6 +857,7 @@ void MainWindow::dockScriptPanel(ScriptPanel* panel)
   const gfx::Size size = horizontal ? gfx::Size(extent, 0) : gfx::Size(0, extent);
 
   m_customizableDock->dockRelativeTo(m_workspace.get(), side, panel, size);
+  updateAgentButton();
   layout();
   invalidate();
 }
@@ -873,6 +874,19 @@ void MainWindow::undockScriptPanel(ScriptPanel* panel)
     layout();
     invalidate();
   }
+  updateAgentButton();
+}
+
+void MainWindow::updateAgentButton()
+{
+  if (!m_layoutSelector)
+    return;
+  bool open = false;
+  for (const auto* panel : m_scriptPanels) {
+    if (panel->panelId() == AgentButton::kPanelId && panel->parent())
+      open = true;
+  }
+  m_layoutSelector->agentButton()->setSelected(open);
 }
 
 void MainWindow::redockScriptPanels()
@@ -884,6 +898,7 @@ void MainWindow::redockScriptPanels()
     if (!panel->parent())
       dockScriptPanel(panel);
   }
+  updateAgentButton();
 }
 
 void MainWindow::rememberScriptPanelSides()

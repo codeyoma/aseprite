@@ -8,6 +8,7 @@
 #define APP_UI_LAYOUT_SELECTOR_H_INCLUDED
 #pragma once
 
+#include "app/ui/agent_button.h"
 #include "app/ui/dockable.h"
 #include "app/ui/icon_button.h"
 #include "app/ui/layout.h"
@@ -53,6 +54,9 @@ public:
 
   LayoutPtr activeLayout() const;
 
+  // The "AI" button that toggles the AI Agent chat panel.
+  AgentButton* agentButton() { return &m_agentButton; }
+
   // Activates a layout by id (Layout::kDefault, Layout::kMirroredDefault or
   // a user layout id), like choosing it in the layout combobox.
   void switchToLayout(const std::string& layoutId);
@@ -85,6 +89,7 @@ private:
   std::string m_activeLayoutId;
   ui::HBox m_top, m_center, m_bottom;
   LayoutComboBox m_comboBox;
+  AgentButton m_agentButton;
   IconButton m_button;
   Widget* m_notifications = nullptr;
   gfx::Size m_startSize;

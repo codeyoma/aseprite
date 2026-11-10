@@ -60,7 +60,7 @@ const layers = state.activeSprite?.layers ?? [];
 const shadow = layers.find((l) => l.name === "Shadow");
 const entries = JSON.parse(textOf(await c.call("execute_lua", { transaction: false, code: `
   local out = {}
-  for _, e in ipairs(AsepriteAgent.entries()) do out[#out + 1] = e.kind .. ": " .. e.text end
+  for _, e in ipairs(AsepriteAgent.entries()) do out[#out + 1] = e.kind .. ": " .. (e.text or "") end
   return out` })).replace(/^[^{]*/, "")).value;
 console.log("panel:", entries.slice(-4).map((l) => l.slice(0, 120)).join("\n       "));
 const ok = finished && shadow && shadow.opacity >= 127 && shadow.opacity <= 128 && layers[layers.length - 1].name === "Shadow";

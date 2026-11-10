@@ -28,7 +28,7 @@ while (busy && Date.now() - started < 300_000) {
 const entries = await lua(`
   local out = {}
   for _, e in ipairs(AsepriteAgent.entries()) do
-    out[#out + 1] = e.kind .. (e.status and ("[" .. e.status .. "]") or "") .. ": " .. e.text
+    out[#out + 1] = e.kind .. (e.status and ("[" .. e.status .. "]") or "") .. ": " .. (e.text or (e.secs and (e.secs .. "s")) or "")
   end
   return out`);
 console.log(`--- panel log (${((Date.now() - started) / 1000).toFixed(0)}s) ---`);

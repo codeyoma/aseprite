@@ -61,6 +61,9 @@ Changes to Aseprite's C++ source are for personal use or for proposing a contrib
 - `src/app/ui/layout.cpp`: script panels are skipped when saving layouts, and unknown elements are skipped when loading, so layout files stay compatible with stock Aseprite.
 - New command `SetWorkspaceLayout{ layout = "default" | "mirrored" | <user layout id> }` switches layouts without the selector UI, for scripts and agents.
 - `dlg:textedit{ id, text, placeholder, wordwrap = true, minlines = 1, maxlines = 5, onchange, onsubmit }` exposes `ui::TextEdit` to scripts. `ui::TextEdit` gained soft word wrap (rows with a `softBreak` flag; the widget text keeps only real newlines) and an optional Enter-to-submit mode (Shift+Enter inserts a newline). The box grows with its content up to `maxlines`.
+- `src/app/ui/agent_button.h/.cpp`: the **AI** button inside the layout selector row runs the extension's `AgentChat` command (toggle) and is highlighted while the panel is docked.
+- Script widgets accept `font = "system"` (and `fontsize`), which uses the OS UI font with its fallbacks.
+- `laf` (fork, branch `agent-ime`): the macOS view is an `NSTextInputClient`, so input methods such as Korean compose correctly in every text widget.
 - Stock Aseprite ignores the `dockable` and `id` fields, so `chat_panel.lua` works there as a floating dialog.
 
 Verified live: docking at startup, switching to the mirrored layout and back, closing with `dlg:close()`, reopening, typing into the docked entry (the active tool stays unchanged), a full chat while docked, and the side and size surviving a restart.

@@ -309,6 +309,7 @@ LayoutSelector::LayoutSelector(TooltipManager* tooltipManager, Widget* notificat
   addChild(&m_top);
   addChild(&m_center);
   addChild(&m_bottom);
+  m_center.addChild(&m_agentButton);
   m_center.addChild(&m_comboBox);
   m_center.addChild(&m_button);
   m_center.addChild(m_notifications);
@@ -399,6 +400,7 @@ void LayoutSelector::onInitTheme(ui::InitThemeEvent& ev)
   m_bottom.noBorderNoChildSpacing();
   m_comboBox.noBorderNoChildSpacing();
   m_button.noBorderNoChildSpacing();
+  m_agentButton.noBorderNoChildSpacing();
 
   m_bottom.setStyle(theme->styles.tabBottom());
   m_bottom.setMinSize(gfx::Size(0, theme->dimensions.tabsBottomHeight()));
@@ -496,6 +498,7 @@ void LayoutSelector::closeComboBox()
 void LayoutSelector::setupTooltips(TooltipManager* tooltipManager)
 {
   tooltipManager->addTooltipFor(&m_button, Strings::main_window_layout(), TOP);
+  tooltipManager->addTooltipFor(&m_agentButton, "AI Agent chat", TOP);
 }
 
 void LayoutSelector::setActiveLayoutId(const std::string& layoutId)

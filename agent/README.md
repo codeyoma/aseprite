@@ -42,7 +42,11 @@ agent/extension/  (Aseprite Lua extension)
 
 ## Chat panel inside Aseprite
 
-**File > Scripts > AI Agent > Open Chat Panel** opens a panel where you type requests, like pen.dev's chat. In this fork it docks inside the main window next to the canvas (dockable script dialogs, see [docs/native-panel.md](docs/native-panel.md)); in stock Aseprite it floats. The input box wraps and grows up to five lines; **Enter** sends and **Shift+Enter** adds a line (on stock Aseprite it is a single-line entry). Choose `claude` or `codex`; the bridge runs that CLI with your own login, shows each tool call as it happens, and keeps the conversation going until you click **New chat**. Every message includes what you have selected (layer, frame, timeline range, pixel selection), so "this layer" and "the selected frames" work.
+Click the **AI** button at the top right (left of the workspace layout button), or use **File > Scripts > AI Agent > Toggle Chat Panel**. In this fork the panel docks next to the canvas (see [docs/native-panel.md](docs/native-panel.md)); in stock Aseprite it floats.
+
+Your messages appear as bubbles on the right. Each agent turn shows its steps the way Claude Code does: "Thought for 3s", one row per tool call with a check mark when it succeeds, the reply, and "Worked for 14s". Click a row to see the tool's input and output. The input box wraps and grows up to five lines; **Enter** sends and **Shift+Enter** adds a line. Text uses the system font, and Korean and other input methods compose normally.
+
+Choose `claude` or `codex`; the bridge runs that CLI with your own login and keeps the conversation going until you click **New chat**. Every message includes what you have selected (layer, frame, timeline range, pixel selection), so "this layer" and "the selected frames" work.
 
 ![chat panel](demos/output/7-chat-panel.png)
 

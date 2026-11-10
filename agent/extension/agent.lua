@@ -832,6 +832,7 @@ function init(plugin)
     isPanelOpen = function() return Panel.isOpen() end,
     promptText = function() return Panel.promptText() end,
     setPrompt = function(text) Panel.setPrompt(text) end,
+    expandAll = function(state) Panel.expandAll(state) end,
   }
 
   plugin:newMenuGroup{
@@ -840,11 +841,14 @@ function init(plugin)
     group = "file_scripts",
   }
 
+  -- Also run by the "AI" button next to the workspace layout button.
   plugin:newCommand{
     id = "AgentChat",
-    title = "Open Chat Panel",
+    title = "Toggle Chat Panel",
     group = "ai_agent_menu",
-    onclick = function() Panel.open() end,
+    onclick = function()
+      if Panel.isOpen() then Panel.close() else Panel.open() end
+    end,
   }
 
   plugin:newCommand{

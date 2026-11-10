@@ -151,6 +151,7 @@ private:
   Dock* m_customizableDock;
   std::vector<ScriptPanel*> m_scriptPanels;
   void redockScriptPanels();
+  void updateAgentButton();
   void rememberScriptPanelSides();
   std::unique_ptr<Widget> m_customizableDockPlaceholder;
   std::unique_ptr<MainMenuBar> m_menuBar;
