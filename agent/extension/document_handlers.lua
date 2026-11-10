@@ -727,7 +727,8 @@ end
 -- check: mechanical pixel-art checks (#29)
 ---------------------------------------------------------------------------
 
-local CHECK_RULES = { "off-palette", "orphan", "semi-transparent", "empty-cel", "frame-duration", "outside-canvas" }
+local CHECK_RULES = { "off-palette", "orphan", "semi-transparent", "empty-cel", "frame-duration", "outside-canvas",
+                      "duplicate-frame", "ground-jitter" }
 local CHECK_MAX_PIXELS = 20            -- coordinates listed per finding
 local CHECK_PIXEL_BUDGET = 1000000     -- skip pixel rules on huge documents
 
@@ -935,6 +936,55 @@ local function check(params)
         add{ rule = "frame-duration", severity = "warning", tag = tag.name, frames = odd,
              fix = string.format("Frames %s differ from the tag's usual %d ms; set them to %d ms unless the hold is deliberate",
                table.concat(odd, ","), math.floor(median * 1000 + 0.5), math.floor(median * 1000 + 0.5)) }
+      end
+    end
+  end
+
+  -- Animation rules (#42): frames that repeat inside a tag, and feet that
+  -- jitter (the lowest row moves by 1-3 px; more is deliberate motion).
+  if enabled["duplicate-frame"] or enabled["ground-jitter"] then
+    local cache = {}
+    local function composite(f)
+      if not cache[f] then
+        local img = Image(sprite.width, sprite.height, ColorMode.RGB)
+        img:drawSprite(sprite, f)
+        cache[f] = img
+      end
+      return cache[f]
+    end
+    local function lowestRow(img)
+      for y = img.height - 1, 0, -1 do
+        for x = 0, img.width - 1 do
+          if app.pixelColor.rgbaA(img:getPixel(x, y)) > 0 then return y end
+        end
+      end
+    end
+    for _, tag in ipairs(sprite.tags) do
+      local from, to = tag.fromFrame.frameNumber, tag.toFrame.frameNumber
+      if enabled["duplicate-frame"] and to > from then
+        local dups = {}
+        for f = from + 1, to do
+          if composite(f):isEqual(composite(f - 1)) then dups[#dups + 1] = f end
+        end
+        if #dups > 0 then
+          add{ rule = "duplicate-frame", severity = "warning", tag = tag.name, frames = dups,
+               fix = string.format("Frames %s repeat the frame before them in tag %s; draw the next pose, or remove the frame and lengthen the one before",
+                 table.concat(dups, ","), tag.name) }
+        end
+      end
+      if enabled["ground-jitter"] and to > from then
+        local rows, lo, hi = {}, math.huge, -math.huge
+        for f = from, to do
+          local r = lowestRow(composite(f))
+          if r then rows[#rows + 1] = { f = f, r = r }; lo = math.min(lo, r); hi = math.max(hi, r) end
+        end
+        if hi - lo >= 1 and hi - lo <= 3 then
+          local off = {}
+          for _, x in ipairs(rows) do if x.r ~= hi then off[#off + 1] = x.f end end
+          add{ rule = "ground-jitter", severity = "warning", tag = tag.name, frames = off,
+               fix = string.format("The feet are %d px higher in frames %s of tag %s; keep the lowest pixel on row %d unless the character leaves the ground",
+                 hi - lo, table.concat(off, ","), tag.name, hi) }
+        end
       end
     end
   end

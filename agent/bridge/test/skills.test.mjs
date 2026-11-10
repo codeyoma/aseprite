@@ -45,12 +45,13 @@ test("user skills are listed and readable; a same-name skill overrides the built
 
 test("trigger words inline short skills and hint long ones", () => {
   const r = skillContext("Shade the sky with a gradient");
-  assert.deepEqual(r.used, ["dithering"]);
+  // The built-in Shade and outline skill also matches "shade".
+  assert.ok(r.used.includes("dithering") && r.used.includes("shade-sprite"), r.used.join());
   assert.match(r.context, /<skill name="dithering" note="matched 'gradient'/);
   assert.equal(r.message, "Shade the sky with a gradient");
   const long = skillContext("add an outline");
   assert.ok(readGuide("outline").length > INLINE_SKILL_CHARS);
-  assert.match(long.context, /^Relevant skill: outline \(My outline style\)\. Call read_guide\("outline"\)/);
+  assert.match(long.context, /Relevant skill: outline \(My outline style\)\. Call read_guide\("outline"\)/);
   assert.deepEqual(skillContext("draw a cat").used, []);
   assert.deepEqual(skillContext("redithering").used, [], "triggers match at word starts");
 });

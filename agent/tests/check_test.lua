@@ -123,4 +123,27 @@ do
   s:close()
 end
 
+-- Animation rules (#42).
+do
+  local a = Sprite(8, 8, ColorMode.RGB)
+  for i = 1, 3 do a:newFrame() end
+  local function body(f, y0)
+    local img = Image(8, 8, ColorMode.RGB)
+    for y = y0, y0 + 3 do img:drawPixel(3, y, Color(255, 0, 0)); img:drawPixel(4, y, Color(255, 0, 0)) end
+    img:drawPixel(f % 2 == 0 and 2 or 5, y0, Color(255, 0, 0))
+    a.layers[1]:cel(f).image = img
+  end
+  body(1, 4); body(2, 4); body(3, 3); body(4, 4)
+  a.layers[1]:cel(2).image = a.layers[1]:cel(1).image:clone()   -- frame 2 repeats frame 1
+  local t = a:newTag(1, 4) t.name = "walk"
+  local r = H.call("check", { rules = { "duplicate-frame", "ground-jitter" } })
+  local dup, jit
+  for _, f in ipairs(r.findings) do
+    if f.rule == "duplicate-frame" then dup = f end
+    if f.rule == "ground-jitter" then jit = f end
+  end
+  check("duplicate frame found", dup and dup.frames[1] == 2, dup and json.encode(dup))
+  check("ground jitter found", jit and jit.frames[1] == 3 and jit.fix:match("1 px higher"), jit and json.encode(jit))
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

@@ -2,6 +2,7 @@
 // registration, the chat panel's step labels and the edit/read kind all
 // come from here. A tool without `run` forwards its input to the Aseprite
 // request method of the same name and returns the result as JSON.
+import { ANIMATION_TOOLS } from "./animation_tools.js";
 import { SHADING_TOOLS } from "./shading_tools.js";
 import { RECREATE_TOOLS } from "./recreate_tools.js";
 import { SHEET_TOOLS } from "./sheet_tools.js";
@@ -429,13 +430,15 @@ export const TOOLS: Tool[] = [
     description:
       "Run mechanical pixel-art checks on the active sprite and return findings with coordinates and a concrete fix: " +
       "off-palette colors (RGB sprites), orphan pixels, semi-transparent pixels, empty cels inside a tag, frame " +
-      "durations that stand out within a tag, and content outside the canvas. Run it before saying a drawing or " +
+      "durations that stand out within a tag, content outside the canvas, repeated frames in a tag, and feet that " +
+      "jitter by 1-3 px within a tag. Run it before saying a drawing or " +
       "animation task is done; fix errors, and mention warnings you leave on purpose.",
     input: z.object({
       layer: z.string().optional().describe("Check only this layer (id like 'L12' or name). Default: all visible layers."),
       frames: z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional()
         .describe("Frames to check: 3, [1,2] or '1-4'. Default: all frames."),
-      rules: z.array(z.enum(["off-palette", "orphan", "semi-transparent", "empty-cel", "frame-duration", "outside-canvas"]))
+      rules: z.array(z.enum(["off-palette", "orphan", "semi-transparent", "empty-cel", "frame-duration", "outside-canvas",
+        "duplicate-frame", "ground-jitter"]))
         .optional().describe("Rules to run. Default: all."),
     }),
     kind: "read",
@@ -472,6 +475,8 @@ TOOLS.push(...SHEET_TOOLS);
 TOOLS.push(...RECREATE_TOOLS);
 // Ramps, shading and outlines (#39).
 TOOLS.push(...SHADING_TOOLS);
+// Animation helpers (#42).
+TOOLS.push(...ANIMATION_TOOLS);
 
 // The bridge's sub-agent runner (#33), set by index.ts.
 let spawner: SubAgents | undefined;
