@@ -111,3 +111,85 @@ test("a new developer worktree gets a new agent and a new conversation", async (
     chat.dispose();
   }
 });
+
+// The fake against the real agents. The SDK's zod schemas (not in its
+// package exports, so loaded by path) check every message the fake sends; a
+// parse that changes the value means a key the protocol doesn't have or a
+// wrong type. The permission fixtures hold what claude-agent-acp and
+// codex-acp send (test/sanitize-acp.mjs keeps them from a recording); the
+// fake must ask with the same tool call keys and the same options.
+const sdkSchema = await import(new URL("../schema/zod.gen.js", import.meta.resolve("@agentclientprotocol/sdk")));
+const fake = await import("./helpers/fake_acp_agent.mjs");
+const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const PERMISSION_FIXTURES = { claude: "acp-claude-permission.jsonl", codex: "acp-codex-permission.jsonl" };
+
+// The schema fills in defaults; every key the value has must come through as is.
+function kept(parsed, value, path) {
+  if (value && typeof value === "object") {
+    assert.ok(parsed && typeof parsed === "object", `${path}: dropped`);
+    for (const [k, v] of Object.entries(value)) {
+      assert.ok(k in parsed, `${path}.${k}: not in the ACP schema`);
+      kept(parsed[k], v, `${path}.${k}`);
+    }
+  } else {
+    assert.deepEqual(parsed, value, `${path}: changed by the ACP schema`);
+  }
+}
+function conforms(schema, value, what) {
+  const r = schema.safeParse(value);
+  assert.ok(r.success, `${what}: ${r.error?.message}`);
+  kept(r.data, value, what);
+}
+const keys = (o) => Object.keys(o ?? {}).sort();
+
+test("the recorded permission requests fit the ACP schema", () => {
+  for (const [agent, file] of Object.entries(PERMISSION_FIXTURES)) {
+    for (const [i, req] of fixture(file).entries()) conforms(sdkSchema.zRequestPermissionRequest, req, `${agent} fixture ${i}`);
+  }
+});
+
+test("the fake asks for permission the way each real agent does", () => {
+  for (const [agent, file] of Object.entries(PERMISSION_FIXTURES)) {
+    const real = fixture(file).find((r) => r.toolCall.kind === "execute");
+    const req = fake.permissionRequest(agent, "s1");
+    conforms(sdkSchema.zRequestPermissionRequest, req, `${agent} fake request`);
+    assert.deepEqual(keys(req), keys(real), `${agent}: request keys`);
+    assert.deepEqual(keys(req.toolCall), keys(real.toolCall), `${agent}: toolCall keys`);
+    assert.deepEqual(keys(req.toolCall.rawInput), keys(real.toolCall.rawInput), `${agent}: rawInput keys`);
+    for (const k of ["kind", "status", "name"]) assert.equal(req.toolCall[k], real.toolCall[k], `${agent}: toolCall.${k}`);
+    assert.deepEqual(req.options.map((o) => [o.optionId, o.kind]), real.options.map((o) => [o.optionId, o.kind]), `${agent}: options`);
+  }
+});
+
+test("the fake's replies and updates fit the ACP schema", () => {
+  conforms(sdkSchema.zInitializeResponse, fake.MESSAGES.initialize(), "initialize");
+  conforms(sdkSchema.zNewSessionResponse, fake.MESSAGES.newSession(1), "session/new");
+  conforms(sdkSchema.zSetSessionModeResponse, fake.MESSAGES.setMode(), "session/set_mode");
+  for (const stop of ["end_turn", "cancelled"]) conforms(sdkSchema.zPromptResponse, fake.MESSAGES.prompt(stop), `session/prompt ${stop}`);
+  conforms(sdkSchema.zSessionNotification, fake.MESSAGES.say("s1", "hi"), "agent_message_chunk");
+  for (const agent of Object.keys(fake.AGENTS)) {
+    for (const allowed of [true, false]) {
+      for (const n of fake.MESSAGES.updates(agent, "s1", allowed)) conforms(sdkSchema.zSessionNotification, n, `${agent} ${n.update.sessionUpdate}`);
+    }
+  }
+});
+
+// The Claude fixture came from claude-agent-acp's own permission builders,
+// run without a model; when they change, regenerate it. Skipped if they moved.
+test("the Claude permission fixture matches the installed claude-agent-acp", async (t) => {
+  let presentation, options;
+  try {
+    const dir = new URL("./permissions/", import.meta.resolve("@agentclientprotocol/claude-agent-acp/dist/acp-agent.js"));
+    ({ buildClaudePermissionPresentation: presentation } = await import(new URL("presentation.js", dir)));
+    ({ buildClaudePermissionOptions: options } = await import(new URL("options.js", dir)));
+  } catch {
+    return t.skip("claude-agent-acp's permission builders moved");
+  }
+  for (const real of fixture(PERMISSION_FIXTURES.claude)) {
+    const { name: toolName, rawInput: input, toolCallId: toolUseID } = real.toolCall;
+    const built = presentation({ toolName, input, toolUseID, cwd: "/work" });
+    const opts = options({ toolName, input, cwd: "/work", allowPersistentOptions: true, availableModes: ["default"] });
+    assert.deepEqual(keys(built.toolCall), keys(real.toolCall), `${toolName}: toolCall keys`);
+    assert.deepEqual(opts, real.options, `${toolName}: options`);
+  }
+});
