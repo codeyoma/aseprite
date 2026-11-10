@@ -55,4 +55,19 @@ const same = await lua(`local s = app.sprite local ok = true
   end return ok`);
 check("atlas: pixels and durations match the original", same === true);
 
+// 3. Godot .tres round trip (#60): export_for_engine writes a trimmed SpriteFrames, import_sheet reads it back.
+const gd = join(dir, "godot");
+await c.call("export_for_engine", { engine: "godot", dir: gd, name: "rt", trim: true });
+const back = await c.call("import_sheet", { path: join(gd, "rt.png"), atlas: join(gd, "rt.tres") });
+const gt = await tagsOf();
+check("Godot .tres: frames, size and tag come back", !back.isError && gt.frames === 3 && gt.w === 12 && gt.h === 10 && gt.tags.includes("pulse 1-3"), { gt, text: textOf(back) });
+
+// 4. The agent imports a sheet with a TexturePacker XML next to it.
+writeFileSync(join(dir, "tp.png"), PNG.sync.write(png));
+writeFileSync(join(dir, "tp.xml"), `<TextureAtlas imagePath="tp.png">${[0, 1, 2, 3].map((f) => `<SubTexture name="idle${f}" x="${f * 24}" y="0" width="24" height="24"/>`).join("")}</TextureAtlas>`);
+await lua(`AsepriteAgent.attach{ path = ${JSON.stringify(join(dir, "tp.png"))} } return true`);
+await chat("/skill:import-sheet Import this sheet; its TexturePacker XML atlas is next to it.");
+const tp = await tagsOf();
+check("skill: the XML atlas gives 4 frames of 24x24", tp.frames === 4 && tp.w === 24 && tp.h === 24, tp);
+
 done("SHEET");

@@ -84,3 +84,36 @@ test("import_sheet sends frames and tags to Aseprite", async () => {
   const auto = await runTool(findTool("import_sheet"), { path: join(dir, "hero.png") }, fake);
   assert.match(auto.content[0].text, /Imported 8 frames .*sprites found on the sheet/);
 });
+
+test("TexturePacker XML atlases: Sparrow/Starling and generic", async () => {
+  const { parseAtlasXml } = await import("../dist/sheet.js");
+  const sparrow = parseAtlasXml(`<?xml version="1.0"?><TextureAtlas imagePath="hero.png">
+    <SubTexture name="idle0" x="0" y="0" width="10" height="12" frameX="-3" frameY="-4" frameWidth="16" frameHeight="16"/>
+    <SubTexture name="idle1" x="10" y="0" width="16" height="16"/></TextureAtlas>`);
+  assert.deepEqual(sparrow.frames.map((f) => [f.rect.x, f.rect.w, f.offsetX, f.offsetY]), [[0, 10, 3, 4], [10, 16, 0, 0]]);
+  assert.deepEqual([sparrow.width, sparrow.height], [16, 16]);
+  const generic = parseAtlasXml(`<TextureAtlas imagePath="a.png" width="64" height="32">
+    <sprite n="a" x="2" y="3" w="8" h="9" oX="1" oY="2" oW="12" oH="12"/></TextureAtlas>`);
+  assert.deepEqual([generic.frames[0].rect, generic.frames[0].offsetX, generic.width], [{ x: 2, y: 3, w: 8, h: 9 }, 1, 12]);
+  assert.throws(() => parseAtlasXml(`<SubTexture name="r" x="0" y="0" width="4" height="4" rotated="true"/>`), /rotated/);
+  assert.throws(() => parseAtlasXml("<TextureAtlas/>"), /no <SubTexture>/);
+});
+
+test("Godot SpriteFrames .tres round-trips with the exporter", async () => {
+  const { parseGodotSpriteFrames, parseAtlasText } = await import("../dist/sheet.js");
+  const { godotSpriteFrames } = await import("../dist/export.js");
+  const placed = [
+    { x: 0, y: 0, w: 16, h: 16, ox: 0, oy: 0, sw: 16, sh: 16 },
+    { x: 16, y: 0, w: 10, h: 12, ox: 3, oy: 4, sw: 16, sh: 16 },
+    { x: 32, y: 0, w: 16, h: 16, ox: 0, oy: 0, sw: 16, sh: 16 },
+  ];
+  const tres = godotSpriteFrames({
+    name: "hero", image: "hero.png", placed, durations: [100, 200, 100], width: 48, height: 16, pivot: [0.5, 1],
+    anims: [{ name: "idle", from: 0, to: 1, direction: "forward", loop: true }, { name: "jump", from: 2, to: 2, direction: "forward", loop: false }],
+  }, "res://hero.png");
+  const a = parseGodotSpriteFrames(tres);
+  assert.deepEqual(a.frames.map((f) => [f.rect.x, f.rect.w, f.offsetX, f.offsetY, f.duration]), [[0, 16, 0, 0, 100], [16, 10, 3, 4, 200], [32, 16, 0, 0, 100]]);
+  assert.deepEqual(a.tags, [{ name: "idle", from: 1, to: 2 }, { name: "jump", from: 3, to: 3 }]);
+  assert.deepEqual([a.width, a.height], [16, 16]);
+  assert.equal(parseAtlasText(tres, "x.tres").frames.length, 3);
+});

@@ -5,7 +5,7 @@ import * as z from "zod/v4";
 import { documentOf } from "./document.js";
 import type { Rgba } from "./pixel_grid.js";
 import {
-  detectBackground, detectCells, findSprites, frameImages, gridFrames, parseAtlas, removeBackground, tagsFromRows,
+  detectBackground, detectCells, findSprites, frameImages, gridFrames, parseAtlasText, removeBackground, tagsFromRows,
   type Align, type Frame, type Tag,
 } from "./sheet.js";
 import { failure, text, type Tool } from "./tool.js";
@@ -24,7 +24,7 @@ export const SHEET_TOOLS: Tool[] = [
     description:
       "Slice a sprite sheet image (e.g. an attachment) into a new animated sprite. Modes: 'auto' finds each sprite " +
       "(connected shapes on a transparent or solid background) in reading order; 'grid' cuts fixed cells (cell size " +
-      "given, or found from the empty gutters between sprites); 'atlas' reads an Aseprite or TexturePacker JSON. " +
+      "given, or found from the empty gutters between sprites); 'atlas' reads an Aseprite or TexturePacker JSON, a TexturePacker XML (Sparrow/Starling or generic) or a Godot 4 SpriteFrames .tres. " +
       "Frames are aligned (bottom-center by default, so characters stand on the same line); rows can become tags.",
     input: z.object({
       path: z.string().describe("The sheet image (PNG)."),
@@ -36,7 +36,7 @@ export const SHEET_TOOLS: Tool[] = [
       padding_x: z.number().int().min(0).optional().describe("Space between cells."),
       padding_y: z.number().int().min(0).optional(),
       order: z.enum(["rows", "columns"]).optional(),
-      atlas: z.string().optional().describe("Atlas JSON path (default: the image path with .json)."),
+      atlas: z.string().optional().describe("Atlas path: .json, .xml or .tres (default: one next to the image with the same name)."),
       merge_distance: z.number().int().min(0).max(32).optional().describe("auto: join shapes this close (px). Default 2."),
       row_tags: z.array(z.string()).optional().describe("Name a tag per row, e.g. ['idle','walk']."),
       align: z.enum(["bottom-center", "center", "top-left"]).optional(),
@@ -47,7 +47,8 @@ export const SHEET_TOOLS: Tool[] = [
     label: () => "Import sprite sheet",
     async run(input, aseprite) {
       let img = readPng(input.path);
-      const atlasPath = input.atlas ?? input.path.replace(/\.png$/i, ".json");
+      // An atlas next to the image: .json, .xml or .tres with the same name.
+      const atlasPath = input.atlas ?? [".json", ".xml", ".tres"].map((e) => input.path.replace(/\.png$/i, e)).find((p: string) => existsSync(p) && p !== input.path) ?? input.path.replace(/\.png$/i, ".json");
       const mode = input.mode ?? (existsSync(atlasPath) ? "atlas" : "auto");
       const bg = detectBackground(img);
       let frames: Frame[];
@@ -55,7 +56,7 @@ export const SHEET_TOOLS: Tool[] = [
       let size: { w: number; h: number } | undefined;
       let how: string;
       if (mode === "atlas") {
-        const atlas = parseAtlas(JSON.parse(readFileSync(atlasPath, "utf8")));
+        const atlas = parseAtlasText(readFileSync(atlasPath, "utf8"), atlasPath);
         frames = atlas.frames;
         tags = atlas.tags;
         size = atlas.width && atlas.height ? { w: atlas.width, h: atlas.height } : undefined;

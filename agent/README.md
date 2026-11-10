@@ -143,7 +143,7 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `palette_from_image` | Colors of an image, layer, selection or the sprite: counts, ramps, near-duplicates, closest available palettes; set, swatch or save as `.gpl` |
 | `color_stats` / `adjust_tone` / `remap_to_palette` | Compare tone in plain words, shift or match lightness/saturation/contrast, or limit colors to a palette (ramps keep their order) |
 | `detect_pixel_grid` / `fix_pixel_art` | Find the pixel grid of upscaled or AI-generated "pixel art" (fractional cells too) and rebuild it as a native-size sprite with a clean palette |
-| `import_sheet` | Slices a sprite sheet into an animated sprite: a grid (cell size found from the gutters), loose sprites on a background, or an Aseprite/TexturePacker atlas; rows can become tags |
+| `import_sheet` | Slices a sprite sheet into an animated sprite: a grid (cell size found from the gutters), loose sprites on a background, or an atlas (Aseprite or TexturePacker JSON, TexturePacker XML, Godot SpriteFrames .tres); rows can become tags |
 | `recreate_from_reference` / `style_summary` / `split_by_color` | Rebuild an attached screenshot or sprite as an editable sprite (native pixels, palette, frames, layers by color role), and describe a style with rules for drawing new art like it |
 | `make_ramp` / `shade_sprite` / `outline_sprite` | Hue-shifted color ramps; shade flat colors from a light direction onto an `AI: shaded <layer>` layer; outer/inner outlines in one color, the darkest, or selout |
 | `transform_layer` / `rotate_layer` / `squash_stretch` / `smear_frame` | Animate rigid parts along eased arcs, rotate cleanly (RotSprite), squash and stretch on the ground line, smear fast moves — no new colors |

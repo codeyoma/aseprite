@@ -1,7 +1,7 @@
 // Sprite sheet slicing (#41) and sprite finding (shared with #40): cut a
 // sheet into frames by a grid (given, or found from empty gutters), by
 // the sprites on it (connected regions on a background), or by an atlas
-// (Aseprite / TexturePacker JSON).
+// (Aseprite / TexturePacker JSON or XML, Godot SpriteFrames).
 import type { Rgba } from "./pixel_grid.js";
 
 export interface Rect {
@@ -274,6 +274,76 @@ export function parseAtlas(json: any): { frames: Frame[]; tags: Tag[]; width?: n
     name: t.name, from: t.from + 1, to: t.to + 1, direction: t.direction,
   }));
   return { frames, tags, width, height };
+}
+
+type Atlas = { frames: Frame[]; tags: Tag[]; width?: number; height?: number };
+
+const attrs = (tag: string) => Object.fromEntries([...tag.matchAll(/([\w:-]+)\s*=\s*"([^"]*)"/g)].map((m) => [m[1], m[2]]));
+
+/**
+ * TexturePacker XML: the Sparrow/Starling format (<SubTexture name x y width
+ * height frameX frameY frameWidth frameHeight/>, frameX/Y negative for
+ * trimmed frames) or the generic one (<sprite n x y w h oX oY oW oH/>).
+ */
+export function parseAtlasXml(xml: string): Atlas {
+  const frames: Frame[] = [];
+  let width: number | undefined, height: number | undefined;
+  for (const m of xml.matchAll(/<(SubTexture|sprite)\b([^>]*)\/?>/g)) {
+    const a = attrs(m[2]);
+    const sparrow = m[1] === "SubTexture";
+    const rot = sparrow ? a.rotated === "true" : a.r === "y";
+    if (rot) throw new Error(`Frame ${a.name ?? a.n ?? ""} is rotated in the atlas; rotated frames aren't supported`);
+    const n = (k: string) => (a[k] === undefined ? undefined : Number(a[k]));
+    const rect = sparrow ? { x: n("x")!, y: n("y")!, w: n("width")!, h: n("height")! } : { x: n("x")!, y: n("y")!, w: n("w")!, h: n("h")! };
+    const ox = sparrow ? 0 - (n("frameX") ?? 0) || 0 : n("oX") ?? 0, oy = sparrow ? 0 - (n("frameY") ?? 0) || 0 : n("oY") ?? 0;
+    const sw = (sparrow ? n("frameWidth") : n("oW")) ?? rect.w, sh = (sparrow ? n("frameHeight") : n("oH")) ?? rect.h;
+    width = Math.max(width ?? 0, sw);
+    height = Math.max(height ?? 0, sh);
+    frames.push({ rect, offsetX: ox, offsetY: oy });
+  }
+  if (!frames.length) throw new Error("The XML atlas has no <SubTexture> or <sprite> frames");
+  return { frames, tags: [], width, height };
+}
+
+/**
+ * A Godot 4 SpriteFrames resource (.tres): each AtlasTexture's region (and
+ * margin, for trimmed frames) is a frame; each animation is a tag over its
+ * frames in order, with durations from the speed and per-frame multipliers.
+ */
+export function parseGodotSpriteFrames(tres: string): Atlas {
+  const regions = new Map<string, { rect: Rect; ox: number; oy: number; w: number; h: number }>();
+  for (const block of tres.split(/\n(?=\[)/)) {
+    const id = /^\[sub_resource type="AtlasTexture" id="([^"]+)"\]/.exec(block)?.[1];
+    if (!id) continue;
+    const num = (k: string) => /Rect2\(([^)]*)\)/.exec(new RegExp(`^${k} = Rect2\\([^)]*\\)`, "m").exec(block)?.[0] ?? "")?.[1].split(",").map(Number);
+    const r = num("region");
+    if (!r) continue;
+    const mg = num("margin") ?? [0, 0, 0, 0];
+    regions.set(id, { rect: { x: r[0], y: r[1], w: r[2], h: r[3] }, ox: mg[0], oy: mg[1], w: r[2] + mg[2], h: r[3] + mg[3] });
+  }
+  const frames: Frame[] = [], tags: Tag[] = [];
+  const anims = /animations\s*=\s*\[([\s\S]*)\]\s*$/m.exec(tres)?.[1] ?? "";
+  for (const a of anims.split(/\}\s*,\s*\{(?=\s*"frames")/)) {
+    const name = /"name":\s*&?"([^"]+)"/.exec(a)?.[1] ?? "default";
+    const speed = Number(/"speed":\s*([\d.]+)/.exec(a)?.[1] ?? 5);
+    const from = frames.length + 1;
+    for (const f of a.matchAll(/"duration":\s*([\d.]+)\s*,\s*"texture":\s*SubResource\("([^"]+)"\)/g)) {
+      const reg = regions.get(f[2]);
+      if (!reg) throw new Error(`The .tres frame uses ${f[2]}, which isn't an AtlasTexture with a region`);
+      frames.push({ rect: reg.rect, offsetX: reg.ox, offsetY: reg.oy, duration: Math.round((1000 / speed) * Number(f[1])) });
+    }
+    if (frames.length >= from) tags.push({ name, from, to: frames.length });
+  }
+  if (!frames.length) throw new Error("The .tres has no SpriteFrames animations with AtlasTexture frames");
+  const all = [...regions.values()];
+  return { frames, tags, width: Math.max(...all.map((r) => r.w)), height: Math.max(...all.map((r) => r.h)) };
+}
+
+/** An atlas file by its extension: .json (Aseprite, TexturePacker), .xml (TexturePacker), .tres (Godot). */
+export function parseAtlasText(text: string, path: string): Atlas {
+  if (/\.xml$/i.test(path)) return parseAtlasXml(text);
+  if (/\.tres$/i.test(path)) return parseGodotSpriteFrames(text);
+  return parseAtlas(JSON.parse(text));
 }
 
 // ---------------------------------------------------------------------------
