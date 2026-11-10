@@ -10,7 +10,11 @@ Follow these unless the user asks for something else.
 - **Clean lines.** No doubled pixels on curves ("jaggies"), no stray single pixels ("orphans"). Curves step in consistent run lengths: 3-2-1, not 3-1-2.
 - **No accidental anti-aliasing.** Do not blend edges with semi-transparent pixels. Use full alpha (0 or 255).
 - **Readable silhouette.** Check the shape as a solid fill first; details come last.
-- **Animation.** Keep the volume constant. Small moves (1 px) read well at low resolution. 4–8 frames at 8–12 fps is typical for idle and walk cycles.
+- **Animation.** Keep the volume constant. Small moves (1 px) read well at low resolution. Timing tables per animation: `rule:anim.timing`.
+
+## Rules by subject
+
+Numeric rules, common mistakes, review lists and `write_pixels` grid templates, read on demand: `read_guide("rules")` lists the chapters and rule ids; `read_guide("rules/<chapter>")` reads one: `animation` (`rule:anim`), `characters` (`rule:char`), `tiles` (`rule:tile`), `isometric` (`rule:iso`), `vfx` (`rule:vfx`), `ui` (`rule:ui`). Read the chapter for the subject before drawing it.
 
 ## Working loop
 

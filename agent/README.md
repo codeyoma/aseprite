@@ -56,6 +56,8 @@ Type `/` in the chat to search skills (a bare `/` lists them grouped by category
 
 Teach the agent your own techniques with skills: markdown files in `~/.aseprite-agent/skills/` (`<name>.md`, or a `<name>/SKILL.md` folder like the built-ins) (**File > Scripts > AI Agent > New Skill...** creates one from a template). A skill can list trigger words in its frontmatter; when a message contains one, the skill goes along with it. Type `/skill:name your request` to use a skill explicitly. A skill named like a built-in guide topic (`basics`, `recipes`, `pixel-art`) replaces it for the agent.
 
+The agent also has a pixel-art knowledge base in [guide/rules/](guide/rules/): six chapters (animation timing, characters at small sizes, tiles, isometric, effects, UI) with numeric tables, common mistakes, review lists and grid templates it can write with `write_pixels`. They are read on demand (`read_guide("rules/animation")`, or the MCP resource `rules://animation`), never added to every prompt; skills cite them by id (`rule:anim.timing.walk`). Adapted from [aseprite-ai-artist](https://github.com/with-pebbly/aseprite-ai-artist) (MIT, see [guide/rules/CREDITS.md](guide/rules/CREDITS.md)).
+
 ```markdown
 ---
 name: dithering
@@ -165,7 +167,7 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `diff_visual` | What changed on the active frame since the last edit step or a saved checkpoint: PNG with changed pixels in red, and the changed bounds (x, y, w, h) and pixel count in text |
 | `check` | Pixel-art checks (off-palette, orphans, semi-transparent, empty cels, frame timing, outside canvas, duplicate frames, ground jitter) with fixes |
 | `list_skills` | Search the skill catalog (built-in and your own) by name, category or trigger |
-| `read_guide` | Agent guide: `basics`, `recipes`, `pixel-art` (in [guide/](guide/)), plus your own skills |
+| `read_guide` | Agent guide: `basics`, `recipes`, `pixel-art` (in [guide/](guide/)), plus your own skills; the pixel-art rules: `rules` (index), `rules/<chapter>`, or one rule id such as `anim.timing.walk` |
 | `undo` / `redo` | Steps back and forward through the history |
 
 A small FX recipe (`fx_from_recipe`; positions are px from the origin, y down; colors are palette steps, 0 darkest and -1 brightest):

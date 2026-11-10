@@ -1,7 +1,9 @@
 // The MCP server, shared by the stdio and HTTP transports. Tools come from
-// the Tool table (tools.ts).
+// the Tool table (tools.ts); resources are the pixel-art rule chapters
+// (rules://<chapter>, rules.ts), read only when a client asks for one.
 
 import { McpServer } from "@modelcontextprotocol/server";
+import { ruleChapters } from "./rules.js";
 import { runTool, TOOLS, type ToolContext } from "./tools.js";
 
 export const VERSION = "0.4.0";
@@ -12,6 +14,7 @@ You control a running Aseprite (pixel-art and animation editor) through these to
 Workflow:
 1. Before your first edit in a session, call read_guide("basics"). Use read_guide("recipes") for tested
    snippets (pixelate, retime, idle animation, outline, sprite sheet export) and read_guide("pixel-art") when drawing.
+   Numeric pixel-art rules (timing tables, proportions, tiles, isometric, effects, UI) are in read_guide("rules").
 2. Call get_state to see the document and get_context to see what the user has selected.
 3. Make changes with execute_lua or run_command. Each execute_lua call is one undo step and rolls back on error.
 4. Call snapshot after visual changes and check the result. Use read_pixels for exact pixel work, and write_pixels to write its rows back after changing keys.
@@ -53,5 +56,18 @@ export function createMcpServer(ctx: ToolContext, opts: { readOnly?: boolean; su
       (input: any) => runTool(tool, input, ctx) as any,
     );
   }
+  registerRuleResources(server);
   return server;
+}
+
+/** One MCP resource per rule chapter: rules://animation, rules://tiles, ... */
+export function registerRuleResources(server: McpServer): void {
+  for (const c of ruleChapters()) {
+    server.registerResource(
+      `rules-${c.name}`,
+      `rules://${c.name}`,
+      { title: c.title, description: `${c.description} Rule ids start with ${c.id}.`, mimeType: "text/markdown" },
+      async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: c.body }] }),
+    );
+  }
 }

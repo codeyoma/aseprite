@@ -1,5 +1,7 @@
 // Keeps the Claude Code plugin (agent/claude-plugin) in step with the bridge:
-// the guide topics become skills, and the plugin's version is the bridge's.
+// the guide topics become skills, the pixel-art rule chapters (guide/rules,
+// #77) ride along as files of the aseprite-pixel-art skill (read on demand,
+// like the MCP resources rules://<chapter>), and the plugin's version is the bridge's.
 // Part of `npm run gen` (scripts/gen.mjs); `node scripts/sync-plugin.mjs --check`
 // fails when the committed plugin is out of date.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -22,6 +24,7 @@ const SKILLS = [
     name: "aseprite-pixel-art",
     topic: "pixel-art",
     description: "Pixel-art style rules and a working loop for drawing and animating in Aseprite with the aseprite MCP tools.",
+    suffix: "\nThe rule chapters are also in this skill's `rules/` folder (`rules/animation.md`, ...), for reading without the MCP server.\n",
   },
   {
     name: "aseprite-recipes",
@@ -37,7 +40,12 @@ function pluginFiles() {
   const files = new Map();
   for (const s of SKILLS) {
     const body = readFileSync(join(guide, `${s.topic}.md`), "utf8");
-    files.set(join(plugin, "skills", s.name, "SKILL.md"), `---\nname: ${s.name}\ndescription: ${s.description}\n---\n\n${body}`);
+    files.set(join(plugin, "skills", s.name, "SKILL.md"), `---\nname: ${s.name}\ndescription: ${s.description}\n---\n\n${body}${s.suffix ?? ""}`);
+  }
+  // Rule chapters: supporting files of the pixel-art skill, never inlined.
+  const rules = join(guide, "rules");
+  for (const f of existsSync(rules) ? readdirSync(rules).filter((n) => n.endsWith(".md")).sort() : []) {
+    files.set(join(plugin, "skills", "aseprite-pixel-art", "rules", f), readFileSync(join(rules, f), "utf8"));
   }
   // Built-in skills (#35) ship in the plugin too, as aseprite-<name>.
   const builtin = join(root, "..", "skills");

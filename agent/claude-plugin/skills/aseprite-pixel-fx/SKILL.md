@@ -4,7 +4,7 @@ title: Pixel FX
 description: Add game effects (hits, slashes, explosions, magic, fire, smoke, status effects) from the FX library or a recipe, timed to an attack with hit-stop, checked and exported with a glow sheet.
 category: Effects
 triggers: [vfx, visual effect, particle effect, hit effect, explosion, slash effect, sword slash, spark, smoke effect, impact effect, hit stop, hitstop, hit-stop, magic effect, spell effect, status effect, frost nova]
-tools: [list_fx, preview_fx, fx_from_recipe, add_fx, fx_overlay, hit_stop, new_fx_sprite, propose_variations, execute_lua, snapshot, check_fx, check, export_for_engine]
+tools: [read_guide, list_fx, preview_fx, fx_from_recipe, add_fx, fx_overlay, hit_stop, new_fx_sprite, propose_variations, execute_lua, snapshot, check_fx, check, export_for_engine]
 ---
 # Pixel FX
 
@@ -33,15 +33,11 @@ When the user wants options, offer 2-3 that differ in seed or palette. Quick: sh
 - **On an attack:** `fx_overlay` with the attack's `tag`, `anchor_layer` (the character) and `hit_frame` (the contact frame) lands the effect's impact on that frame. `flip: true` when the character faces left. Then `hit_stop` on the frame it reports, with the freeze it suggests or one from the table.
 - **As its own sprite** (a reusable effect sheet): `new_fx_sprite`.
 
-| Moment | Time |
-|---|---|
-| Hit freeze (`hit_stop` `freeze_ms`) | 30-60 ms light, 80-120 ms solid, up to 200 ms for a finisher |
-| Shake inside the freeze | amp 1-3 px, about half the freeze |
-| Snappy hit, spark, slash | done in 0.3-0.8 s |
-| Big explosion, nova, pillar | lingers 2-4 s (smoke, embers, afterglow) |
-| Loop (torch, aura, status effect) | 0.5-1.5 s a cycle, no seam |
+Timing: `rule:vfx.timing` for frame counts and durations, `rule:vfx.hitstop` for freeze and shake (`read_guide("rules/vfx")`).
 
 ## You see / fix
+Shapes, ramps and scale: `rule:vfx.shape`, `rule:vfx.color`, `rule:vfx.scale`.
+
 | You see | Fix |
 |---|---|
 | Mush: a blob with no shape | Fewer particles, a smaller `size` option or recipe size, a darker ramp start, `light` down |
