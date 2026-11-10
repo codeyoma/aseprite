@@ -221,6 +221,33 @@
       ]
     },
     {
+      "name": "put_images locks a new layer after writing every frame, keeps the active layer, and stores a pixel spec (#79)",
+      "notes": "One undo step in Aseprite. locked sets layer.isEditable = false at the end of the transaction, so every frame of the layer is written first; the layer that was active stays active, so later writes do not land on the locked reference. spec is stored in the sprite property aseprite-agent \"concept.spec\" and reported as pixelSpec; an empty spec removes it.",
+      "fixture": {
+        "width": 2, "height": 1, "durations": [100, 100],
+        "layers": [{ "name": "Art", "cels": { "1": ["r."] } }]
+      },
+      "steps": [
+        { "request": "put_images", "params": { "label": "Storyboard to frames", "spec": "{\"canvas\":[2,1]}", "images": [
+          { "new_layer": "Reference", "frame": 1, "width": 2, "height": 1, "rgba": { "rows": ["g."] }, "hide": true, "locked": true },
+          { "new_layer": "Reference", "frame": 2, "width": 2, "height": 1, "rgba": { "rows": [".g"] }, "hide": true, "locked": true }
+        ] }, "result": { "layers": [{ "name": "AI: Reference", "layer": { "$layerId": "AI: Reference" } }], "frames": 2, "added": 0 } },
+        { "state": { "activeLayer": "Art", "pixelSpec": "{\"canvas\":[2,1]}", "layers": [
+          { "name": "AI: Reference", "visible": false, "editable": false, "cels": [1, 2] },
+          { "name": "Art", "visible": true, "editable": true, "cels": [1] }
+        ] } },
+        { "pixels": { "layer": "AI: Reference", "frame": 1 }, "rows": ["g."] },
+        { "pixels": { "layer": "AI: Reference", "frame": 2 }, "rows": [".g"] },
+        { "request": "put_images", "params": { "images": [{ "layer": "Art", "frame": 1, "width": 1, "height": 1, "rgba": { "rows": ["b"] }, "locked": true }] },
+          "error": "Image 1: locked applies to a new layer (new_layer)" },
+        { "request": "put_images", "params": { "images": [{ "new_layer": "x", "frame": 1, "width": 1, "height": 1, "rgba": { "rows": ["b"] }, "locked": "yes" }] },
+          "error": "Image 1: locked must be true or false" },
+        { "state": { "pixelSpec": "{\"canvas\":[2,1]}", "layers": [{ "name": "AI: Reference" }, { "name": "Art" }] } },
+        { "request": "put_images", "params": { "images": [], "spec": "" }, "result": { "layers": [] } },
+        { "state": { "pixelSpec": { "$absent": true } } }
+      ]
+    },
+    {
       "name": "the sprite snapshot blends an Addition layer at partial opacity as drawSprite does; create_animation records an effect",
       "legend": { "p": "#ff0080", "q": "#0000ff80" },
       "fixture": {

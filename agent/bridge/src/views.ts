@@ -5,7 +5,7 @@
 //
 // The three views follow the ideas of the `look` tool in aseprite-ai-artist (MIT,
 // https://github.com/with-pebbly/aseprite-ai-artist, src/tools/look.ts); the code is our own.
-import { documentOf, resolveFrames, type LayerInfo, type SpriteInfo } from "./document.js";
+import { documentOf, resolveFrames, type Document, type LayerInfo, type SpriteInfo } from "./document.js";
 import { composeNormal } from "./export.js";
 import { shownImageLayers } from "./export_tools.js";
 import { contactSheet, encodePng, flatten, sheetGeometry, type Rgba } from "./image.js";
@@ -165,6 +165,32 @@ function findLayer(info: SpriteInfo, ref: string): LayerInfo | undefined {
     info.layers.find((l) => l.name.toLowerCase() === ref.toLowerCase());
 }
 
+/**
+ * The reference layer compare (and mismatch_regions, #79) reads: the named one, else the first image layer named
+ * like "reference" or "ref". Throws a message for the agent when there is none or it is a group.
+ */
+export function referenceLayer(info: SpriteInfo, reference?: string): LayerInfo {
+  const ref = reference !== undefined ? findLayer(info, reference)
+    : info.layers.find((l) => !l.group && /\bref(erence)?\b/i.test(l.name));
+  if (!ref) {
+    throw new Error(reference !== undefined ? `No layer named "${reference}"`
+      : "No reference layer found (none is named like 'reference'); pass reference: '<layer name>'.");
+  }
+  if (ref.group) throw new Error(`"${ref.name}" is a group; pass the reference image layer.`);
+  return ref;
+}
+
+/** The art beside a reference in one frame: the given layer, else every shown image layer but the reference. */
+export async function artWithout(doc: Document, info: SpriteInfo, ref: LayerInfo, layer: string | undefined, frame: number): Promise<Rgba> {
+  if (layer !== undefined) return doc.pixels(layer, frame);
+  const shown = shownImageLayers(info);
+  const others = shown.filter((l) => l.id !== ref.id);
+  if (others.length === shown.length) return doc.pixels(undefined, frame);
+  // Bottom first, as they are composed.
+  const layers = await Promise.all([...others].reverse().map(async (l) => ({ image: await doc.pixels(l.id, frame), opacity: l.opacity ?? 255 })));
+  return composeNormal(layers, info.width, info.height);
+}
+
 /** snapshot with `view`: compose the view from per-frame or per-layer snapshots. Nothing changes. */
 export async function snapshotView(aseprite: AsepriteRequester, input: ViewInput): Promise<ToolResult> {
   const doc = documentOf(aseprite);
@@ -208,25 +234,14 @@ export async function snapshotView(aseprite: AsepriteRequester, input: ViewInput
   // compare: the reference layer on the left, the art without it on the right, same frame and zoom.
   const frame = input.frame ?? info.frame;
   if (frame < 1 || frame > n) return failure(`Frame ${frame} is out of range (1-${n})`);
-  const ref = input.reference !== undefined ? findLayer(info, input.reference)
-    : info.layers.find((l) => !l.group && /\bref(erence)?\b/i.test(l.name));
-  if (!ref) {
-    return failure(input.reference !== undefined ? `No layer named "${input.reference}"`
-      : "No reference layer found (none is named like 'reference'); pass reference: '<layer name>'.");
+  let ref: LayerInfo;
+  try {
+    ref = referenceLayer(info, input.reference);
+  } catch (e) {
+    return failure((e as Error).message);
   }
-  if (ref.group) return failure(`"${ref.name}" is a group; pass the reference image layer.`);
   const refImage = await doc.pixels(ref.id, frame);
-  let art: Rgba;
-  if (input.layer !== undefined) art = await doc.pixels(input.layer, frame);
-  else {
-    const others = shownImageLayers(info).filter((l) => l.id !== ref.id);
-    if (others.length === shownImageLayers(info).length) art = await doc.pixels(undefined, frame);
-    else {
-      // Bottom first, as they are composed.
-      const layers = await Promise.all([...others].reverse().map(async (l) => ({ image: await doc.pixels(l.id, frame), opacity: l.opacity ?? 255 })));
-      art = composeNormal(layers, w, h);
-    }
-  }
+  const art = await artWithout(doc, info, ref, input.layer, frame);
   // Two cells side by side: 12 + 2 * w * zoom wide, 21 + h * zoom high (sheetGeometry's gaps and label strip).
   const fits = (max: number) => Math.max(1, Math.min(Math.floor((max - 12) / (2 * w)), Math.floor((max - 21) / h)));
   const zoom = input.scale ? Math.min(input.scale, fits(VIEW_MAX)) : Math.min(16, fits(VIEW_TARGET));

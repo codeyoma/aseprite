@@ -35,6 +35,8 @@ const root = join(here, "..", "..");
 // Arguments before the provider: "@tmp" is a fresh scratch folder, "@ref" a
 // 4-color reference PNG; name:value replaces the plain ones in order. Tests that don't take a provider run once.
 const ARGS = {
+  export: ["@tmp", "godot"], masks_cutout: ["@tmp"], model: ["@tmp"], normals: ["@tmp"], recreate: ["@tmp"], concept: ["@tmp"],
+  sheet: ["@tmp"], tileset: ["@tmp"], voxels: ["@tmp"], fx_export: ["@tmp"], color_skills: ["@ref"],
   export: ["@tmp", "godot"], masks_cutout: ["@tmp"], model: ["@tmp"], normals: ["@tmp"], recreate: ["@tmp"],
   sheet: ["@tmp"], studio: ["@tmp"], tileset: ["@tmp"], voxels: ["@tmp"], fx_export: ["@tmp"], color_skills: ["@ref"],
 };

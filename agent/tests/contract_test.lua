@@ -226,7 +226,7 @@ local function normalize(st)
   local function layers(list)
     local out = {}
     for i, l in ipairs(list or {}) do
-      local item = { name = l.name, visible = l.visible, group = l.group and true or false }
+      local item = { name = l.name, visible = l.visible, editable = l.editable, group = l.group and true or false }
       if l.group then item.layers = layers(l.layers)
       else
         item.cels = l.celFrames or {}; item.links = l.celLinks or {}; item.tilemap = l.tilemap and true or false
@@ -246,6 +246,7 @@ local function normalize(st)
     layers = layers(s.layers), tags = tags,
     palette = s.palette and s.palette.colors or {}, slices = s.slices or {}, selection = s.selection,
     hits = s.fxHits or {},
+    pixelSpec = s.pixelSpec,
   }
 end
 

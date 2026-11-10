@@ -12,6 +12,8 @@ export interface LayerInfo {
   id: string;
   name: string;
   visible: boolean;
+  /** False when the layer is locked (layer.isEditable), e.g. a concept reference (#79). */
+  editable: boolean;
   group: boolean;
   /** Group names from the top, e.g. ["Body"] for a layer inside Body. */
   path: string[];
@@ -88,6 +90,8 @@ export interface SpriteInfo {
   /** Hits recorded by hit_stop, in frame order of recording. */
   hits: HitInfo[];
   colorMode: "rgb" | "indexed" | "grayscale";
+  /** The pixel spec's JSON stored by the concept tools (#79; sprite property aseprite-agent "concept.spec"). */
+  pixelSpec?: string;
 }
 
 export interface SliceInfo {
@@ -143,6 +147,8 @@ export interface PutImagesOptions {
   hit?: { frame: number; freezeMs: number; shakeMs?: number; amp?: number };
   /** An effect to record on a layer (an id or name, also 'AI: <newLayer>' made in this call), after the images. */
   fx?: FxInfo & { layer: string };
+  /** A pixel spec's JSON to store on the sprite (#79); "" removes it. */
+  spec?: string;
 }
 
 /** One image of putImages: put at (x, y) in a frame, onto a new 'AI: ' layer or into a layer. */
@@ -158,6 +164,8 @@ export interface PutImagesItem {
   hide?: boolean;
   blendMode?: string;
   opacity?: number;
+  /** Lock the new layer (layer.isEditable = false) after every image is written; the active layer stays (#79). */
+  locked?: boolean;
 }
 
 export interface NewSprite {
@@ -292,7 +300,7 @@ function flatten(tree: any[], path: string[] = []): LayerInfo[] {
   const out: LayerInfo[] = [];
   for (const l of tree ?? []) {
     out.push({
-      id: String(l.id ?? ""), name: l.name, visible: l.visible !== false, group: !!l.group, path,
+      id: String(l.id ?? ""), name: l.name, visible: l.visible !== false, editable: l.editable !== false, group: !!l.group, path,
       ...(l.group ? {} : {
         opacity: l.opacity, blendMode: l.blendMode, ...(l.celLinks ? { links: l.celLinks } : {}), ...(l.fx ? { fx: fxOf(l.fx) } : {}),
       }),
@@ -327,6 +335,7 @@ export function parseState(state: any): SpriteInfo {
       center: sl.center ? { x: sl.center.x, y: sl.center.y, w: sl.center.width, h: sl.center.height } : undefined,
     })),
     colorMode: s.colorMode ?? "rgb",
+    ...(typeof s.pixelSpec === "string" && s.pixelSpec ? { pixelSpec: s.pixelSpec } : {}),
     hits: (s.fxHits ?? []).map((h: any) => ({
       frame: h.frame, freezeMs: h.freezeMs, ...(h.shakeMs !== undefined ? { shakeMs: h.shakeMs } : {}), ...(h.amp !== undefined ? { amp: h.amp } : {}),
     })),
@@ -375,7 +384,7 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       const images = items.map((it) => {
         checkSize(it.image, "put_images");
         const im: Record<string, unknown> = { width: it.image.width, height: it.image.height, rgba: encode(it.image), frame: it.frame };
-        const opt = { layer: it.layer, new_layer: it.newLayer, above: it.above, x: it.x, y: it.y, hide: it.hide, blend_mode: it.blendMode, opacity: it.opacity };
+        const opt = { layer: it.layer, new_layer: it.newLayer, above: it.above, x: it.x, y: it.y, hide: it.hide, blend_mode: it.blendMode, opacity: it.opacity, locked: it.locked };
         for (const [k, v] of Object.entries(opt)) if (v !== undefined) im[k] = v;
         return im;
       });
@@ -383,7 +392,7 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       const hit = o.hit && { frame: o.hit.frame, freeze_ms: o.hit.freezeMs, shake_ms: o.hit.shakeMs, amp: o.hit.amp };
       return write("put_images", {
         images, frames: o.frames, duration: o.duration, label: o.label, prompt: o.prompt, palette: o.palette,
-        insert, durations: o.durations, hit, fx: o.fx && { layer: o.fx.layer, ...fxWire(o.fx) },
+        insert, durations: o.durations, hit, fx: o.fx && { layer: o.fx.layer, ...fxWire(o.fx) }, spec: o.spec,
       });
     },
     async createSprite(img, o = {}) {

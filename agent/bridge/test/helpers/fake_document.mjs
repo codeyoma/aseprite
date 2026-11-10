@@ -43,7 +43,7 @@ const BLEND_MODES = new Set(["normal", "multiply", "screen", "overlay", "darken"
 /** put_images item keys (handlers_sprite.lua IMAGE_KEYS). */
 /** read_pixels keys for colors in order of first use (document_handlers.lua KEY_CHARS). */
 const KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const IMAGE_KEYS = new Set(["width", "height", "rgba", "frame", "new_layer", "layer", "above", "x", "y", "hide", "blend_mode", "opacity"]);
+const IMAGE_KEYS = new Set(["width", "height", "rgba", "frame", "new_layer", "layer", "above", "x", "y", "hide", "blend_mode", "opacity", "locked"]);
 
 // Aseprite's normal blend (doc/blend_funcs.cpp rgba_blender_normal) at full opacity, as drawSprite composites layers.
 const mul = (a, b) => { const t = a * b + 0x80; return ((t >> 8) + t) >> 8; };
@@ -132,6 +132,7 @@ export function fakeDocument({
     const node = {
       id: nextId++, name: l.name, visible: l.visible !== false, group: !!l.group, parent, cels: [],
       blendMode: l.blendMode ?? "normal", opacity: l.opacity ?? 255, ...(l.fx ? { fx: { ...l.fx } } : {}),
+      ...(l.editable === false ? { editable: false } : {}),
     };
     if (l.group) node.layers = build(s, l.layers ?? [], node);
     else node.cels = (l.frames ?? []).map((c) => {
@@ -248,7 +249,7 @@ export function fakeDocument({
     if (colors && colors.length > 0) { s.palette = colors.map(norm); s.defaultPalette = false; } else s.defaultPalette = true;
   };
   const describe = (list) => [...list].reverse().map((l) => ({
-    id: `L${l.id}`, name: l.name, visible: l.visible, group: l.group,
+    id: `L${l.id}`, name: l.name, visible: l.visible, editable: l.editable !== false, group: l.group,
     ...(l.group ? { layers: describe(l.layers) } : {
       opacity: l.opacity ?? 255, blendMode: l.blendMode ?? "normal",
       celFrames: l.cels.flatMap((c, i) => (c ? [i + 1] : [])),
@@ -336,6 +337,7 @@ export function fakeDocument({
           ...(s.slices.length ? { slices: s.slices.map((x) => ({ ...x })) } : {}),
           ...(s.selection ? { selection: { ...s.selection } } : {}),
           ...(s.hits?.length ? { fxHits: s.hits.map((h) => ({ ...h })) } : {}),
+          ...(s.spec ? { pixelSpec: s.spec } : {}),
         },
       };
     },
@@ -513,7 +515,8 @@ export function fakeDocument({
         if (inserts[i].after === inserts[i - 1].after) throw new Error(`Insert: frame ${inserts[i].after} is listed twice`);
       }
       const inserted = inserts.reduce((n, x) => n + x.durations.length, 0);
-      if (!p.images.length && !inserts.length && p.durations === undefined && p.hit === undefined && p.fx === undefined) throw new Error("No images");
+      if (!p.images.length && !inserts.length && p.durations === undefined && p.hit === undefined && p.fx === undefined && p.spec === undefined) throw new Error("No images");
+      if (p.spec !== undefined && (typeof p.spec !== "string" || p.spec.length > 65536)) throw new Error("spec must be text of at most 65536 characters");
       const fx = p.fx !== undefined ? checkFx(p.fx, true) : undefined;
       const count = Math.max(s.durations.length + inserted, p.frames ?? 0);
       if (p.duration !== undefined && p.duration < 1) throw new Error("duration must be at least 1 ms");
@@ -537,7 +540,10 @@ export function fakeDocument({
         if (im.frame < 1 || im.frame > count) throw new Error(`${what}frame ${im.frame} is out of range (1-${count})`);
         const bytes = decode(im.rgba);
         if (bytes.length !== im.width * im.height * 4) throw new Error(`${what}expected ${im.width * im.height * 4} bytes, got ${bytes.length}`);
-        return { bytes, look: layerLook(im, what) };
+        const look = layerLook(im, what);
+        if (im.locked !== undefined && typeof im.locked !== "boolean") throw new Error(`${what}locked must be true or false`);
+        if (im.locked && !im.new_layer) throw new Error(`${what}locked applies to a new layer (new_layer)`);
+        return { bytes, look };
       });
       // palette: colors the palette lacks (normalized hex), appended first in the same step.
       let paletteAdd;
@@ -586,9 +592,11 @@ export function fakeDocument({
           ...(hit.shake_ms !== undefined ? { shakeMs: hit.shake_ms } : {}), ...(hit.amp !== undefined ? { amp: hit.amp } : {}),
         }];
       }
-      const layers = [], seen = new Set();
+      const layers = [], seen = new Set(), locked = [];
+      const wasActive = active.layer;
       p.images.forEach((im, i) => {
         const target = putOne(s, { ...im, prompt: p.prompt }, checked[i].bytes, im.frame, checked[i].look);
+        if (im.locked) locked.push(target);
         if (!seen.has(target.id)) { seen.add(target.id); layers.push({ layer: `L${target.id}`, name: target.name }); }
       });
       // The effect record on its layer: one written by this call (by name), else any layer by id or name.
@@ -598,6 +606,10 @@ export function fakeDocument({
         if (!target || target.group) throw new Error(`fx: no image layer ${p.fx.layer}`);
         target.fx = fx;
       }
+      // locked (#79): locked last; the layer that was active stays active.
+      for (const l of locked) l.editable = false;
+      if (locked.length && wasActive && wasActive.editable !== false) active.layer = wasActive;
+      if (p.spec !== undefined) s.spec = p.spec || undefined;
       return { layers, frames: s.durations.length, added, inserted, ...(paletteAdd ? { paletteAdded: paletteAdd.length } : {}) };
     },
     create_sprite: (p) => {

@@ -295,8 +295,11 @@ return function(handlers, D)
   -- sprite property aseprite-agent "fx.hits" (get_state's fxHits). Image
   -- frames use the final numbering.
   local IMAGE_KEYS = { width = true, height = true, rgba = true, frame = true, new_layer = true, layer = true,
-                       above = true, x = true, y = true, hide = true, blend_mode = true, opacity = true }
+                       above = true, x = true, y = true, hide = true, blend_mode = true, opacity = true, locked = true }
   local HITS_KEY = "fx.hits"
+  -- A pixel spec (#79): JSON text in the sprite property aseprite-agent "concept.spec" (get_state's pixelSpec).
+  local SPEC_KEY = "concept.spec"
+  local SPEC_MAX = 65536
   local function isInt(v) return math.type(v) == "integer" end
 
   -- params.insert checked, sorted by `after`, layers resolved. Returns the list and the frame count it adds.
@@ -385,7 +388,12 @@ return function(handlers, D)
     local sprite = app.sprite
     local images = params.images or {}
     local inserts, inserted = checkInserts(sprite, params.insert)
-    if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil and params.fx == nil then error("No images") end
+    if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil and params.fx == nil and params.spec == nil then
+      error("No images")
+    end
+    if params.spec ~= nil and (type(params.spec) ~= "string" or #params.spec > SPEC_MAX) then
+      error("spec must be text of at most " .. SPEC_MAX .. " characters")
+    end
     local fx = params.fx ~= nil and checkFx(params.fx, true) or nil
     local count = math.max(#sprite.frames + inserted, params.frames or 0)
     if params.duration ~= nil and params.duration < 1 then error("duration must be at least 1 ms") end
@@ -423,6 +431,8 @@ return function(handlers, D)
         error(string.format("%sexpected %d bytes, got %d", what, im.width * im.height * 4, #bytes))
       end
       local mode, opacity = layerLook(im, what)
+      if im.locked ~= nil and type(im.locked) ~= "boolean" then error(what .. "locked must be true or false") end
+      if im.locked and not im.new_layer then error(what .. "locked applies to a new layer (new_layer)") end
       checked[i] = { bytes = bytes, mode = mode, opacity = opacity }
     end
     -- palette: colors to append (the ones the palette lacks, as normalized hex), checked first too.
@@ -438,6 +448,8 @@ return function(handlers, D)
     end
     local layers, seen, added = {}, {}, 0
     local activeFrame = app.frame and app.frame.frameNumber
+    local activeLayer = app.layer
+    local locked = {}
     app.transaction(params.label or "AI images", function()
       -- The palette first, so an indexed sprite maps the new images onto the new entries.
       if #paletteAdd > 0 then
@@ -503,6 +515,7 @@ return function(handlers, D)
         if params.prompt and im.new_layer then im.prompt = params.prompt end
         local target = putOne(sprite, im, c.bytes, im.frame, c.mode, c.opacity)
         local id = "L" .. target.id
+        if im.locked then locked[#locked + 1] = target end
         if not seen[id] then
           seen[id] = true
           layers[#layers + 1] = { layer = id, name = target.name }
@@ -518,8 +531,13 @@ return function(handlers, D)
         if not target or target.isGroup then error("fx: no image layer " .. tostring(params.fx.layer)) end
         target.properties(variations.KEY)[FX_KEY] = fx
       end
+      -- locked (#79): the layer is locked last, after every frame is written.
+      for _, l in ipairs(locked) do l.isEditable = false end
+      if params.spec ~= nil then sprite.properties(variations.KEY)[SPEC_KEY] = params.spec ~= "" and params.spec or nil end
     end)
     if activeFrame then app.frame = sprite.frames[activeFrame] end
+    -- A locked layer never becomes the active one: the layer that was active stays (when there was one).
+    if #locked > 0 and activeLayer and activeLayer.isEditable then app.layer = activeLayer end
     app.refresh()
     return { layers = layers, frames = #sprite.frames, added = added, inserted = inserted,
              paletteAdded = params.palette ~= nil and #paletteAdd or nil }

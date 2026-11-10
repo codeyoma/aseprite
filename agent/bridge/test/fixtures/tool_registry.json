@@ -126,6 +126,18 @@
     ]
   },
   {
+    "name": "concept_spec",
+    "title": "Read concept into a pixel spec",
+    "kind": "read",
+    "label": "Read concept into a pixel spec",
+    "input": [
+      "image",
+      "method",
+      "panels",
+      "target_size"
+    ]
+  },
+  {
     "name": "critique",
     "title": "Fresh-eyes critique",
     "kind": "read",
@@ -615,6 +627,18 @@
     ]
   },
   {
+    "name": "mismatch_regions",
+    "title": "Mismatches with the reference",
+    "kind": "read",
+    "label": "Find mismatches with the reference",
+    "input": [
+      "frames",
+      "layer",
+      "reference",
+      "top"
+    ]
+  },
+  {
     "name": "new_fx_sprite",
     "title": "Effect as a new sprite",
     "kind": "edit",
@@ -688,6 +712,15 @@
       "frames",
       "layer",
       "variants"
+    ]
+  },
+  {
+    "name": "pixel_spec",
+    "title": "Pixel spec",
+    "kind": "edit",
+    "label": "Read pixel spec",
+    "input": [
+      "spec"
     ]
   },
   {
@@ -937,6 +970,22 @@
       "amount",
       "frame",
       "layer"
+    ]
+  },
+  {
+    "name": "storyboard_to_frames",
+    "title": "Storyboard to reference frames",
+    "kind": "edit",
+    "label": "Storyboard to reference frames",
+    "input": [
+      "frames",
+      "image",
+      "method",
+      "name",
+      "panels",
+      "show",
+      "spec",
+      "target_size"
     ]
   },
   {

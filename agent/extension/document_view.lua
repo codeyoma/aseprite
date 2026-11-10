@@ -239,6 +239,10 @@ function M.new(opts)
     end
     if #hits > 0 then info.fxHits = hits end
 
+    -- A pixel spec stored by the concept tools (#79): the sprite property aseprite-agent "concept.spec".
+    local spec = sprite.properties("aseprite-agent")["concept.spec"]
+    if type(spec) == "string" and spec ~= "" then info.pixelSpec = spec end
+
     local sel = sprite.selection
     if sel and not sel.isEmpty then
       local b = sel.bounds
