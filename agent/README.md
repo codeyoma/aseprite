@@ -156,6 +156,8 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `render_voxels` / `layers_to_voxels` | MagicaVoxel `.vox` models, or a sprite's layers stacked as height slices, rendered as pixel-exact isometric sprites in 4 tagged directions |
 | `render_model` | A `.glb`, `.gltf` or `.obj` model rendered into pixel-art sprites: orthographic camera at a preset elevation, 1/4/8/16 tagged directions, toon bands, outline, palette snapping, and glTF node animations sampled into frames (skinned meshes render in their bind pose) |
 | `list_fx` / `preview_fx` / `add_fx` / `new_fx_sprite` | A library of game effects as pixel art (hits, slashes, explosions, lightning, arcane, holy, fire): list them, preview one as a numbered contact sheet, add one to the sprite at a point or slice in one undo step (`anchor`: the point is the effect's visual centre, or its ground point for fires, pillars and explosions; timed by the sprite's frame durations, frames added when it runs longer, glow on an Addition layer, its colors added to the sprite palette), or make one its own tagged sprite |
+| `fx_from_recipe` | A new effect from a JSON recipe instead of code: size, origin, fps, duration, loop, seed, a palette ramp and phases (charge, flash, burst, linger, decay) of particle emitters (the engine's 12 kinds), lights, rings, floor bands and shapes, checked by a schema that lists every problem. `apply`: `preview` (a contact sheet), `layer` (as `add_fx`, one undo step) or `sprite` (as `new_fx_sprite`); the FX record's id is `recipe:<name>` and the recipe is stored on the layer to tune later. Loops wrap exactly |
+| `check_fx` | Checks effect layers (one, or every layer with an FX record or an `AI: fx` name), with coordinates and a fix: pixels outside the sprite or past the effect's canvas (re-rendered from the FX record), a one-shot that still draws at its duration, a loop whose last frame jumps back to its first, and more colors than `max_colors` (24) |
 | `fx_overlay` / `hit_stop` | An effect timed onto a character's animation (a tag or frames from a start frame), its impact on a chosen frame, placed at a point or at a layer's centre or feet: resampled at the sprite's frame times, or retimed to the effect's fps by inserting frames whose character cels are linked (tags grow); and a hit-stop that holds the contact frame exactly `freeze_ms` longer, optionally spending part of it on a decaying sideways shake and flashing a layer white, recorded on the sprite for export. One undo step each |
 | `spawn_agents` | Splits a multi-frame job across up to 4 sub-agents running in parallel, each limited to its frames (and layers) |
 | `propose_variations` | Shows the user the candidates the agent built (`variationLayer`) as thumbnails to keep one or discard |
@@ -164,6 +166,19 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `list_skills` | Search the skill catalog (built-in and your own) by name, category or trigger |
 | `read_guide` | Agent guide: `basics`, `recipes`, `pixel-art` (in [guide/](guide/)), plus your own skills |
 | `undo` / `redo` | Steps back and forward through the history |
+
+A small FX recipe (`fx_from_recipe`; positions are px from the origin, y down; colors are palette steps, 0 darkest and -1 brightest):
+
+```json
+{ "name": "blue-burst", "size": [96, 96], "origin": [48, 48], "duration": 0.6,
+  "palette": ["#10162e", "#2a4a8c", "#4f8fe0", "#9fd4ff", "#ffffff"],
+  "phases": [
+    { "name": "flash", "start": 0, "end": 0.1, "shapes": [{ "type": "disc", "radius": [6, 2], "color": -1 }] },
+    { "name": "burst", "start": 0, "end": 0.4,
+      "emitters": [{ "kind": "spark", "count": 16, "speed": [80, 160], "life": [0.2, 0.35] }],
+      "rings": [{ "radius": [3, 22], "width": [3, 1], "color": "cool" }],
+      "lights": [{ "radius": 24, "strength": 0.6, "life": 0.25 }] } ] }
+```
 
 Several agent sessions can run at once. The newest bridge takes over Aseprite; when it exits, the previous one takes it back.
 

@@ -88,6 +88,16 @@
     ]
   },
   {
+    "name": "check_fx",
+    "title": "Check effects",
+    "kind": "read",
+    "label": "Check effects",
+    "input": [
+      "layer",
+      "max_colors"
+    ]
+  },
+  {
     "name": "color_stats",
     "title": "Compare tone",
     "kind": "read",
@@ -299,6 +309,21 @@
       "path",
       "source",
       "trim"
+    ]
+  },
+  {
+    "name": "fx_from_recipe",
+    "title": "Effect from recipe",
+    "kind": "edit",
+    "label": "Preview recipe",
+    "input": [
+      "anchor",
+      "apply",
+      "glow",
+      "recipe",
+      "start_frame",
+      "x",
+      "y"
     ]
   },
   {

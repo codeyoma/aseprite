@@ -171,7 +171,8 @@ function M.new(opts)
         -- An effect recorded by the FX tools (#71): the layer property aseprite-agent "fx".
         local fx = l.properties("aseprite-agent").fx
         if type(fx) == "table" and fx.id then
-          item.fx = { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windupMs }
+          item.fx = { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windupMs,
+            recipe = fx.recipe, render = fx.render }
         end
       end
       out[#out + 1] = item

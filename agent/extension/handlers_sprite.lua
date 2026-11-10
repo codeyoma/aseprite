@@ -12,10 +12,12 @@ return function(handlers, D)
   -- An effect record for export (#71): params.fx = { layer?, id, x, y, fps, loop, windup_ms }, checked before
   -- anything changes. Returns the layer property value (aseprite-agent "fx", get_state's layer fx).
   local FX_KEY = "fx"
+  local FX_TEXT_MAX = 16384
   local function checkFx(fx, withLayer)
     if type(fx) ~= "table" then error("fx: expected an object") end
     for k in pairs(fx) do
-      if not (k == "id" or k == "x" or k == "y" or k == "fps" or k == "loop" or k == "windup_ms" or (withLayer and k == "layer")) then
+      if not (k == "id" or k == "x" or k == "y" or k == "fps" or k == "loop" or k == "windup_ms" or k == "recipe" or k == "render"
+          or (withLayer and k == "layer")) then
         error("fx: unknown param '" .. tostring(k) .. "'")
       end
     end
@@ -25,7 +27,13 @@ return function(handlers, D)
     if type(fx.fps) ~= "number" or fx.fps <= 0 then error("fx: fps must be above 0") end
     if type(fx.loop) ~= "boolean" then error("fx: loop must be true or false") end
     if math.type(fx.windup_ms) ~= "integer" or fx.windup_ms < 0 then error("fx: windup_ms must be whole ms, 0 or more") end
-    return { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windup_ms }
+    -- An FX recipe's JSON and the render settings (#72): text, kept small enough for a layer property.
+    for _, k in ipairs({ "recipe", "render" }) do
+      if fx[k] ~= nil and (type(fx[k]) ~= "string" or #fx[k] > FX_TEXT_MAX) then
+        error("fx: " .. k .. " must be text of at most " .. FX_TEXT_MAX .. " characters")
+      end
+    end
+    return { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windup_ms, recipe = fx.recipe, render = fx.render }
   end
 
   -- A new RGB sprite from RGBA bytes (base64), with an optional palette.

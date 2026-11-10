@@ -6,7 +6,7 @@ import { documentOf, type Document, type PutImagesItem, type SpriteInfo } from "
 import { renderFx, visualCenter, type RenderedFx } from "./fx/index.js";
 import { FX_CATEGORIES, FX_LIBRARY, findFx, searchFx, type FxAnchor, type FxEntry } from "./fx/library.js";
 import { bounds, contactSheet, encodePng, snapToPalette, type Rect, type Rgba } from "./image.js";
-import { failure, text, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type Tool, type ToolContext, type ToolResult } from "./tool.js";
 
 export const hexList = z.array(z.string()).min(1);
 export const optionsInput = z.record(z.string(), z.unknown()).optional()
@@ -85,7 +85,8 @@ export function placed(img: Rgba, ox: number, oy: number, spriteW: number, sprit
   return { image: { width: w, height: h, data }, x: ox + x0, y: oy + y0 };
 }
 
-const centers = new Map<string, { x: number; y: number }>();
+/** Visual centres by effect module (a recipe's id can name several recipes), then by options, seed and canvas. */
+const centers = new WeakMap<object, Map<string, { x: number; y: number }>>();
 
 /**
  * The point of the effect's canvas that goes at the caller's (x, y): its origin for "ground", its visual centre
@@ -95,12 +96,14 @@ const centers = new Map<string, { x: number; y: number }>();
 export function fxAnchorPoint(e: FxEntry, anchor: FxAnchor, opts: Record<string, unknown>, seed: number,
   canvas: { width: number; height: number; x: number; y: number }): { x: number; y: number } {
   if (anchor === "ground") return { x: canvas.x, y: canvas.y };
-  const key = JSON.stringify([e.id, opts, seed, canvas]);
-  let c = centers.get(key);
+  const key = JSON.stringify([opts, seed, canvas]);
+  let byKey = centers.get(e.module);
+  if (!byKey) centers.set(e.module, (byKey = new Map()));
+  let c = byKey.get(key);
   if (!c) {
     c = visualCenter(renderFx(e.module, opts, { fps: e.fps, seed, canvas }).frames) ?? { x: canvas.x, y: canvas.y };
-    if (centers.size > 200) centers.clear();
-    centers.set(key, c);
+    if (byKey.size > 200) byKey.clear();
+    byKey.set(key, c);
   }
   return c;
 }
@@ -285,32 +288,7 @@ export const FX_TOOLS: Tool[] = [
     async run(input) {
       const e = lookup(input.id);
       if (isFailure(e)) return e;
-      let opts: Record<string, unknown>;
-      try { opts = effectOptions(e, input); } catch (err) { return failure((err as Error).message); }
-      const fps = input.fps ?? e.fps;
-      const r = renderFx(e.module, opts, { fps, seed: input.seed ?? e.seed });
-      const total = r.frames.length, want = Math.min(total, input.frames ?? 24);
-      const picks = want >= total ? r.frames.map((_, i) => i)
-        : Array.from({ length: want }, (_, i) => Math.round((i * (total - 1)) / Math.max(1, want - 1)));
-      const box = unionBounds(picks.map((i) => r.frames[i]));
-      if (!box) return { content: [text(`${e.id} draws nothing with these options.`)] };
-      const shown = picks.map((i) => crop(r.frames[i], box));
-      const zoom = input.zoom ?? (box.w <= 64 ? 3 : box.w <= 160 ? 2 : 1);
-      const columns = Math.max(1, Math.min(shown.length, Math.floor(1200 / (box.w * zoom + 4))));
-      const sheet = contactSheet(shown, { labels: picks.map((i) => String(i + 1)), columns, zoom, background: BACKDROP, labelColor: LABEL });
-      const ms = (i: number) => Math.round((i * 1000) / fps);
-      const seed = input.seed ?? e.seed;
-      const center = fxAnchorPoint(e, "center", opts, seed, fxCanvas(e, false, 0));
-      return {
-        content: [
-          { type: "image", data: encodePng(sheet).toString("base64"), mimeType: "image/png" },
-          text(`${summary(e)}. ${total} frames at ${fps} fps; showing ${shown.length} (frame numbers above each, ` +
-            `times ${picks.slice(0, 6).map(ms).join(", ")}${picks.length > 6 ? ", …" : ""} ms), cut to x ${box.x}-${box.x + box.w - 1}, ` +
-            `y ${box.y}-${box.y + box.h - 1} of the canvas; the origin (ground) is at ${r.origin.x},${r.origin.y}, the visual ` +
-            `centre at ${center.x},${center.y}; add_fx puts its ${e.anchor === "center" ? "centre" : "origin"} at x, y by default (anchor ${e.anchor}). ` +
-            `${e.loop ? "It loops." : "A one-shot: its last frame is empty."} Zoom ${zoom}.`),
-        ],
-      };
+      return previewFx(e, input);
     },
   },
   {
@@ -350,68 +328,7 @@ export const FX_TOOLS: Tool[] = [
     async run(input, ctx) {
       const e = lookup(input.id);
       if (isFailure(e)) return e;
-      const doc = documentOf(ctx);
-      const info = await doc.info();
-      let opts: Record<string, unknown>;
-      try { opts = effectOptions(e, input); } catch (err) { return failure((err as Error).message); }
-      let snap: RGBA[] | undefined;
-      if (input.palette === "sprite") {
-        snap = info.palette;
-        if (!snap.length) return failure("The sprite palette has no colors to snap to.");
-      }
-      let ax = Math.floor(info.width / 2), ay = Math.floor(info.height / 2);
-      if (input.slice) {
-        const s = info.slices.find((x) => x.name === input.slice);
-        if (!s) return failure(`No slice named ${input.slice}. Slices: ${info.slices.map((x) => x.name).join(", ") || "none"}.`);
-        ax = s.bounds.x + Math.floor(s.bounds.w / 2);
-        ay = s.bounds.y + Math.floor(s.bounds.h / 2);
-      }
-      ax = input.x ?? ax;
-      ay = input.y ?? ay;
-      const start = input.start_frame ?? info.frame;
-      if (start > info.durations.length) return failure(`start_frame ${start} is past the last frame (${info.durations.length}).`);
-      const fps = input.fps ?? e.fps;
-      const newMs = Math.max(1, Math.round(1000 / fps));
-      const plan = fxSchedule(info.durations, start, e.durationMs, e.loop, newMs);
-      const canvas = fxCanvas(e, !!input.flip, input.angle ?? 0);
-      const seed = input.seed ?? e.seed;
-      const r: RenderedFx = renderFx(e.module, opts, { times: plan.samples.map((s) => s.t / 1000), seed, palette: snap, canvas });
-      const glow = input.glow ?? "layer";
-      const main = freeLayerName(info, e.id);
-      const anchor: FxAnchor = input.anchor ?? e.anchor;
-      const at = fxAnchorPoint(e, anchor, opts, seed, canvas);
-      const left = ax - at.x, top = ay - at.y;
-      const colorItems: PutImagesItem[] = [], glowItems: PutImagesItem[] = [];
-      plan.samples.forEach((s, i) => {
-        const c = placed(glow === "baked" ? r.frames[i] : r.color[i], left, top, info.width, info.height);
-        if (c) colorItems.push({ image: c.image, x: c.x, y: c.y, frame: s.frame, newLayer: main });
-        if (glow !== "layer") return;
-        const g = placed(r.glow[i], left, top, info.width, info.height);
-        if (g) glowItems.push({ image: g.image, x: g.x, y: g.y, frame: s.frame, newLayer: `${main} glow`, blendMode: "addition" });
-      });
-      if (colorItems.length) for (const g of glowItems) g.above = `AI: ${main}`;
-      if (!colorItems.length && !glowItems.length) {
-        return failure(`${e.id} at ${ax},${ay} lands outside the ${info.width}x${info.height} sprite; nothing was added.`);
-      }
-      const { append, note: paletteNote } = await fxPalette(doc, info, colorItems, input.palette);
-      const res = await doc.putImages([...colorItems, ...glowItems], {
-        frames: plan.frames, duration: newMs, label: `Add effect ${e.id}`, prompt: `add_fx ${e.id}`, palette: append,
-        // What export needs (#71): the origin in sprite pixels, timing and windup, on the effect's layer.
-        fx: {
-          layer: colorItems.length ? `AI: ${main}` : `AI: ${main} glow`, id: e.id, x: left + canvas.x, y: top + canvas.y,
-          fps, loop: e.loop, windupMs: fxImpact(e, opts, seed, canvas).ms,
-        },
-      });
-      const first = plan.samples[0].frame, last = plan.samples.at(-1)!.frame;
-      const layerNames = res.layers.map((l) => (l.name.endsWith(" glow") ? `${l.name} (Addition)` : l.name));
-      const where = anchor === "center" ? `its visual centre at ${ax},${ay} (anchor center)` : `its origin at ${ax},${ay} (anchor ground)`;
-      return {
-        content: [text(
-          `Added ${e.title} (${e.id}) with ${where} on frames ${first}-${last}` +
-          `${res.added ? ` (${res.added} frame${res.added === 1 ? "" : "s"} added, ${newMs} ms each)` : ""}` +
-          `${e.loop ? ", looping" : ""}. Layers: ${layerNames.join(", ")}.${paletteNote} One undo step.`,
-        )],
-      };
+      return placeFx(ctx, e, input);
     },
   },
   {
@@ -434,27 +351,165 @@ export const FX_TOOLS: Tool[] = [
     async run(input, ctx) {
       const e = lookup(input.id);
       if (isFailure(e)) return e;
-      let opts: Record<string, unknown>;
-      try { opts = effectOptions(e, input); } catch (err) { return failure((err as Error).message); }
-      const fps = input.fps ?? e.fps;
-      const r = renderFx(e.module, opts, { fps, seed: input.seed ?? e.seed });
-      const duration = Math.max(1, Math.round(1000 / fps));
-      // The sprite's palette is the effect's colors; past FX_PALETTE_CAP they are reduced and the frames snapped.
-      let frames = r.frames, palette = fxColors(frames), paletteNote = `its ${palette.length} colors as the palette`;
-      if (palette.length > FX_PALETTE_CAP) {
-        const reduced = reducedPalette(frames, FX_PALETTE_CAP);
-        frames = frames.map((f) => snapToPalette(f, reduced, 1));
-        paletteNote = `its ${palette.length} colors reduced to ${reduced.length} and the frames snapped to them (a palette ` +
-          `holds ${FX_PALETTE_CAP})`;
-        palette = fxColors(frames);
-      }
-      const res = await documentOf(ctx).createAnimation(r.width, r.height, frames.map((image) => ({ image, duration })), {
-        title: e.id, tags: [{ name: e.id, from: 1, to: frames.length }], palette,
-        fx: { id: e.id, x: r.origin.x, y: r.origin.y, fps, loop: e.loop, windupMs: fxImpact(e, opts, input.seed ?? e.seed, fxCanvas(e, false, 0)).ms },
-      });
-      return { content: [text(`Made "${res.title}": ${frames.length} frames of ${r.width}x${r.height} at ${fps} fps (${duration} ms each), ` +
-        `tag ${e.id}${e.loop ? ", a seamless loop" : ", a one-shot ending on an empty frame"}, ${paletteNote}; ` +
-        `the effect's origin is at ${r.origin.x},${r.origin.y}.`)] };
+      return fxSprite(ctx, e, input);
     },
   },
 ];
+
+/** What placeFx, fxSprite and previewFx take: add_fx's inputs (preview and sprite use the ones they need). */
+export interface FxPlaceInput {
+  x?: number; y?: number; anchor?: FxAnchor; slice?: string; start_frame?: number; flip?: boolean; angle?: number;
+  seed?: number; palette?: "sprite" | string[]; light?: number; glow?: "layer" | "baked" | "none"; fps?: number;
+  options?: Record<string, unknown>; frames?: number; zoom?: number;
+}
+
+/**
+ * The render settings worth recording beside the FX record (its `render`, JSON) so check_fx can re-render what
+ * was placed: only those that differ from the effect's defaults; undefined when none do.
+ */
+export function renderRecord(e: FxEntry, input: FxPlaceInput): string | undefined {
+  const r: Record<string, unknown> = {};
+  if (input.seed !== undefined && input.seed !== e.seed) r.seed = input.seed;
+  if (input.flip) r.flip = true;
+  if (input.angle && input.angle % 360) r.angle = input.angle;
+  if (input.options && Object.keys(input.options).length) r.options = input.options;
+  if (Array.isArray(input.palette)) r.palette = input.palette;
+  if (input.light !== undefined) r.light = input.light;
+  return Object.keys(r).length ? JSON.stringify(r) : undefined;
+}
+
+/** preview_fx's contact sheet for an effect (a library entry or a compiled recipe). Nothing changes. */
+export function previewFx(e: FxEntry, input: FxPlaceInput): ToolResult {
+  let opts: Record<string, unknown>;
+  try { opts = effectOptions(e, input as Parameters<typeof effectOptions>[1]); } catch (err) { return failure((err as Error).message); }
+  const fps = input.fps ?? e.fps;
+  const r = renderFx(e.module, opts, { fps, seed: input.seed ?? e.seed });
+  const total = r.frames.length, want = Math.min(total, input.frames ?? 24);
+  const picks = want >= total ? r.frames.map((_, i) => i)
+    : Array.from({ length: want }, (_, i) => Math.round((i * (total - 1)) / Math.max(1, want - 1)));
+  const box = unionBounds(picks.map((i) => r.frames[i]));
+  if (!box) return { content: [text(`${e.id} draws nothing with these options.`)] };
+  const shown = picks.map((i) => crop(r.frames[i], box));
+  const zoom = input.zoom ?? (box.w <= 64 ? 3 : box.w <= 160 ? 2 : 1);
+  const columns = Math.max(1, Math.min(shown.length, Math.floor(1200 / (box.w * zoom + 4))));
+  const sheet = contactSheet(shown, { labels: picks.map((i) => String(i + 1)), columns, zoom, background: BACKDROP, labelColor: LABEL });
+  const ms = (i: number) => Math.round((i * 1000) / fps);
+  const seed = input.seed ?? e.seed;
+  const center = fxAnchorPoint(e, "center", opts, seed, fxCanvas(e, false, 0));
+  const endsEmpty = !bounds(r.frames[total - 1], 1);
+  return {
+    content: [
+      { type: "image", data: encodePng(sheet).toString("base64"), mimeType: "image/png" },
+      text(`${summary(e)}. ${total} frames at ${fps} fps; showing ${shown.length} (frame numbers above each, ` +
+        `times ${picks.slice(0, 6).map(ms).join(", ")}${picks.length > 6 ? ", …" : ""} ms), cut to x ${box.x}-${box.x + box.w - 1}, ` +
+        `y ${box.y}-${box.y + box.h - 1} of the canvas; the origin (ground) is at ${r.origin.x},${r.origin.y}, the visual ` +
+        `centre at ${center.x},${center.y}; add_fx puts its ${e.anchor === "center" ? "centre" : "origin"} at x, y by default (anchor ${e.anchor}). ` +
+        `${e.loop ? "It loops." : endsEmpty ? "A one-shot: its last frame is empty." : "A one-shot, but its last frame is not empty (it pops off)."} Zoom ${zoom}.`),
+    ],
+  };
+}
+
+/**
+ * add_fx's work for an effect (a library entry or a compiled recipe): render it at the sprite frames' times, place
+ * it by its anchor and write it, its glow, its colors and its FX record in one put_images request (one undo step).
+ * extra.recipe is the recipe JSON recorded with it.
+ */
+export async function placeFx(ctx: ToolContext, e: FxEntry, input: FxPlaceInput, extra: { recipe?: string } = {}): Promise<ToolResult> {
+  const doc = documentOf(ctx);
+  const info = await doc.info();
+  let opts: Record<string, unknown>;
+  try { opts = effectOptions(e, input as Parameters<typeof effectOptions>[1]); } catch (err) { return failure((err as Error).message); }
+  let snap: RGBA[] | undefined;
+  if (input.palette === "sprite") {
+    snap = info.palette;
+    if (!snap.length) return failure("The sprite palette has no colors to snap to.");
+  }
+  let ax = Math.floor(info.width / 2), ay = Math.floor(info.height / 2);
+  if (input.slice) {
+    const s = info.slices.find((x) => x.name === input.slice);
+    if (!s) return failure(`No slice named ${input.slice}. Slices: ${info.slices.map((x) => x.name).join(", ") || "none"}.`);
+    ax = s.bounds.x + Math.floor(s.bounds.w / 2);
+    ay = s.bounds.y + Math.floor(s.bounds.h / 2);
+  }
+  ax = input.x ?? ax;
+  ay = input.y ?? ay;
+  const start = input.start_frame ?? info.frame;
+  if (start > info.durations.length) return failure(`start_frame ${start} is past the last frame (${info.durations.length}).`);
+  const fps = input.fps ?? e.fps;
+  const newMs = Math.max(1, Math.round(1000 / fps));
+  const plan = fxSchedule(info.durations, start, e.durationMs, e.loop, newMs);
+  const canvas = fxCanvas(e, !!input.flip, input.angle ?? 0);
+  const seed = input.seed ?? e.seed;
+  const r: RenderedFx = renderFx(e.module, opts, { times: plan.samples.map((s) => s.t / 1000), seed, palette: snap, canvas });
+  const glow = input.glow ?? "layer";
+  const main = freeLayerName(info, e.id);
+  const anchor: FxAnchor = input.anchor ?? e.anchor;
+  const at = fxAnchorPoint(e, anchor, opts, seed, canvas);
+  const left = ax - at.x, top = ay - at.y;
+  const colorItems: PutImagesItem[] = [], glowItems: PutImagesItem[] = [];
+  plan.samples.forEach((s, i) => {
+    const c = placed(glow === "baked" ? r.frames[i] : r.color[i], left, top, info.width, info.height);
+    if (c) colorItems.push({ image: c.image, x: c.x, y: c.y, frame: s.frame, newLayer: main });
+    if (glow !== "layer") return;
+    const g = placed(r.glow[i], left, top, info.width, info.height);
+    if (g) glowItems.push({ image: g.image, x: g.x, y: g.y, frame: s.frame, newLayer: `${main} glow`, blendMode: "addition" });
+  });
+  if (colorItems.length) for (const g of glowItems) g.above = `AI: ${main}`;
+  if (!colorItems.length && !glowItems.length) {
+    return failure(`${e.id} at ${ax},${ay} lands outside the ${info.width}x${info.height} sprite; nothing was added.`);
+  }
+  const { append, note: paletteNote } = await fxPalette(doc, info, colorItems, input.palette);
+  const res = await doc.putImages([...colorItems, ...glowItems], {
+    frames: plan.frames, duration: newMs, label: `Add effect ${e.id}`, prompt: `add_fx ${e.id}`, palette: append,
+    // What export needs (#71): the origin in sprite pixels, timing and windup, on the effect's layer.
+    fx: {
+      layer: colorItems.length ? `AI: ${main}` : `AI: ${main} glow`, id: e.id, x: left + canvas.x, y: top + canvas.y,
+      fps, loop: e.loop, windupMs: fxImpact(e, opts, seed, canvas).ms, ...fxSource(e, input, extra),
+    },
+  });
+  const first = plan.samples[0].frame, last = plan.samples.at(-1)!.frame;
+  const layerNames = res.layers.map((l) => (l.name.endsWith(" glow") ? `${l.name} (Addition)` : l.name));
+  const where = anchor === "center" ? `its visual centre at ${ax},${ay} (anchor center)` : `its origin at ${ax},${ay} (anchor ground)`;
+  return {
+    content: [text(
+      `Added ${e.title} (${e.id}) with ${where} on frames ${first}-${last}` +
+      `${res.added ? ` (${res.added} frame${res.added === 1 ? "" : "s"} added, ${newMs} ms each)` : ""}` +
+      `${e.loop ? ", looping" : ""}. Layers: ${layerNames.join(", ")}.${paletteNote} One undo step.`,
+    )],
+  };
+}
+
+/** The FX record's optional source fields: the recipe JSON and the render settings that differ from the defaults. */
+function fxSource(e: FxEntry, input: FxPlaceInput, extra: { recipe?: string }): { recipe?: string; render?: string } {
+  const render = renderRecord(e, input);
+  return { ...(extra.recipe ? { recipe: extra.recipe } : {}), ...(render ? { render } : {}) };
+}
+
+/** new_fx_sprite's work for an effect (a library entry or a compiled recipe): its own sprite, tagged, one layer with its FX record. */
+export async function fxSprite(ctx: ToolContext, e: FxEntry, input: FxPlaceInput, extra: { recipe?: string } = {}): Promise<ToolResult> {
+  let opts: Record<string, unknown>;
+  try { opts = effectOptions(e, input as Parameters<typeof effectOptions>[1]); } catch (err) { return failure((err as Error).message); }
+  const fps = input.fps ?? e.fps;
+  const r = renderFx(e.module, opts, { fps, seed: input.seed ?? e.seed });
+  const duration = Math.max(1, Math.round(1000 / fps));
+  // The sprite's palette is the effect's colors; past FX_PALETTE_CAP they are reduced and the frames snapped.
+  let frames = r.frames, palette = fxColors(frames), paletteNote = `its ${palette.length} colors as the palette`;
+  if (palette.length > FX_PALETTE_CAP) {
+    const reduced = reducedPalette(frames, FX_PALETTE_CAP);
+    frames = frames.map((f) => snapToPalette(f, reduced, 1));
+    paletteNote = `its ${palette.length} colors reduced to ${reduced.length} and the frames snapped to them (a palette ` +
+      `holds ${FX_PALETTE_CAP})`;
+    palette = fxColors(frames);
+  }
+  const name = e.id.replace(/^recipe:/, "");
+  const res = await documentOf(ctx).createAnimation(r.width, r.height, frames.map((image) => ({ image, duration })), {
+    title: name, tags: [{ name, from: 1, to: frames.length }], palette,
+    fx: {
+      id: e.id, x: r.origin.x, y: r.origin.y, fps, loop: e.loop, windupMs: fxImpact(e, opts, input.seed ?? e.seed, fxCanvas(e, false, 0)).ms,
+      ...fxSource(e, input, extra),
+    },
+  });
+  const ending = e.loop ? ", a seamless loop" : bounds(frames[frames.length - 1], 1) ? ", a one-shot whose last frame is not empty" : ", a one-shot ending on an empty frame";
+  return { content: [text(`Made "${res.title}": ${frames.length} frames of ${r.width}x${r.height} at ${fps} fps (${duration} ms each), ` +
+    `tag ${name}${ending}, ${paletteNote}; the effect's origin is at ${r.origin.x},${r.origin.y}.`)] };
+}

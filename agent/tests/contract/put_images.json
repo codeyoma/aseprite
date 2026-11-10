@@ -195,6 +195,32 @@
       ]
     },
     {
+      "name": "an effect record may carry a recipe's JSON and render settings as text (#72)",
+      "notes": "recipe and render are stored and reported back as given; anything but text, or text past 16384 characters, fails before anything changes.",
+      "fixture": {
+        "width": 2, "height": 1,
+        "layers": [{ "name": "Body", "cels": { "1": ["r."] } }]
+      },
+      "steps": [
+        { "request": "put_images", "params": { "images": [], "fx": {
+          "layer": "Body", "id": "recipe:blue-burst", "x": 1, "y": 0, "fps": 30, "loop": false, "windup_ms": 33,
+          "recipe": "{\"name\":\"blue-burst\",\"duration\":0.5}", "render": "{\"flip\":true}" } },
+          "result": { "layers": [] } },
+        { "state": { "layers": [{ "name": "Body", "fx": {
+          "id": "recipe:blue-burst", "x": 1, "y": 0, "fps": 30, "loop": false, "windupMs": 33,
+          "recipe": "{\"name\":\"blue-burst\",\"duration\":0.5}", "render": "{\"flip\":true}" } }] } },
+        { "request": "put_images", "params": { "images": [], "fx": { "layer": "Body", "id": "a", "x": 0, "y": 0, "fps": 30, "loop": true, "windup_ms": 0, "recipe": 5 } },
+          "error": "fx: recipe must be text of at most 16384 characters" },
+        { "request": "put_images", "params": { "images": [], "fx": { "layer": "Body", "id": "a", "x": 0, "y": 0, "fps": 30, "loop": true, "windup_ms": 0, "render": { "flip": true } } },
+          "error": "fx: render must be text" },
+        { "request": "create_animation", "params": {
+          "width": 1, "height": 1, "frames": [{ "rgba": { "rows": ["y"] } }],
+          "fx": { "id": "recipe:glow", "x": 0, "y": 0, "fps": 30, "loop": true, "windup_ms": 0, "recipe": "{\"name\":\"glow\"}" }
+        }, "result": { "frames": 1 } },
+        { "state": { "layers": [{ "name": "Layer 1", "fx": { "id": "recipe:glow", "recipe": "{\"name\":\"glow\"}", "render": { "$absent": true } } }] } }
+      ]
+    },
+    {
       "name": "the sprite snapshot blends an Addition layer at partial opacity as drawSprite does; create_animation records an effect",
       "legend": { "p": "#ff0080", "q": "#0000ff80" },
       "fixture": {

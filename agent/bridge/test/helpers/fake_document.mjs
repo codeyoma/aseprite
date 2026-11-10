@@ -265,7 +265,7 @@ export function fakeDocument({
   // An effect record (handlers_sprite.lua checkFx): the layer property value, or the extension's error.
   const checkFx = (fx, withLayer) => {
     if (!fx || typeof fx !== "object" || Array.isArray(fx)) throw new Error("fx: expected an object");
-    const keys = ["id", "x", "y", "fps", "loop", "windup_ms", ...(withLayer ? ["layer"] : [])];
+    const keys = ["id", "x", "y", "fps", "loop", "windup_ms", "recipe", "render", ...(withLayer ? ["layer"] : [])];
     for (const k of Object.keys(fx)) if (!keys.includes(k)) throw new Error(`fx: unknown param '${k}'`);
     if (withLayer && typeof fx.layer !== "string") throw new Error("fx: layer is required");
     if (typeof fx.id !== "string" || !fx.id) throw new Error("fx: id is required");
@@ -273,7 +273,13 @@ export function fakeDocument({
     if (typeof fx.fps !== "number" || fx.fps <= 0) throw new Error("fx: fps must be above 0");
     if (typeof fx.loop !== "boolean") throw new Error("fx: loop must be true or false");
     if (!Number.isInteger(fx.windup_ms) || fx.windup_ms < 0) throw new Error("fx: windup_ms must be whole ms, 0 or more");
-    return { id: fx.id, x: fx.x, y: fx.y, fps: fx.fps, loop: fx.loop, windupMs: fx.windup_ms };
+    for (const k of ["recipe", "render"]) {
+      if (fx[k] !== undefined && (typeof fx[k] !== "string" || fx[k].length > 16384)) throw new Error(`fx: ${k} must be text of at most 16384 characters`);
+    }
+    return {
+      id: fx.id, x: fx.x, y: fx.y, fps: fx.fps, loop: fx.loop, windupMs: fx.windup_ms,
+      ...(fx.recipe !== undefined ? { recipe: fx.recipe } : {}), ...(fx.render !== undefined ? { render: fx.render } : {}),
+    };
   };
   const pathOf = (l) => (l.parent ? `${pathOf(l.parent)}/${l.name}` : l.name);
   // A new layer's blend mode and opacity from wire params, checked first (handlers_sprite.lua layerLook).

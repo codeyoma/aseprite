@@ -40,6 +40,10 @@ export interface FxInfo {
   loop: boolean;
   /** ms from the effect's start to its impact (fxImpact). */
   windupMs: number;
+  /** An FX recipe's JSON when the effect came from one (fx_from_recipe, #72), so it can be re-rendered and tuned. */
+  recipe?: string;
+  /** JSON of the render settings that differ from the effect's defaults (seed, flip, angle, options, palette, light). */
+  render?: string;
 }
 
 /** A hit hit_stop recorded (sprite property aseprite-agent "fx.hits"), for exporters (#71). */
@@ -244,7 +248,10 @@ export interface Document {
 }
 
 /** An FxInfo as wire params (put_images' and create_animation's fx). */
-const fxWire = (f: FxInfo) => ({ id: f.id, x: f.x, y: f.y, fps: f.fps, loop: f.loop, windup_ms: f.windupMs });
+const fxWire = (f: FxInfo) => ({
+  id: f.id, x: f.x, y: f.y, fps: f.fps, loop: f.loop, windup_ms: f.windupMs,
+  ...(f.recipe !== undefined ? { recipe: f.recipe } : {}), ...(f.render !== undefined ? { render: f.render } : {}),
+});
 
 const encode = (img: Rgba) => Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength).toString("base64");
 
@@ -276,7 +283,10 @@ export function resolveFrames(spec: unknown, count: number, active: number, fall
   return out;
 }
 
-const fxOf = (f: any): FxInfo => ({ id: String(f.id ?? ""), x: f.x, y: f.y, fps: f.fps, loop: !!f.loop, windupMs: f.windupMs ?? 0 });
+const fxOf = (f: any): FxInfo => ({
+  id: String(f.id ?? ""), x: f.x, y: f.y, fps: f.fps, loop: !!f.loop, windupMs: f.windupMs ?? 0,
+  ...(typeof f.recipe === "string" ? { recipe: f.recipe } : {}), ...(typeof f.render === "string" ? { render: f.render } : {}),
+});
 
 function flatten(tree: any[], path: string[] = []): LayerInfo[] {
   const out: LayerInfo[] = [];
