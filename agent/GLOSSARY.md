@@ -16,6 +16,8 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Tool**: an MCP tool the bridge offers agents (`get_state`, `execute_lua`, `snapshot`, ...). A tool is either an edit (changes the document) or a read.
 
+**Tool table**: the single definition of every tool (`agent/bridge/src/tools.ts`): name, input, edit/read kind, step label and behaviour. MCP registration and chat labels come from it.
+
 **Step**: one row of an agent turn in the chat panel: a thought, a tool call with its result, or the reply.
 
 **Script Panel**: a script dialog docked in the main window (`Dialog{ dockable = true }`), implemented by `ScriptPanel` in this fork.

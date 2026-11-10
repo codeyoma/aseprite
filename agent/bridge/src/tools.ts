@@ -1,0 +1,260 @@
+// The Tool table: every MCP tool the bridge offers, defined once. MCP
+// registration, the chat panel's step labels and the edit/read kind all
+// come from here. A tool without `run` forwards its input to the Aseprite
+// request method of the same name and returns the result as JSON.
+import * as z from "zod/v4";
+import type { Reply } from "./aseprite.js";
+import { describeCommand, filterCommands, findCommand, COMMANDS, suggestCommands, toWireParams } from "./commands.js";
+import { guideTopics, readGuide } from "./guide.js";
+import { encodeSnapshot } from "./png.js";
+
+/** The seam tools use to reach Aseprite: AsepriteLink in the bridge, a fake in tests. */
+export interface AsepriteRequester {
+  request(method: string, params?: Record<string, unknown>, timeoutMs?: number): Promise<Reply>;
+}
+
+type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+export interface ToolResult {
+  content: Content[];
+  isError?: boolean;
+}
+
+export interface Tool {
+  name: string;
+  title: string;
+  description: string;
+  input: z.ZodObject<any>;
+  /** "edit" changes the document; "read" does not. */
+  kind: "edit" | "read";
+  /** Short description of a call, shown as a step in the chat panel. */
+  label(input: any): string;
+  /** Custom behaviour; omitted for tools that forward to Aseprite as-is. */
+  run?(input: any, aseprite: AsepriteRequester): Promise<ToolResult>;
+  /** Timeout for forwarded requests. */
+  timeoutMs?: number;
+}
+
+export function text(value: unknown): Content {
+  return { type: "text", text: typeof value === "string" ? value : JSON.stringify(value, null, 2) };
+}
+
+export function failure(message: string): ToolResult {
+  return { content: [text(message)], isError: true };
+}
+
+const steps = z.object({ steps: z.number().int().min(1).max(100).optional() });
+
+export const TOOLS: Tool[] = [
+  {
+    name: "get_state",
+    title: "Get Aseprite state",
+    description:
+      "Return the open sprites and, for the active sprite: size, color mode, layer tree (top layer first), " +
+      "frames with durations, tags, palette, selection, active layer/frame, current tool and colors.",
+    input: z.object({}),
+    kind: "read",
+    label: () => "Read sprite state",
+  },
+  {
+    name: "get_context",
+    title: "Get user context",
+    description:
+      "Return what the user is working on: active layer (with group path), frame, tag and cel bounds; the timeline " +
+      "range (selected layers/frames/cels); the pixel selection; the current tool, brush, colors and zoom. " +
+      "Use it to resolve requests like 'this layer', 'the selected frames' or 'the selected area'.",
+    input: z.object({}),
+    kind: "read",
+    label: () => "Read selection",
+  },
+  {
+    name: "execute_lua",
+    title: "Run Lua in Aseprite",
+    description:
+      "Run Lua code inside Aseprite using its scripting API. By default the code runs in one transaction: " +
+      "one undo step, rolled back entirely if it raises an error. `print` output is captured, and the " +
+      "chunk's return value is returned as JSON. Use this for any edit: layers, frames, cels, pixels, tags, " +
+      "palette, commands (app.command.X{...}), tools (app.useTool), selection and file operations.",
+    input: z.object({
+      code: z.string().describe("Lua source. Use `return` to send a value back."),
+      label: z.string().optional().describe("Short description of the step, e.g. 'Add Shadow layer'. Also the undo label."),
+      transaction: z
+        .boolean()
+        .optional()
+        .describe("Default true. Set false for code that must not run in a transaction, e.g. app.open, app.undo."),
+    }),
+    kind: "edit",
+    label: (i) => (i?.label ? String(i.label) : "Run Lua"),
+    async run({ code, label, transaction }, aseprite) {
+      const { result } = await aseprite.request("execute_lua", { code, label, transaction }, 120_000);
+      const content: Content[] = [];
+      if (result.output?.length) content.push(text("Output:\n" + result.output.join("\n")));
+      if (result.ok) {
+        content.push(text(result.value === undefined ? "OK (no return value)" : { value: result.value }));
+        return { content };
+      }
+      content.push(text((result.rolledBack ? "Error (changes rolled back):\n" : "Error:\n") + result.error));
+      return { content, isError: true };
+    },
+  },
+  {
+    name: "snapshot",
+    title: "Snapshot sprite",
+    description:
+      "Render the active sprite (or one layer) at a frame and return it as a PNG, upscaled with nearest-neighbor " +
+      "so individual pixels are visible. Use it to check visual results after edits.",
+    input: z.object({
+      frame: z.number().int().min(1).optional().describe("1-based frame number. Default: active frame."),
+      layer: z.string().optional().describe("Render only this layer (by name). Default: all visible layers."),
+      scale: z.number().int().min(1).max(32).optional()
+        .describe("Upscale factor. Default: largest factor that keeps the image at or under 512 px."),
+      background: z.string().optional().describe("'checker' (default), 'transparent', or a hex color like '#202020'."),
+    }),
+    kind: "read",
+    label: () => "Look at the sprite",
+    async run({ frame, layer, scale, background }, aseprite) {
+      const { result, binary } = await aseprite.request("snapshot", { frame, layer });
+      if (!binary) return failure("Aseprite sent no pixel data");
+      const w = result.width as number;
+      const h = result.height as number;
+      const s = scale ?? Math.max(1, Math.floor(512 / Math.max(w, h)));
+      const png = encodeSnapshot(binary, w, h, s, background ?? "checker");
+      return {
+        content: [
+          { type: "image", data: png.toString("base64"), mimeType: "image/png" },
+          text(`${w}x${h} px, frame ${result.frame}${result.layer ? `, layer "${result.layer}"` : ""}, shown at ${s}x`),
+        ],
+      };
+    },
+  },
+  {
+    name: "read_pixels",
+    title: "Read pixels",
+    description:
+      "Read a region of the sprite (or one layer) as a text grid, at most 16384 pixels per call. In indexed sprites " +
+      "each pixel is its palette index; in RGB sprites each color gets a short key. A legend maps keys to hex. " +
+      "'.' is transparent and '-' is outside the canvas. Rows run top to bottom starting at y.",
+    input: z.object({
+      x: z.number().int().optional().describe("Left edge in sprite pixels. Default 0."),
+      y: z.number().int().optional().describe("Top edge in sprite pixels. Default 0."),
+      width: z.number().int().min(1).optional().describe("Default: to the right edge."),
+      height: z.number().int().min(1).optional().describe("Default: to the bottom edge."),
+      layer: z.string().optional().describe("Read only this layer. Default: all visible layers composited."),
+      frame: z.number().int().min(1).optional().describe("1-based frame. Default: active frame."),
+    }),
+    kind: "read",
+    label: () => "Inspect pixels",
+    async run(args, aseprite) {
+      const { result } = await aseprite.request("read_pixels", args);
+      const legend = Object.entries(result.legend ?? {})
+        .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+        .map(([k, v]) => `${k}=${v}`)
+        .join("  ");
+      const width = String(result.y + result.rows.length - 1).length;
+      const rows = (result.rows as string[]).map((r, i) => `${String(result.y + i).padStart(width)}| ${r}`);
+      const header =
+        `Region x=${result.x} y=${result.y} ${result.width}x${result.height}, frame ${result.frame}` +
+        (result.layer ? `, layer "${result.layer}"` : "") +
+        `. Keys: ${result.keys}. '.'=transparent '-'=outside canvas.`;
+      return { content: [text([header, `Legend: ${legend || "(none)"}`, ...rows].join("\n"))] };
+    },
+  },
+  {
+    name: "list_commands",
+    title: "List Aseprite commands",
+    description:
+      "List Aseprite's built-in commands (menus, dialogs, filters, panels) with their parameters and accepted " +
+      "values. Filter by a substring of the name or title, e.g. 'size', 'frame', 'palette', 'export'.",
+    input: z.object({
+      filter: z.string().optional().describe("Case-insensitive substring of the command name or menu title."),
+    }),
+    kind: "read",
+    label: () => "Look up commands",
+    async run({ filter }) {
+      const matches = filterCommands(filter);
+      const note =
+        "Parameters are read from Aseprite's source; a command may accept more. Commands with no listed parameters " +
+        "act on the active sprite/layer/frame. ui=false is added automatically by run_command.";
+      return {
+        content: [text(`${matches.length} of ${COMMANDS.length} commands.\n${note}\n\n${matches.map(describeCommand).join("\n")}`)],
+      };
+    },
+  },
+  {
+    name: "run_command",
+    title: "Run Aseprite command",
+    description:
+      "Run one of Aseprite's built-in commands by name (see list_commands), with parameters. Acts on the active " +
+      "sprite, layer and frame. Colors may be given as '#rrggbb' strings; rectangles as {x, y, width, height}. " +
+      "Pass ui: true only when the user should interact with the dialog. UI commands like Timeline, PaletteEditor, " +
+      "ShowGrid or PlayAnimation work too.",
+    input: z.object({
+      name: z.string().describe("Command name, e.g. 'CanvasSize', 'SpriteSize', 'ChangePixelFormat'."),
+      params: z.record(z.string(), z.unknown()).optional().describe("Command parameters."),
+    }),
+    kind: "edit",
+    label: (i) => `Run ${i?.name ?? "command"}`,
+    async run({ name, params }, aseprite) {
+      const info = findCommand(name);
+      if (!info) {
+        const close = suggestCommands(name);
+        return failure(`Unknown command: ${name}.${close.length ? ` Did you mean: ${close.join(", ")}?` : ""}`);
+      }
+      const { result } = await aseprite.request(
+        "run_command",
+        { name: info.name, params: toWireParams(info, params) },
+        120_000,
+      );
+      if (!result.executed) return failure(result.note ?? "Command did not run");
+      return { content: [text(`${info.name} ran.`)] };
+    },
+  },
+  {
+    name: "read_guide",
+    title: "Read the Aseprite agent guide",
+    description:
+      "Read a guide topic: 'basics' (API rules that prevent bugs; read before the first edit), 'recipes' (tested " +
+      "Lua snippets for common tasks), 'pixel-art' (style rules and working loop). Call with no topic to list topics.",
+    input: z.object({ topic: z.string().optional() }),
+    kind: "read",
+    label: (i) => `Read guide${i?.topic ? `: ${i.topic}` : ""}`,
+    async run({ topic }) {
+      const topics = guideTopics();
+      if (!topic) return { content: [text(`Topics: ${topics.join(", ")}`)] };
+      const md = readGuide(topic);
+      return md === undefined ? failure(`Unknown topic: ${topic}. Topics: ${topics.join(", ")}`) : { content: [text(md)] };
+    },
+  },
+  {
+    name: "undo",
+    title: "Undo",
+    description: "Undo the last steps in the active sprite. Each execute_lua call is one step.",
+    input: steps,
+    kind: "edit",
+    label: () => "Undo",
+  },
+  {
+    name: "redo",
+    title: "Redo",
+    description: "Redo steps undone with undo.",
+    input: steps,
+    kind: "edit",
+    label: () => "Redo",
+  },
+];
+
+const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
+
+export function findTool(name: string): Tool | undefined {
+  return BY_NAME.get(name);
+}
+
+/** Runs a tool and turns any failure into an MCP error result. */
+export async function runTool(tool: Tool, input: any, aseprite: AsepriteRequester): Promise<ToolResult> {
+  try {
+    if (tool.run) return await tool.run(input ?? {}, aseprite);
+    const { result } = await aseprite.request(tool.name, input ?? {}, tool.timeoutMs);
+    return { content: [text(result)] };
+  } catch (err) {
+    return failure(err instanceof Error ? err.message : String(err));
+  }
+}

@@ -1,4 +1,5 @@
 // How tool calls are described in the chat panel's step rows.
+import { findTool } from "./tools.js";
 const DETAIL_LIMIT = 600;
 
 export function shorten(text: string): string {
@@ -6,26 +7,14 @@ export function shorten(text: string): string {
   return t.length > DETAIL_LIMIT ? t.slice(0, DETAIL_LIMIT) + "…" : t;
 }
 
-/** "edit" for tools that change the document, "read" for the rest. */
+/** "edit" for tools that change the document, "read" for the rest (from the Tool table). */
 export function toolKind(tool: string): "edit" | "read" {
-  return ["execute_lua", "run_command", "undo", "redo"].includes(tool) ? "edit" : "read";
+  return findTool(tool)?.kind ?? "read";
 }
 
-/** Short description of a tool call, e.g. "Add Shadow layer" or "Look at the sprite". */
+/** Short description of a tool call, e.g. "Add Shadow layer" (from the Tool table). */
 export function describeTool(tool: string, input: any): string {
-  switch (tool) {
-    case "execute_lua": return input?.label ? String(input.label) : "Run Lua";
-    case "run_command": return `Run ${input?.name ?? "command"}`;
-    case "read_guide": return `Read guide${input?.topic ? `: ${input.topic}` : ""}`;
-    case "get_state": return "Read sprite state";
-    case "get_context": return "Read selection";
-    case "snapshot": return "Look at the sprite";
-    case "read_pixels": return "Inspect pixels";
-    case "list_commands": return "Look up commands";
-    case "undo": return "Undo";
-    case "redo": return "Redo";
-    default: return tool || "tool";
-  }
+  return findTool(tool)?.label(input) ?? (tool || "tool");
 }
 
 /** Tool input shown when a tool row is expanded. */
