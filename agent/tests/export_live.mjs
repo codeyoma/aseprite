@@ -6,13 +6,14 @@ import { live } from "./live.mjs";
 
 const [dir, engine] = process.argv.slice(2, 4);
 const provider = process.argv[4] ?? "claude";
-const { lua, chat, check, done } = await live({ provider });
+const { lua, chat, check, ranSkill, done } = await live({ provider });
 await lua(`local s = Sprite(16, 16, ColorMode.RGB) s.layers[1].name = "Slime" for i = 1, 3 do s:newFrame() end
   for f = 1, 4 do local img = Image(16, 16, ColorMode.RGB)
     for y = 8 + (f % 2), 15 do for x = 3, 12 do img:drawPixel(x, y, Color(60, 170, 80)) end end
     s.layers[1]:cel(f).image = img s.frames[f].duration = 0.12 end
   local a = s:newTag(1, 2) a.name = "idle" local b = s:newTag(3, 4) b.name = "hop" s.filename = "slime" return true`);
 await chat(`/skill:export-game Export this slime for ${engine} to ${dir}.`);
+await ranSkill("export-game");
 const files = existsSync(dir) ? readdirSync(dir) : [];
 check("a sheet and JSON", files.some((f) => f.endsWith(".png") && !f.endsWith("_n.png")) && files.some((f) => f.endsWith(".json")), files);
 const json = files.find((f) => f.endsWith(".json") && !f.includes("anims"));

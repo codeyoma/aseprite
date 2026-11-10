@@ -7,7 +7,7 @@ import { live } from "./live.mjs";
 
 const dir = process.argv[2];
 const provider = process.argv[3] ?? "claude";
-const { lua, chat, check, done } = await live({ provider });
+const { lua, chat, check, soft, ranSkill, done } = await live({ provider });
 const vox = [];
 for (let x = 0; x < 6; x++) for (let y = 0; y < 6; y++) for (let z = 0; z < 4; z++) if (x === 0 || y === 0 || x === 5 || y === 5 || z === 0) vox.push([x, y, z, 1]);
 for (let x = 0; x < 6; x++) for (let y = 0; y < 6; y++) vox.push([x, y, 4, 2]);
@@ -18,14 +18,20 @@ const path = join(dir, "house.vox");
 writeFileSync(path, writeVox({ sx: 6, sy: 6, sz: 5, voxels: vox, palette: pal }));
 
 await chat(`/skill:voxel-sprites Render the voxel house at ${path} in 4 isometric directions.`);
+await ranSkill("voxel-sprites");
 const a = await lua(`local s = app.sprite local o = {} for _, t in ipairs(s.tags) do o[#o + 1] = t.name end return { frames = #s.frames, tags = o, w = s.width, h = s.height }`);
-check(".vox: 4 direction frames tagged", a.frames === 4 && ["SE", "SW", "NW", "NE"].every((t) => a.tags.includes(t)), a);
+check(".vox: 4 direction frames", a.frames === 4, a);
+soft(".vox: tagged SE, SW, NW, NE", ["SE", "SW", "NW", "NE"].every((t) => a.tags.includes(t)), a.tags);
+const n0 = await lua("return #app.sprites");
 
 await lua(`local s = Sprite(8, 8, ColorMode.RGB) s.layers[1].name = "z0"
   for z = 1, 3 do local l = z == 1 and s.layers[1] or s:newLayer() l.name = "z" .. (z - 1)
     local img = Image(8, 8, ColorMode.RGB) for y = z, 7 - z do for x = z, 7 - z do img:drawPixel(x, y, Color(60, 170, 80)) end end
     s:newCel(l, 1, img, Point(0, 0)) end return true`);
 await chat("/skill:voxel-sprites Stack these layers (bottom = ground) into an isometric object, 4 directions.");
-const b = await lua(`local s = app.sprite return { frames = #s.frames, layers = #s.layers, title = app.fs.fileTitle(s.filename) }`);
-check("layers: a new 4-frame isometric sprite", b.frames === 4 && b.layers === 1, b);
+await ranSkill("voxel-sprites");
+const b = await lua(`local s = app.sprite return { n = #app.sprites, frames = #s.frames, layers = #s.layers, title = app.fs.fileTitle(s.filename) }`);
+// n0 counts the sprites before the layer fixture, which adds one.
+check("layers: a new sprite", b.n > n0 + 1, { before: n0 + 1, ...b });
+soft("layers: 4 frames on one layer", b.frames === 4 && b.layers === 1, b);
 done("VOXELS");

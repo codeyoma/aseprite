@@ -1,8 +1,13 @@
 // Shared harness for the live tests (agent/tests/*_live.mjs): a bridge
 // connected to the running Aseprite, Lua through execute_lua, chat turns
 // through the panel's AsepriteAgent API, and PASS/FAIL reporting.
+//
+// Hard checks (check) prove the feature ran: the header names the skill, the
+// result exists, `check` reports 0 errors. A FAIL there is a bug. Soft checks
+// (soft) score what the model chose (layer and tag names, thresholds, timing):
+// they print SOFT-PASS or SOFT-FAIL and never fail the test.
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,9 +26,16 @@ function unlinkedModules() {
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** A built-in skill's title (the turn header shows it), from agent/skills/<name>/SKILL.md. */
+export function skillTitle(name) {
+  const file = fileURLToPath(new URL(`../skills/${name}/SKILL.md`, import.meta.url));
+  if (!existsSync(file)) throw new Error(`No built-in skill named ${name}`);
+  return /^title:\s*(.+?)\s*$/m.exec(readFileSync(file, "utf8"))?.[1] ?? name;
+}
+
 /**
  * provider: the chat provider for chat() ("claude" or "codex").
- * Returns { c, lua, chat, waitIdle, sleep, check, done }.
+ * Returns { c, lua, chat, waitIdle, sleep, check, soft, ranSkill, done }.
  */
 export async function live({ provider = "claude", bridge = {} } = {}) {
   const startBranch = branch();
@@ -50,21 +62,42 @@ export async function live({ provider = "claude", bridge = {} } = {}) {
     throw new Error("turn did not end");
   };
 
+  const headers = async () => ((await lua("return AsepriteAgent.entries()")) ?? []).filter((e) => e.kind === "header");
+  let headersBefore = 0;
+
   /** Sends a chat message as the user would; mode null uses the panel's current mode. */
   const chat = async (prompt, { mode = "agent", wait = true, timeout, as = provider } = {}) => {
+    headersBefore = (await headers()).length;
     const args = [JSON.stringify(prompt), JSON.stringify(as), ...(mode ? [JSON.stringify(mode)] : [])];
     await lua(`AsepriteAgent.chat(${args.join(", ")}) return true`);
     return wait ? waitIdle(timeout) : undefined;
   };
 
   let failed = 0;
+  /** A hard check: FAIL fails the test. */
   const check = (name, ok, detail) => {
     console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
     if (!ok) failed++;
     return ok;
   };
 
-  /** Prints the summary line and exits (1 when a check failed). */
+  const softs = { passed: 0, failed: 0 };
+  /** A soft check on a model choice: SOFT-FAIL is reported but doesn't fail the test. */
+  const soft = (name, ok, detail) => {
+    console.log(`${ok ? "SOFT-PASS" : "SOFT-FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
+    softs[ok ? "passed" : "failed"]++;
+    return !!ok;
+  };
+
+  /** Hard check: the last chat() started a turn whose header names the skill (its name in agent/skills). */
+  const ranSkill = async (skill) => {
+    const title = skillTitle(skill);
+    const h = await headers();
+    const last = h.at(-1);
+    return check(`the header names the skill (${title})`, h.length > headersBefore && (last?.skill === title || !!last?.text?.endsWith(title)), last?.text ?? null);
+  };
+
+  /** Prints the summary lines and exits (1 only when a hard check failed). */
   const done = (label) => {
     // Work committed after a test must land on the branch it started on;
     // nothing in a live test should switch it (Developer mode uses its own worktree).
@@ -72,10 +105,11 @@ export async function live({ provider = "claude", bridge = {} } = {}) {
     if (now !== startBranch && !/^developer/.test(label.toLowerCase())) {
       check(`the repository stays on ${startBranch} (now ${now}: a turn ran in Developer mode)`, false);
     }
+    if (softs.passed + softs.failed) console.log(`SOFT ${softs.passed} passed, ${softs.failed} failed`);
     console.log(failed ? `${label} TEST FAILED (${failed})` : `${label} TEST PASSED`);
     c.stop();
     process.exit(failed ? 1 : 0);
   };
 
-  return { c, lua, chat, waitIdle, sleep, check, done };
+  return { c, lua, chat, waitIdle, sleep, check, soft, ranSkill, done };
 }

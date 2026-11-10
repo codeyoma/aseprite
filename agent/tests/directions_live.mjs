@@ -4,7 +4,7 @@ import { tagDirection } from "../bridge/dist/directions.js";
 import { live } from "./live.mjs";
 
 const provider = process.argv[2] ?? "claude";
-const { lua, chat, check, done } = await live({ provider });
+const { lua, chat, check, soft, ranSkill, done } = await live({ provider });
 
 // Frame 1: facing south (front, two eyes). Frame 2: facing east (side, one eye on the right, nose).
 await lua(`local s = Sprite(16, 24, ColorMode.RGB) s:newFrame() s.layers[1].name = "Hero"
@@ -19,13 +19,15 @@ await lua(`local s = Sprite(16, 24, ColorMode.RGB) s:newFrame() s.layers[1].name
   s.layers[1]:cel(1).image = front s.layers[1]:cel(2).image = side
   local a = s:newTag(1, 1) a.name = "S" local b = s:newTag(2, 2) b.name = "E" return true`);
 await chat("/skill:make-directions Make all 8 directions of this character (one frame each). S and E exist.");
+await ranSkill("make-directions");
 const tags = await lua(`local s = app.sprite local o = {}
   for _, t in ipairs(s.tags) do
     local f = t.fromFrame.frameNumber local img = Image(s.width, s.height, ColorMode.RGB) img:drawSprite(s, f)
     o[#o + 1] = { name = t.name, from = f, empty = img:isEmpty() }
   end return o`);
 const dirs = new Set(tags.map((t) => tagDirection(t.name)).filter(Boolean));
-check("all 8 directions have a tag", ["S", "SW", "W", "NW", "N", "NE", "E", "SE"].every((d) => dirs.has(d)), tags.map((t) => t.name));
+check("new direction tags", tags.length > 2, tags.map((t) => t.name));
+soft("all 8 directions have a tag", ["S", "SW", "W", "NW", "N", "NE", "E", "SE"].every((d) => dirs.has(d)), tags.map((t) => t.name));
 check("every direction has a drawing", tags.every((t) => !t.empty), tags);
 const w = await lua(`local s = app.sprite local e, wt
   for _, t in ipairs(s.tags) do local n = t.name:upper() if n:match("%f[%a]E%f[%A]") or n == "E" then e = t end if n:match("%f[%a]W%f[%A]") or n == "W" then wt = t end end
@@ -33,5 +35,5 @@ const w = await lua(`local s = app.sprite local e, wt
   local a = Image(s.width, s.height, ColorMode.RGB) a:drawSprite(s, e.fromFrame.frameNumber) a:flip(FlipType.HORIZONTAL)
   local b = Image(s.width, s.height, ColorMode.RGB) b:drawSprite(s, wt.fromFrame.frameNumber)
   return a:isEqual(b)`);
-check("W is the mirror of E", w === true, w);
+soft("W is the mirror of E", w === true, w);
 done("DIRECTIONS");

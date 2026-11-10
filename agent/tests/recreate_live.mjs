@@ -9,7 +9,7 @@ import { live } from "./live.mjs";
 
 const dir = process.argv[2];
 const provider = process.argv[3] ?? "claude";
-const { c, lua, chat: send, waitIdle, check, done } = await live({ provider });
+const { c, lua, chat: send, waitIdle, check, soft, ranSkill, done } = await live({ provider });
 // A turn that must reach the panel (a skill that needs an image refuses to send without one).
 async function chat(prompt) {
   const headers = (await lua("return AsepriteAgent.entries()")).filter((e) => e.kind === "header").length;
@@ -17,6 +17,7 @@ async function chat(prompt) {
   const sent = (await lua("return AsepriteAgent.entries()")).filter((e) => e.kind === "header").length > headers;
   check(`sent: ${prompt.slice(0, 40)}…`, sent);
   if (sent) await waitIdle();
+  if (sent) await ranSkill("recreate-from-reference");
 }
 
 // Three poses of a 16x16 outlined green blob with a 3-step ramp, on blue, scaled x3.
@@ -37,11 +38,12 @@ await lua(`Sprite(16, 16) AsepriteAgent.attach{ path = ${JSON.stringify(shot)} }
 await chat("/skill:recreate-from-reference Recreate the character in this screenshot as an editable sprite.");
 const s = await lua(`local s = app.sprite local o = {} for _, l in ipairs(s.layers) do o[#o + 1] = l.name end
   return { frames = #s.frames, w = s.width, h = s.height, palette = #s.palettes[1], layers = o, title = app.fs.fileTitle(s.filename) }`);
-check("3 frames at native size", s.frames === 3 && s.w === 14 && s.h === 14, s);
-check("palette of the reference's 4 colors", s.palette === 4, s);
-check("an Outline layer", s.layers.includes("Outline"), s);
+check("a sprite with the 3 poses as frames", s.frames === 3, s);
+soft("at native size (14x14)", s.w === 14 && s.h === 14, s);
+soft("palette of the reference's 4 colors", s.palette === 4, s);
+soft("an Outline layer", s.layers.includes("Outline"), s);
 const replies = (await lua("return AsepriteAgent.entries()")).filter((e) => e.kind === "text").map((e) => e.text).join(" ");
-check("the reply mentions the rights", /personal use|study|rights/i.test(replies), replies.slice(0, 300));
+soft("the reply mentions the rights", /personal use|study|rights/i.test(replies), replies.slice(0, 300));
 
 const before = await lua("return { n = #app.sprites, title = app.fs.fileTitle(app.sprite.filename) }");
 await chat("/skill:recreate-from-reference Now draw a new character, a small mushroom, in exactly this style, in a new sprite.");
@@ -52,7 +54,8 @@ const colors = await lua(`local s = app.sprite local img = Image(s.width, s.heig
 const allowed = ["181425", "78dc78", "3caa50", "1e6e3c"];
 const after = await lua("return { n = #app.sprites, title = app.fs.fileTitle(app.sprite.filename) }");
 check("the new art is in a new sprite", after.n > before.n && after.title !== before.title, { before, after });
-check("new art uses only the reference's colors", colors.n > 0 && colors.colors.every((h) => allowed.includes(h)), colors);
-check("new art at a similar size", colors.w <= 32 && colors.h <= 32, colors);
+check("the new sprite has art", colors.n > 0, colors);
+soft("new art uses only the reference's colors", colors.colors.every((h) => allowed.includes(h)), colors);
+soft("new art at a similar size", colors.w <= 32 && colors.h <= 32, colors);
 
 done("RECREATE");

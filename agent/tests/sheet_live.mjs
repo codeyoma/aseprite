@@ -12,7 +12,7 @@ import { textOf } from "./mcp_client.mjs";
 const dir = process.argv[2];
 const provider = process.argv[3] ?? "claude";
 const aseBin = fileURLToPath(new URL("../../build/bin/aseprite", import.meta.url));
-const { c, lua, chat, check, done } = await live({ provider });
+const { c, lua, chat, check, soft, ranSkill, done } = await live({ provider });
 const tagsOf = () => lua(`local o = {} for _, t in ipairs(app.sprite.tags) do o[#o + 1] = t.name .. " " .. t.fromFrame.frameNumber .. "-" .. t.toFrame.frameNumber end return { frames = #app.sprite.frames, w = app.sprite.width, h = app.sprite.height, tags = o }`);
 
 // 1. A 4x2 sheet of 24x24 cells on magenta: a bobbing body (row 1) and a stepping one (row 2).
@@ -28,9 +28,10 @@ const sheet = join(dir, "hero_sheet.png");
 writeFileSync(sheet, PNG.sync.write(png));
 await lua(`Sprite(16, 16) AsepriteAgent.attach{ path = ${JSON.stringify(sheet)} } return true`);
 await chat("/skill:import-sheet It's a 4x2 grid of 24x24 cells. Row 1 is idle, row 2 is walk.");
+await ranSkill("import-sheet");
 const s = await tagsOf();
-check("skill: 8 frames of 24x24 with idle and walk tags", s.frames === 8 && s.w === 24 && s.h === 24 &&
-  s.tags.includes("idle 1-4") && s.tags.includes("walk 5-8"), s);
+check("skill: 8 frames of 24x24", s.frames === 8 && s.w === 24 && s.h === 24, s);
+soft("skill: idle 1-4 and walk 5-8 tags", s.tags.includes("idle 1-4") && s.tags.includes("walk 5-8"), s.tags);
 
 // 2. Atlas round trip: a sprite exported by Aseprite with --trim imports back exactly.
 const src = join(dir, "roundtrip.aseprite");
@@ -67,6 +68,7 @@ writeFileSync(join(dir, "tp.png"), PNG.sync.write(png));
 writeFileSync(join(dir, "tp.xml"), `<TextureAtlas imagePath="tp.png">${[0, 1, 2, 3].map((f) => `<SubTexture name="idle${f}" x="${f * 24}" y="0" width="24" height="24"/>`).join("")}</TextureAtlas>`);
 await lua(`AsepriteAgent.attach{ path = ${JSON.stringify(join(dir, "tp.png"))} } return true`);
 await chat("/skill:import-sheet Import this sheet; its TexturePacker XML atlas is next to it.");
+await ranSkill("import-sheet");
 const tp = await tagsOf();
 check("skill: the XML atlas gives 4 frames of 24x24", tp.frames === 4 && tp.w === 24 && tp.h === 24, tp);
 

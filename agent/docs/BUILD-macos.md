@@ -68,6 +68,16 @@ node agent/tests/run_live.mjs --restart shading normals export:unity
 node agent/tests/run_live.mjs --providers codex --all
 ```
 
+The summary has two categories. **tool**: the skill evals (`agent/tests/skills/*.eval.mjs`) run against the real Aseprite, with no model and no tokens. Each eval's fixture is built in Aseprite from its fake-document description. Its steps run through the bridge's MCP tools, and its check reads what Aseprite holds through `get_state` and `snapshot`. A failure is a tool or extension bug. Evals with no deterministic steps (for example `parallel-frames`) print `SKIP`:
+
+```bash
+node agent/tests/run_live.mjs --evals                    # every eval
+node agent/tests/run_live.mjs eval:shade-sprite:dither   # some
+node agent/tests/eval_live.mjs --keep dither             # directly; --keep leaves the eval's sprites open
+```
+
+**agent**: the chat tests. Hard checks (`PASS`/`FAIL`) prove the skill ran: the header names the skill, the result exists, and `check` reports 0 errors. Soft checks (`SOFT-PASS`/`SOFT-FAIL`) score what the model chose, such as layer and tag names, brightness thresholds and timing. They are listed in the summary but don't fail the run. `run_live.mjs` exits with 1 only when a hard check fails.
+
 End to end, with Aseprite open:
 
 ```bash
