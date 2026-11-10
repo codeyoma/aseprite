@@ -5,7 +5,7 @@ Gives Claude Code sessions in any folder the Aseprite tools (the `aseprite` MCP 
 - `aseprite`: rules for editing through the tools (read before the first edit)
 - `aseprite-pixel-art`: style rules and a working loop for drawing and animating
 - `aseprite-recipes`: tested Lua snippets for common tasks
-- `/aseprite-check`: check the open sprite and fix the errors
+- the built-in skills from `agent/skills` as `aseprite-<name>` (check and fix pixel art, retime an animation, variations, parallel frames, …)
 
 Install from this repository's marketplace:
 

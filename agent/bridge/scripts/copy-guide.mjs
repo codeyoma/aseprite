@@ -15,6 +15,12 @@ rmSync(dst, { recursive: true, force: true });
 cpSync(src, dst, { recursive: true });
 console.log(`copied guide -> ${dst}`);
 
+// Built-in skills (#35).
+const skillsSrc = join(root, "..", "skills");
+rmSync(join(root, "skills"), { recursive: true, force: true });
+if (existsSync(skillsSrc)) cpSync(skillsSrc, join(root, "skills"), { recursive: true });
+console.log(`copied skills -> ${join(root, "skills")}`);
+
 // The ase CLI's file mode runs the extension's document handlers headless.
 const ext = join(root, "extension");
 rmSync(ext, { recursive: true, force: true });

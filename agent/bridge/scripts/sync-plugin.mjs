@@ -2,7 +2,7 @@
 // the guide topics become skills, and the plugin's version is the bridge's.
 // Run by `npm run build`; `node scripts/sync-plugin.mjs --check` fails when
 // the committed plugin is out of date.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -38,6 +38,15 @@ for (const s of SKILLS) {
   const body = readFileSync(join(guide, `${s.topic}.md`), "utf8");
   files.set(join(plugin, "skills", s.name, "SKILL.md"), `---\nname: ${s.name}\ndescription: ${s.description}\n---\n\n${body}`);
 }
+// Built-in skills (#35) ship in the plugin too, as aseprite-<name>.
+const builtin = join(root, "..", "skills");
+for (const name of existsSync(builtin) ? readdirSync(builtin) : []) {
+  const file = join(builtin, name, "SKILL.md");
+  if (!existsSync(file)) continue;
+  const text = readFileSync(file, "utf8").replace(/^name: .*$/m, `name: aseprite-${name}`);
+  files.set(join(plugin, "skills", `aseprite-${name}`, "SKILL.md"), text);
+}
+
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 const manifestPath = join(plugin, ".claude-plugin", "plugin.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));

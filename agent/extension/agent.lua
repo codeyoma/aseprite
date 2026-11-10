@@ -142,6 +142,10 @@ function init(plugin)
     end,
     isBusy = function() return Panel.isBusy() end,
     placeholder = function() return Panel.placeholder() end,
+    -- The / picker (#35): type into the prompt as the user would, read the matches.
+    typePrompt = function(text) Panel.setPrompt(text); Panel.onPromptChange() end,
+    suggestions = function() return Panel.suggestions() end,
+    pickSuggestion = function(i) Panel.pickSuggestion(Panel.suggestions()[i]) end,
     -- The last sub-agent scope highlighted in the timeline (#33).
     agentCursor = function() return handlers.agentCursor() end,
     entries = function() return Panel.entries() end,

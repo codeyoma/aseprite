@@ -7,7 +7,7 @@ import { COMMAND_NAME, commandsDir, SavedCommands, type SavedCommand } from "./s
 import * as z from "zod/v4";
 import type { Reply } from "./aseprite.js";
 import { describeCommand, filterCommands, findCommand, COMMANDS, suggestCommands, toWireParams } from "./commands.js";
-import { guideIndex, guideTopics, readGuide } from "./guide.js";
+import { catalog, guideIndex, guideTopics, readGuide, searchCatalog } from "./guide.js";
 import { encodeSnapshot } from "./png.js";
 
 /** The seam tools use to reach Aseprite: AsepriteLink in the bridge, a fake in tests. */
@@ -397,6 +397,25 @@ export const TOOLS: Tool[] = [
       if (!topic) return { content: [text(`Topics:\n${guideIndex()}`)] };
       const md = readGuide(topic);
       return md === undefined ? failure(`Unknown topic: ${topic}. Topics: ${topics.join(", ")}`) : { content: [text(md)] };
+    },
+  },
+  {
+    name: "list_skills",
+    title: "List skills",
+    description:
+      "The skill catalog: built-in skills, guide topics and the user's own skills, with title, category and what " +
+      "each needs. Read a skill's instructions with read_guide(name) before following it.",
+    input: z.object({ query: z.string().optional().describe("Words to filter by, e.g. 'palette'.") }),
+    kind: "read",
+    label: () => "List skills",
+    async run({ query }) {
+      const rows = query ? searchCatalog(query) : catalog();
+      if (!rows.length) return { content: [text(`No skills match "${query}".`)] };
+      return {
+        content: [text(rows.map((r) =>
+          `- ${r.name}: ${r.title} [${r.category}, ${r.source}]${r.needs.length ? ` needs ${r.needs.join(", ")}` : ""}. ${r.description}`,
+        ).join("\n"))],
+      };
     },
   },
   {

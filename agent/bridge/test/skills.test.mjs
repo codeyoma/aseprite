@@ -35,7 +35,7 @@ test("frontmatter: inline and block lists, quotes, heading fallback", () => {
 
 test("user skills are listed and readable; a same-name skill overrides the built-in", async () => {
   const skills = allSkills();
-  assert.ok(skills.has("recipes") && skills.get("recipes").source === "built-in");
+  assert.ok(skills.has("recipes") && skills.get("recipes").source === "guide");
   assert.equal(skills.get("basics").source, "user");
   assert.equal(readGuide("dithering").trim(), "Use a 2x2 Bayer pattern. Never dither single pixels.");
   assert.match(guideIndex(), /- dithering \(your skill\): Ordered dithering/);
@@ -60,4 +60,30 @@ test("/skill:name forces a skill", () => {
   assert.equal(r.message, "make the sky nicer");
   assert.match(r.context, /the user asked you to follow this skill/);
   assert.match(skillContext("/skill:nope hi").context, /there is none/);
+});
+
+test("the catalog lists built-in skills with titles and categories, and searches them", async () => {
+  const { catalog, searchCatalog } = await import("../dist/guide.js");
+  const rows = catalog();
+  const check = rows.find((r) => r.name === "check-sprite");
+  assert.deepEqual([check.title, check.category, check.source], ["Check and fix pixel art", "Cleanup", "built-in"]);
+  assert.ok(rows.some((r) => r.name === "dithering" && r.source === "user"));
+  assert.equal(searchCatalog("retime")[0].name, "retime-animation");
+  assert.equal(searchCatalog("variations")[0].name, "make-variations");
+  assert.deepEqual(searchCatalog("zzz-nothing"), []);
+  const { findTool, runTool } = await import("../dist/tools.js");
+  const listed = await runTool(findTool("list_skills"), { query: "frames" }, { request: async () => ({}) });
+  assert.match(listed.content[0].text, /parallel-frames: Work on many frames at once \[Animation, built-in\]/);
+});
+
+test("a user skill overrides a built-in skill of the same name", async () => {
+  writeFileSync(join(dir, "check-sprite.md"), "---\ntitle: My check\n---\nMine.\n");
+  const { allSkills } = await import("../dist/guide.js");
+  const s = allSkills().get("check-sprite");
+  assert.deepEqual([s.title, s.source, s.body.trim()], ["My check", "user", "Mine."]);
+});
+
+test("frontmatter: needs and tools", () => {
+  const s = parseSkill("---\nneeds: [image]\ntools: [palette_from_image]\ncategory: Color\n---\nx", "p", "built-in");
+  assert.deepEqual([s.needs, s.tools, s.category, s.title], [["image"], ["palette_from_image"], "Color", "p"]);
 });

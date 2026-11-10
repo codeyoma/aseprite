@@ -52,6 +52,8 @@ The agent puts what it draws on a new `AI: <task>` layer above your layer, with 
 
 When the agent does something you want again, ask it to "save this as a command called outline-dark". Saved commands appear in **File > Scripts > AI Agent > My Commands** and run without the agent; in the chat, `/outline-dark width=2` runs one directly (type `/` to list them). **Manage My Commands...** runs, disables, shows the source of, or reverts a command to its previous version. Commands live in `~/.aseprite-agent/commands`, a git repository with one commit per change.
 
+Type `/` in the chat to search skills: built-in ones (check and fix pixel art, retime an animation, variations, work on many frames at once, with more coming in milestone M8) and your own, plus your saved commands. Typing filters the list; click a row or press Enter to pick the top one, then write your request. The reply's header names the skill.
+
 Teach the agent your own techniques with skills: markdown files in `~/.aseprite-agent/skills/` (**File > Scripts > AI Agent > New Skill...** creates one from a template). A skill can list trigger words in its frontmatter; when a message contains one, the skill goes along with it. Type `/skill:name your request` to use a skill explicitly. A skill named like a built-in guide topic (`basics`, `recipes`, `pixel-art`) replaces it for the agent.
 
 ```markdown

@@ -78,10 +78,13 @@ end
 
 -- Starts a turn: the user's bubble and the provider's header, with the
 -- mode when it is not Agent (#24).
-function Conversation:send(text, provider, mode)
+-- skill: the title of the skill the message runs with (#35), shown too.
+function Conversation:send(text, provider, mode, skill)
   push(self, { kind = "user", text = text })
   local name = PROVIDER_NAMES[provider] or provider
-  push(self, { kind = "header", text = MODE_NAMES[mode] and (name .. " · " .. MODE_NAMES[mode]) or name, mode = mode })
+  if MODE_NAMES[mode] then name = name .. " · " .. MODE_NAMES[mode] end
+  if skill then name = name .. " · " .. skill end
+  push(self, { kind = "header", text = name, mode = mode, skill = skill })
   self.turnMode = mode
   self.turnStart = self.clock()
   self.lastEvent = self.turnStart

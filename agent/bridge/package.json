@@ -13,7 +13,8 @@
     "guide",
     "protocol.json",
     "README.md",
-    "extension"
+    "extension",
+    "skills"
   ],
   "scripts": {
     "build": "tsc && node scripts/copy-guide.mjs && node scripts/sync-plugin.mjs",

@@ -12,7 +12,7 @@ import type { HttpEndpoint } from "./http.js";
 import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type ProviderId } from "./providers/index.js";
 import { sessionDir } from "./session.js";
 import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
-import { skillContext } from "./guide.js";
+import { catalog, skillContext } from "./guide.js";
 import { SavedCommands } from "./saved_commands.js";
 import { build, devStatus, discard, DEVELOPER_PROMPT, ensureDevBranch, launch, asepriteBinary, repoRoot } from "./developer.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
@@ -352,7 +352,13 @@ function rejectOutcome(options: PermissionRequest["options"]): PermissionOutcome
 
 /** Every method the extension may call on the bridge (protocol.json bridgeMethods). */
 export function bridgeMethods(chat: ChatRunner, version: string, link?: AsepriteLink): Record<string, (params: any) => unknown> {
-  return { ...chatMethods(chat, version), ...commandMethods(), ...developerMethods(chat, link) };
+  return {
+    ...chatMethods(chat, version),
+    ...commandMethods(),
+    ...developerMethods(chat, link),
+    // The Skill Catalog for the panel's / picker (#35).
+    "skills.list": () => ({ skills: catalog() }),
+  };
 }
 
 /** Developer mode (#28): what changed, rebuild, discard, relaunch. */

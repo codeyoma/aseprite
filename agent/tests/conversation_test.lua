@@ -182,6 +182,15 @@ do
   check("lead turn still running", c:isBusy())
 end
 
+-- Skills (#35): the header names the skill the message runs with.
+do
+  local c = Conversation.new{ clock = clock }
+  c:send("/skill:retime-animation slower", "claude", "agent", "Retime an animation")
+  check("skill header", c:entries()[#c:entries()].text == "Claude · Retime an animation")
+  c:send("/skill:check-sprite", "codex", "ask", "Check and fix pixel art")
+  check("mode and skill header", c:entries()[#c:entries()].text == "Codex · Ask · Check and fix pixel art")
+end
+
 -- Mentions and links (#20)
 do
   local m = { Body = "aseprite://layer/L2", walk = "aseprite://tag/walk" }

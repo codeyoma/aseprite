@@ -38,6 +38,12 @@ return function(deps)
   local mentions = {}         -- @[label] -> aseprite:// URI for the draft being typed
   local lastPrompt = ""
   local contentH, viewH = 0, 0
+  -- The / picker (#35): the Skill Catalog from the bridge, and the matches
+  -- shown at the bottom of the log while the prompt is "/query".
+  local catalogRows = {}
+  local suggest = nil          -- { items = { { kind, name, title, source, description, needs } } }
+  local hitSuggest = {}
+  local refreshCatalog       -- defined with the picker below
   local providers = { "claude" }
   local ticker = nil
 
@@ -559,6 +565,42 @@ return function(deps)
       if r.entry then hitRows[#hitRows + 1] = { y0 = y, y1 = y + r.h, entry = r.entry } end
       y = y + r.h + r.gap
     end
+
+    -- Skill and command matches over the bottom of the log, just above the input.
+    hitSuggest = {}
+    if suggest and #suggest.items > 0 then
+      local lh = gc:measureText("Ag").height
+      local u = math.max(2, lh // 3)
+      local rowH = lh * 2 + u * 2
+      local n = math.min(#suggest.items, 6)
+      local boxH = n * rowH + u * 2
+      local top = h - boxH
+      gc.color = C.bubble
+      gc:fillRect(Rectangle(0, top, w, boxH))
+      for i = 1, n do
+        local it = suggest.items[i]
+        local ry = top + u + (i - 1) * rowH
+        if i == 1 then   -- Enter picks the first match
+          gc.color = C.rule
+          gc:fillRect(Rectangle(0, ry, w, rowH))
+        end
+        local x = u * 3
+        gc.color = C.text
+        gc:fillText(it.title, x, ry + u)
+        gc.color = C.faint
+        local tag = it.kind == "command" and ("/" .. it.name) or (it.source == "user" and "your skill" or "skill")
+        gc:fillText(tag, x + gc:measureText(it.title).width + u * 3, ry + u)
+        gc.color = C.dim
+        local desc = it.description or ""
+        local maxW = w - x * 2
+        if gc:measureText(desc).width > maxW then
+          while #desc > 1 and gc:measureText(desc .. "…").width > maxW do desc = desc:sub(1, #desc - 1) end
+          desc = desc .. "…"
+        end
+        gc:fillText(desc, x, ry + u + lh)
+        hitSuggest[#hitSuggest + 1] = { y0 = ry, y1 = ry + rowH, item = it }
+      end
+    end
   end
 
   ---------------------------------------------------------------------------
@@ -626,6 +668,7 @@ return function(deps)
     if not dlg then return end
     updateStatus(isConnected and "" or "Bridge not connected")
     if isConnected then
+      refreshCatalog()
       deps.request("chat.info", {}, function(result)
         if not result or not result.providers or not dlg then return end
         local list = {}
@@ -721,40 +764,96 @@ return function(deps)
     menu:showMenu()
   end
 
-  -- Typing "/" first lists saved commands and skills (#26, #27).
-  local function openSlashMenu()
-    local menu = Dialog()
-    local any = false
+  -- The / picker (#35): skills from the catalog and saved commands that
+  -- match every typed word, best matches first.
+  refreshCatalog = function()
+    deps.request("skills.list", {}, function(result)
+      if result and result.skills then
+        catalogRows = {}
+        for _, s in ipairs(result.skills) do
+          local needs = {}
+          for _, n in ipairs(s.needs or {}) do needs[#needs + 1] = n end
+          catalogRows[#catalogRows + 1] = { kind = "skill", name = s.name, title = s.title, source = s.source,
+            description = s.description, category = s.category, needs = needs }
+        end
+      end
+    end)
+  end
+
+  function Panel.matches(query)
+    local items = {}
+    for _, s in ipairs(catalogRows) do
+      if s.source ~= "guide" then items[#items + 1] = s end
+    end
     if deps.savedCommands then
       for _, c in ipairs(deps.savedCommands:load()) do
         if c.enabled ~= false then
-          any = true
-          menu:menuItem{ text = "/" .. c.name .. "  " .. c.title, onclick = function()
-            lastPrompt = "/" .. c.name .. " "
-            dlg:modify{ id = "prompt", text = lastPrompt }
-          end }
+          items[#items + 1] = { kind = "command", name = c.name, title = c.title, description = c.description, source = "command" }
         end
       end
     end
-    if not any then menu:menuItem{ text = "No saved commands yet", enabled = false } end
-    menu:separator{}
-    menu:menuItem{ text = "/skill:name  use one of your skills", onclick = function()
-      lastPrompt = "/skill:"
-      dlg:modify{ id = "prompt", text = lastPrompt }
-    end }
-    menu:showMenu()
+    local words = {}
+    for w in (query or ""):lower():gmatch("%S+") do words[#words + 1] = w end
+    local out = {}
+    for _, it in ipairs(items) do
+      local head = (it.name .. " " .. it.title):lower()
+      local all = head .. " " .. (it.description or ""):lower() .. " " .. (it.category or ""):lower()
+      local score, ok = 0, true
+      for _, w in ipairs(words) do
+        if not all:find(w, 1, true) then ok = false; break end
+        score = score + (head:sub(1, #w) == w and 3 or (head:find(w, 1, true) and 2 or 1))
+      end
+      if ok then out[#out + 1] = { it = it, score = score } end
+    end
+    table.sort(out, function(a, b)
+      if a.score ~= b.score then return a.score > b.score end
+      return a.it.title < b.it.title
+    end)
+    local list = {}
+    for _, o in ipairs(out) do list[#list + 1] = o.it end
+    return list
   end
 
-  -- Typing "@" at the end of the prompt opens the picker; "/" as the first
-  -- character lists commands.
+  local function setSuggest(items)
+    suggest = items and { items = items } or nil
+    if dlg then dlg:repaint() end
+  end
+
+  -- Picking a match: a skill becomes "/skill:name " (the message then runs
+  -- with that skill), a saved command "/name ".
+  function Panel.pickSuggestion(it)
+    if not dlg or not it then return end
+    lastPrompt = it.kind == "command" and ("/" .. it.name .. " ") or ("/skill:" .. it.name .. " ")
+    dlg:modify{ id = "prompt", text = lastPrompt }
+    setSuggest(nil)
+    for _, n in ipairs(it.needs or {}) do
+      if n == "image" and #pending == 0 then app.tip("This skill needs an image: attach one with +") end
+    end
+  end
+
+  function Panel.suggestions() return suggest and suggest.items or {} end
+
+  local function skillByName(name)
+    for _, s in ipairs(catalogRows) do if s.name == name then return s end end
+  end
+
+  -- Typing "@" at the end of the prompt opens the picker; a prompt that is
+  -- just "/query" shows matching skills and commands.
   local function onPromptChange()
     if not dlg then return end
     local text = dlg.data.prompt or ""
     local grew = #text == #lastPrompt + 1 and text:sub(1, #lastPrompt) == lastPrompt
     lastPrompt = text
-    if grew and text:sub(-1) == "@" then openPicker()
-    elseif grew and text == "/" then openSlashMenu() end
+    if grew and text:sub(-1) == "@" then openPicker() end
+    local query = text:match("^/([^%s]*)$")
+    if query and not query:match("^skill:") then
+      if #catalogRows == 0 then refreshCatalog() end
+      setSuggest(Panel.matches((query:gsub("[-_]", " "))))
+    elseif suggest then
+      setSuggest(nil)
+    end
   end
+  Panel.onPromptChange = onPromptChange
 
   -- "/name args" runs a saved command right away, with no agent turn (#26).
   -- Returns true when the prompt was a saved command.
@@ -784,7 +883,24 @@ return function(deps)
     if conv:isBusy() or not dlg then return end
     local prompt = dlg.data.prompt or ""
     if prompt:match("^%s*$") then return end
+    -- Enter on a bare "/query" picks the best match instead of sending.
+    if suggest and #suggest.items > 0 and prompt:match("^/[^%s]*$") then
+      Panel.pickSuggestion(suggest.items[1])
+      return
+    end
+    setSuggest(nil)
     if runSlashCommand(prompt) then return end
+    -- A skill that needs an image waits for an attachment (#35).
+    local skillName = prompt:match("^%s*/skill:([%w%-_]+)")
+    local skill = skillName and skillByName(skillName)
+    if skill then
+      for _, n in ipairs(skill.needs or {}) do
+        if n == "image" and #pending == 0 then
+          app.tip(skill.title .. " needs an image: attach one with + first")
+          return
+        end
+      end
+    end
     local provider = providerOverride or dlg.data.provider or providers[1]
     local mode = modeOverride or (dlg.data.mode or "Agent"):lower()
     if mode == "developer" and not deps.preferences.developerConfirmed then
@@ -821,7 +937,9 @@ return function(deps)
     end
     pending = {}
     updateAttachments()
-    conv:send(shown, provider, mode)
+    -- The header names the skill, so the bubble shows only the request.
+    if skill then shown = shown:gsub("^%s*/skill:[%w%-_]+%s*", "", 1) end
+    conv:send(shown, provider, mode, skill and skill.title or nil)
     -- Record where this reply starts in the undo history (#22).
     local header = conv:entries()[#conv:entries()]
     currentTurn = deps.TurnHistory.begin(app.sprite)
@@ -1141,6 +1259,9 @@ return function(deps)
         dlg:repaint()
       end,
       onmousedown = function(ev)
+        for _, s in ipairs(hitSuggest) do
+          if ev.y >= s.y0 and ev.y <= s.y1 then Panel.pickSuggestion(s.item); return end
+        end
         for _, b in ipairs(hitButtons) do
           if ev.x >= b.x0 and ev.x <= b.x1 and ev.y >= b.y0 and ev.y <= b.y1 then
             Panel.turnAction(b.turn, b.action, b.entry, b.index)
