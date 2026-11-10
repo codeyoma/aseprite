@@ -184,6 +184,17 @@ app.command.ExportSpriteSheet{
 return { png = OUT .. ".png", json = OUT .. ".json" }
 ```
 
+## Export an animated GIF (scaled up)
+
+Run with `transaction = false`.
+
+```lua
+-- recipe: export-gif
+local PATH = "/path/to/anim.gif"
+app.command.SaveFileCopyAs{ ui = false, filename = PATH, scale = 8 }   -- add tag = "idle" for one tag
+return PATH
+```
+
 ## Save
 
 ```lua

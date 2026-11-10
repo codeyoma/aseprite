@@ -28,8 +28,9 @@ local subst = {
   ["/path/to/image.png"] = inputPng,
   ["/path/to/sheet"] = app.fs.joinPath(tmp, "recipe_sheet"),
   ["/path/to/sprite.aseprite"] = app.fs.joinPath(tmp, "recipe_sprite.aseprite"),
+  ["/path/to/anim.gif"] = app.fs.joinPath(tmp, "recipe_anim.gif"),
 }
-local noTransaction = { pixelate = true, ["export-sheet"] = true, save = true }
+local noTransaction = { pixelate = true, ["export-sheet"] = true, ["export-gif"] = true, save = true }
 
 local failures = 0
 local function run(name)
@@ -55,13 +56,15 @@ run("tags")
 run("outline")
 run("export-sheet")
 if not app.fs.isFile(app.fs.joinPath(tmp, "recipe_sheet.png")) then failures = failures + 1; print("FAIL sheet png missing") end
+run("export-gif")
+if not app.fs.isFile(app.fs.joinPath(tmp, "recipe_anim.gif")) then failures = failures + 1; print("FAIL gif missing") end
 run("save")
 run("pixelate")
 if app.sprite.width ~= 32 or app.sprite.colorMode ~= ColorMode.INDEXED then failures = failures + 1; print("FAIL pixelate result") end
 
 for _, name in ipairs(order) do
   local tested = ({ ["new-sprite"]=1, ["layer-below"]=1, ["draw-circle"]=1, ["idle-bob"]=1, ["retime-double"]=1,
-    ["set-fps"]=1, tags=1, outline=1, ["export-sheet"]=1, save=1, pixelate=1 })[name]
+    ["set-fps"]=1, tags=1, outline=1, ["export-sheet"]=1, ["export-gif"]=1, save=1, pixelate=1 })[name]
   if not tested then failures = failures + 1; print("FAIL untested recipe: " .. name) end
 end
 

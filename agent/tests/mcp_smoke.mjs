@@ -1,41 +1,17 @@
 // End-to-end smoke test: spawns the bridge over stdio, waits for Aseprite to
 // connect, then calls each MCP tool.
 // Run: node agent/tests/mcp_smoke.mjs   (with Aseprite open)
-import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { startBridge, textOf } from "./mcp_client.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const bridge = spawn("node", [join(here, "../bridge/dist/index.js")], { stdio: ["pipe", "pipe", "inherit"] });
+const client = await startBridge();
+const call = client.call;
+const bridge = client.proc;
 
-let buf = "";
-const waiters = new Map();
-bridge.stdout.on("data", (d) => {
-  buf += d;
-  let i;
-  while ((i = buf.indexOf("\n")) >= 0) {
-    const line = buf.slice(0, i);
-    buf = buf.slice(i + 1);
-    if (!line.trim()) continue;
-    const msg = JSON.parse(line);
-    waiters.get(msg.id)?.(msg);
-  }
-});
-
-let nextId = 1;
-function rpc(method, params) {
-  const id = nextId++;
-  bridge.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  return new Promise((resolve) => waiters.set(id, resolve));
-}
-const call = async (name, args = {}) => (await rpc("tools/call", { name, arguments: args })).result;
-const textOf = (r) => r.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
-
-await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "0" } });
-bridge.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
-
-const tools = (await rpc("tools/list", {})).result.tools.map((t) => t.name);
+const tools = await client.listTools();
 console.log("tools:", tools.join(", "));
 
 const timeoutS = Number(process.env.WAIT ?? 60);
@@ -102,6 +78,8 @@ if (!unk.isError || !textOf(unk).includes("SpriteSize")) { failed++; console.log
 expect("read_guide list", await call("read_guide", {}), (t) => t.includes("basics") && t.includes("recipes"));
 expect("read_guide basics", await call("read_guide", { topic: "basics" }), (t) => t.includes("Object model"));
 await call("undo", {});
+// Close the test sprite (the active one, created above) without saving.
+await call("execute_lua", { code: "if app.sprite then app.sprite:close() end", transaction: false });
 
 console.log(failed ? `${failed} FAILED` : "ALL SMOKE CHECKS PASSED");
 bridge.kill();

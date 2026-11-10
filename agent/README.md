@@ -40,6 +40,20 @@ agent/extension/  (Aseprite Lua extension)
 - Node.js 20 or later.
 - Claude Code or Codex CLI.
 
+## Demos
+
+Produced by [demos/run_demos.mjs](demos/run_demos.mjs), which calls the same MCP tools an agent uses, against a live Aseprite.
+
+| Request | Result |
+|---|---|
+| "Turn this image into 64×48 pixel art with 12 colors" ([source](demos/output/source.png)) | ![pixelated](demos/output/1-pixelate.png) |
+| "Make a blue ball on a layer called Body, and add a 50% Shadow layer under it" | ![layers](demos/output/2-layers.png) |
+| "Add 8 px of canvas on the left, right and top" | ![canvas](demos/output/3-canvas.png) |
+| "Make a 6-frame idle bob, tag it `idle`, export a GIF" | ![idle](demos/output/4-idle.gif) |
+| "Double the frames (6 → 12) without changing the speed" | 12 frames, still 0.72 s per loop |
+| "Export a sprite sheet with JSON" | [6-sheet.png](demos/output/6-sheet.png) + [6-sheet.json](demos/output/6-sheet.json) |
+| "Show the grid and onion skin" | UI commands run through `run_command` |
+
 ## Setup
 
 1. Build Aseprite and the bridge, and install the extension: see [docs/BUILD-macos.md](docs/BUILD-macos.md).
