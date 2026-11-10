@@ -395,3 +395,19 @@ export function toneTowards(from: ToneStats, to: ToneStats, strength = 1) {
     pivot: from.lightness,
   };
 }
+
+/**
+ * Merges colors closer than `threshold` into the more common one (noise
+ * and blended pixels after resampling). Returns a map for colors that move.
+ */
+export function mergeNear(colors: Counted[], threshold = 0.03): Map<string, RGBA> {
+  const sorted = tally(colors, 0);
+  const kept: Counted[] = [];
+  const map = new Map<string, RGBA>();
+  for (const c of sorted) {
+    const k = kept.find((x) => distance(x, c) < threshold);
+    if (k) map.set(hex(c), { r: k.r, g: k.g, b: k.b, a: c.a });
+    else kept.push(c);
+  }
+  return map;
+}

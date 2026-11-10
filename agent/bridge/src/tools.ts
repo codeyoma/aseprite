@@ -2,6 +2,7 @@
 // registration, the chat panel's step labels and the edit/read kind all
 // come from here. A tool without `run` forwards its input to the Aseprite
 // request method of the same name and returns the result as JSON.
+import { PIXEL_TOOLS } from "./pixel_tools.js";
 import { COLOR_TOOLS } from "./color_tools.js";
 import { formatSubResults, type SubAgents } from "./subagents.js";
 import { COMMAND_NAME, commandsDir, SavedCommands, type SavedCommand } from "./saved_commands.js";
@@ -460,6 +461,8 @@ export const TOOLS: Tool[] = [
 ];
 // Palette and tone tools (#36, #38).
 TOOLS.push(...COLOR_TOOLS);
+// Pixel snap tools (#37).
+TOOLS.push(...PIXEL_TOOLS);
 
 // The bridge's sub-agent runner (#33), set by index.ts.
 let spawner: SubAgents | undefined;

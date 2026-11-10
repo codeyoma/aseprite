@@ -52,7 +52,7 @@ The agent puts what it draws on a new `AI: <task>` layer above your layer, with 
 
 When the agent does something you want again, ask it to "save this as a command called outline-dark". Saved commands appear in **File > Scripts > AI Agent > My Commands** and run without the agent; in the chat, `/outline-dark width=2` runs one directly (type `/` to list them). **Manage My Commands...** runs, disables, shows the source of, or reverts a command to its previous version. Commands live in `~/.aseprite-agent/commands`, a git repository with one commit per change.
 
-Type `/` in the chat to search skills: built-in ones (extract palette, match tone and palette, check and fix pixel art, retime an animation, variations, work on many frames at once, with more coming in milestone M8) and your own, plus your saved commands. Typing filters the list; click a row or press Enter to pick the top one, then write your request. The reply's header names the skill.
+Type `/` in the chat to search skills: built-in ones (fix AI or upscaled pixel art, extract palette, match tone and palette, check and fix pixel art, retime an animation, variations, work on many frames at once, with more coming in milestone M8) and your own, plus your saved commands. Typing filters the list; click a row or press Enter to pick the top one, then write your request. The reply's header names the skill.
 
 Teach the agent your own techniques with skills: markdown files in `~/.aseprite-agent/skills/` (**File > Scripts > AI Agent > New Skill...** creates one from a template). A skill can list trigger words in its frontmatter; when a message contains one, the skill goes along with it. Type `/skill:name your request` to use a skill explicitly. A skill named like a built-in guide topic (`basics`, `recipes`, `pixel-art`) replaces it for the agent.
 
@@ -142,6 +142,7 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 | `get_timeline_text` / `apply_timeline_text` | The timeline (frames, durations, tags, linked cels) as editable text, applied in one undo step or previewed as a plan |
 | `palette_from_image` | Colors of an image, layer, selection or the sprite: counts, ramps, near-duplicates, closest available palettes; set, swatch or save as `.gpl` |
 | `color_stats` / `adjust_tone` / `remap_to_palette` | Compare tone in plain words, shift or match lightness/saturation/contrast, or limit colors to a palette (ramps keep their order) |
+| `detect_pixel_grid` / `fix_pixel_art` | Find the pixel grid of upscaled or AI-generated "pixel art" (fractional cells too) and rebuild it as a native-size sprite with a clean palette |
 | `spawn_agents` | Splits a multi-frame job across up to 4 sub-agents running in parallel, each limited to its frames (and layers) |
 | `propose_variations` | Shows the user the candidates the agent built (`variationLayer`) as thumbnails to keep one or discard |
 | `diff_visual` | What changed on the active frame since the last edit step or a saved checkpoint: PNG with changed pixels in red, bounds and count |

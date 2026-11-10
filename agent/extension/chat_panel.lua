@@ -932,7 +932,8 @@ return function(deps)
     local attachments, shown = {}, prompt
     for i, a in ipairs(pending) do
       attachments[#attachments + 1] = { label = a.label, path = a.path }
-      expanded = expanded .. string.format("\n[Attached image %d: %s%s]", i, a.label, a.uri and (" (" .. a.uri .. ")") or "")
+      -- The path lets tools read the image (source "file").
+      expanded = expanded .. string.format("\n[Attached image %d: %s%s, file %s]", i, a.label, a.uri and (" (" .. a.uri .. ")") or "", a.path)
       shown = shown .. "\nAttached: " .. a.label
     end
     pending = {}

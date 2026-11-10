@@ -73,3 +73,5 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Known palettes**: the palettes `palette_from_image` compares against and `remap_to_palette` accepts by name: the ones Aseprite ships (`data/extensions/*` `.gpl` files) and the user's in `~/.aseprite-agent/palettes` (`.gpl`/`.hex`). None are bundled by the agent (`agent/bridge/src/palettes.ts`).
 
 **Tone**: a source's pixel-weighted OKLab statistics (lightness, saturation, contrast, warmth) used to compare and match sprites; the color math lives in `agent/bridge/src/color.ts`, and the extension only reads colors (`collect_colors`) and applies color maps (`apply_color_map`).
+
+**Pixel snap**: rebuilding upscaled or AI-generated "pixel art" at its native size (#37). The grid is the cell size and offset whose boundaries carry the most color change against chance (fractional cells allowed, small noisy changes ignored); each cell takes its dominant color (`agent/bridge/src/pixel_grid.ts`).

@@ -1415,6 +1415,55 @@ handlers.apply_color_map = function(params)
   return { changed = changed, mode = sprite.colorMode == ColorMode.INDEXED and "palette entries" or "pixels" }
 end
 
+-- base64 -> bytes (for images the bridge sends, e.g. fix_pixel_art).
+local B64 = {}
+do
+  local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+  for i = 1, #chars do B64[chars:byte(i)] = i - 1 end
+end
+local function base64Decode(s)
+  local out, n = {}, 0
+  local bits, nbits = 0, 0
+  local chunk = {}
+  for i = 1, #s do
+    local v = B64[s:byte(i)]
+    if v then
+      bits = (bits << 6) | v
+      nbits = nbits + 6
+      if nbits >= 8 then
+        nbits = nbits - 8
+        n = n + 1
+        chunk[n] = (bits >> nbits) & 0xFF
+        if n == 4096 then
+          out[#out + 1] = string.char(table.unpack(chunk, 1, n))
+          n = 0
+        end
+      end
+    end
+  end
+  if n > 0 then out[#out + 1] = string.char(table.unpack(chunk, 1, n)) end
+  return table.concat(out)
+end
+
+-- A new RGB sprite from RGBA bytes (base64), with an optional palette.
+handlers.create_sprite = function(params)
+  local w, h = params.width, params.height
+  local bytes = base64Decode(params.rgba or "")
+  if #bytes ~= w * h * 4 then error(string.format("Expected %d bytes, got %d", w * h * 4, #bytes)) end
+  local sprite = Sprite(w, h, ColorMode.RGB)
+  local img = Image(w, h, ColorMode.RGB)
+  img.bytes = bytes
+  sprite.cels[1].image = img
+  if params.palette and #params.palette > 0 then
+    local p = Palette(#params.palette)
+    for i, hx in ipairs(params.palette) do p:setColor(i - 1, Color(hexRgba(hx))) end
+    sprite:setPalette(p)
+  end
+  if params.title then sprite.filename = params.title end
+  app.refresh()
+  return { width = w, height = h, title = app.fs.fileTitle(sprite.filename) }
+end
+
 -- A swatch strip of colors on a new layer "AI: <name>" (one undo step).
 handlers.draw_swatches = function(params)
   local sprite = app.sprite
