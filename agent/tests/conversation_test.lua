@@ -78,4 +78,18 @@ do
   check("reset clears entries and ids", #c:entries() == 0 and c:conversationId("codex") == nil)
 end
 
+-- The turn's last check becomes a badge on "Worked for" (#29).
+do
+  local c = Conversation.new{ clock = clock }
+  c:send("draw", "claude")
+  c:apply{ type = "tool", id = "c1", tool = "Check pixel art", name = "check", kind = "read" }
+  c:apply{ type = "tool_result", id = "c1", name = "check", ok = true, detail = "Check: 0 errors, 2 warnings (1 layers, 1 frames)" }
+  c:apply{ type = "done" }
+  local w = c:entries()[#c:entries()]
+  check("check badge recorded", w.kind == "worked" and w.check and w.check.errors == 0 and w.check.warnings == 2)
+  c:send("again", "claude")
+  c:apply{ type = "done" }
+  check("no check, no badge", c:entries()[#c:entries()].check == nil)
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

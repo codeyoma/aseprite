@@ -12,7 +12,7 @@
 --   { kind = "user" | "header" | "text" | "status" | "error", text }
 --   { kind = "thought", text, secs }
 --   { kind = "tool", text, id, toolKind = "edit"|"read", detail, status = nil|"ok"|"failed", result }
---   { kind = "worked", secs }
+--   { kind = "worked", secs, check = nil|{ errors, warnings } }   -- the turn's last check, if any
 
 local PROVIDER_NAMES = { claude = "Claude", codex = "Codex" }
 local MAX_ENTRIES = 400
@@ -44,8 +44,17 @@ local function sinceLast(self)
   return s
 end
 
+-- The last check result in the running turn: { errors, warnings } or nil.
+local function lastCheck(self)
+  for i = #self.list, 1, -1 do
+    local e = self.list[i]
+    if e.kind == "user" then return nil end
+    if e.kind == "tool" and e.name == "check" and e.check then return e.check end
+  end
+end
+
 local function endTurn(self, text)
-  if self.turnStart then push(self, { kind = "worked", secs = self.clock() - self.turnStart }) end
+  if self.turnStart then push(self, { kind = "worked", secs = self.clock() - self.turnStart, check = lastCheck(self) }) end
   if text then push(self, { kind = "status", text = text }) end
   self.turnStart = nil
 end
@@ -88,7 +97,7 @@ function Conversation:apply(ev)
     push(self, { kind = "thought", text = ev.text or "", secs = sinceLast(self) })
   elseif t == "tool" then
     sinceLast(self)
-    push(self, { kind = "tool", text = ev.tool or "tool", id = ev.id, toolKind = ev.kind, detail = ev.detail })
+    push(self, { kind = "tool", text = ev.tool or "tool", name = ev.name, id = ev.id, toolKind = ev.kind, detail = ev.detail })
   elseif t == "tool_result" then
     sinceLast(self)
     for i = #self.list, 1, -1 do
@@ -96,6 +105,10 @@ function Conversation:apply(ev)
       if e.kind == "tool" and e.status == nil and e.id == ev.id then
         e.status = ev.ok and "ok" or "failed"
         e.result = ev.detail
+        if e.name == "check" and ev.ok and ev.detail then
+          local errors, warnings = tostring(ev.detail):match("Check: (%d+) errors?, (%d+) warnings?")
+          if errors then e.check = { errors = tonumber(errors), warnings = tonumber(warnings) } end
+        end
         break
       end
     end

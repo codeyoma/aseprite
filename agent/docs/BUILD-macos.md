@@ -63,6 +63,12 @@ build/bin/aseprite -b \
   --script agent/tests/conversation_test.lua
 ```
 
+Pixel-art check rules, in batch mode:
+
+```bash
+build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/check_test.lua
+```
+
 Bridge unit tests (no Aseprite needed):
 
 ```bash

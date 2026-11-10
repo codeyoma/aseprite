@@ -38,7 +38,11 @@ console.log("--- active sprite:", JSON.stringify({ size: [state.activeSprite?.wi
 // Only judge entries from this run: those after the last "user" line.
 const lastUser = (entries ?? []).map((l) => l.startsWith("user")).lastIndexOf(true);
 const run = (entries ?? []).slice(lastUser);
-const failed = busy || run.some((l) => l.startsWith("error") || l.startsWith("tool[failed]")) || !run.some((l) => l.startsWith("tool[ok]"));
+// Agents recover from a failed tool call (e.g. a too-large read); fail only on an
+// error entry, a failing last step, or a run with no successful step.
+const tools = run.filter((l) => l.startsWith("tool["));
+const failed = busy || run.some((l) => l.startsWith("error")) || !tools.some((l) => l.startsWith("tool[ok]")) ||
+  (tools.length > 0 && tools.at(-1).startsWith("tool[failed]"));
 console.log(failed ? "CHAT TEST FAILED" : "CHAT TEST PASSED");
 c.stop();
 process.exit(failed ? 1 : 0);

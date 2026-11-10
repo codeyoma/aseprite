@@ -14,6 +14,9 @@ Follow these unless the user asks for something else.
 
 ## Working loop
 
+Finish every drawing or animation task with the `check` tool. It finds off-palette colors, orphan pixels, semi-transparent pixels, empty cels inside a tag, odd frame durations and content outside the canvas, each with coordinates and a fix. Fix errors; keep a warning only on purpose and say so.
+
+
 1. Block in the silhouette with one color.
 2. Add base colors per material.
 3. Add shadows, then highlights.

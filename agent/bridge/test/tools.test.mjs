@@ -115,3 +115,27 @@ test("read_guide and list_commands work offline", async () => {
   assert.equal((await runTool(findTool("read_guide"), { topic: "nope" }, fakeAseprite())).isError, true);
   assert.match(textOf(await runTool(findTool("list_commands"), { filter: "canvas" }, fakeAseprite())), /CanvasSize/);
 });
+
+import { formatCheck } from "../dist/tools.js";
+
+test("check: formats findings with coordinates and fixes", async () => {
+  const result = {
+    errors: 1, warnings: 1, checked: { layers: 2, frames: 3, rules: [] },
+    findings: [
+      { rule: "off-palette", severity: "error", layer: "Body", layerId: "L3", frame: 2, color: "#fa0a0a", count: 25,
+        pixels: [[4, 7], [5, 7]], fix: "Use palette index 2 (#ff0000), the nearest color" },
+      { rule: "frame-duration", severity: "warning", tag: "idle", frames: [3], fix: "Set frame 3 to 100 ms" },
+    ],
+  };
+  const out = formatCheck(result).split("\n");
+  assert.equal(out[0], "Check: 1 errors, 1 warnings (2 layers, 3 frames)");
+  assert.match(out[1], /^- error off-palette \[L3 Body, frame 2\]: #fa0a0a 25 px at \(4,7\) \(5,7\) …$/);
+  assert.match(out[2], /fix: Use palette index 2/);
+  assert.match(out[3], /^- warning frame-duration \[tag idle, frames 3\]/);
+  assert.equal(formatCheck({ errors: 0, warnings: 0, findings: [], checked: { layers: 1, frames: 1 } }),
+    "Check: 0 errors, 0 warnings (1 layers, 1 frames). No problems found.");
+
+  const res = await runTool(findTool("check"), { rules: ["orphan"] }, fakeAseprite({ check: { result } }));
+  assert.match(textOf(res), /^Check: 1 errors/);
+  assert.equal(toolKind("check"), "read");
+});

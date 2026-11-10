@@ -225,6 +225,28 @@ export const TOOLS: Tool[] = [
     },
   },
   {
+    name: "check",
+    title: "Check pixel art",
+    description:
+      "Run mechanical pixel-art checks on the active sprite and return findings with coordinates and a concrete fix: " +
+      "off-palette colors (RGB sprites), orphan pixels, semi-transparent pixels, empty cels inside a tag, frame " +
+      "durations that stand out within a tag, and content outside the canvas. Run it before saying a drawing or " +
+      "animation task is done; fix errors, and mention warnings you leave on purpose.",
+    input: z.object({
+      layer: z.string().optional().describe("Check only this layer (id like 'L12' or name). Default: all visible layers."),
+      frames: z.union([z.string(), z.number().int(), z.array(z.number().int())]).optional()
+        .describe("Frames to check: 3, [1,2] or '1-4'. Default: all frames."),
+      rules: z.array(z.enum(["off-palette", "orphan", "semi-transparent", "empty-cel", "frame-duration", "outside-canvas"]))
+        .optional().describe("Rules to run. Default: all."),
+    }),
+    kind: "read",
+    label: () => "Check pixel art",
+    async run(args, aseprite) {
+      const { result } = await aseprite.request("check", args);
+      return { content: [text(formatCheck(result))] };
+    },
+  },
+  {
     name: "undo",
     title: "Undo",
     description: "Undo the last steps in the active sprite. Each execute_lua call is one step.",
@@ -241,6 +263,23 @@ export const TOOLS: Tool[] = [
     label: () => "Redo",
   },
 ];
+
+/** Readable check report: a summary line, then one line per finding. */
+export function formatCheck(result: any): string {
+  const findings: any[] = result?.findings ?? [];
+  const head = `Check: ${result?.errors ?? 0} errors, ${result?.warnings ?? 0} warnings` +
+    ` (${result?.checked?.layers ?? "?"} layers, ${result?.checked?.frames ?? "?"} frames)`;
+  if (!findings.length) return `${head}. No problems found.`;
+  const lines = findings.map((f) => {
+    const where = [f.layerId && f.layer ? `${f.layerId} ${f.layer}` : f.layer, f.frame ? `frame ${f.frame}` : "",
+      f.tag ? `tag ${f.tag}` : "", f.frames ? `frames ${f.frames.join(",")}` : ""].filter(Boolean).join(", ");
+    const what = [f.color, f.count ? `${f.count} px` : "",
+      f.pixels?.length ? `at ${f.pixels.map((p: number[]) => `(${p[0]},${p[1]})`).join(" ")}${f.count > f.pixels.length ? " …" : ""}` : ""]
+      .filter(Boolean).join(" ");
+    return `- ${f.severity} ${f.rule}${where ? ` [${where}]` : ""}${what ? `: ${what}` : ""}\n  fix: ${f.fix}`;
+  });
+  return [head, ...lines].join("\n");
+}
 
 const BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 

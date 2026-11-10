@@ -302,7 +302,19 @@ return function(deps)
       elseif k == "worked" then
         addRow(lh + u * 2, function(y)
           gc.color = C.dim
-          gc:fillText("Worked for " .. formatSeconds(e.secs or 0), pad, y)
+          local label = "Worked for " .. formatSeconds(e.secs or 0)
+          gc:fillText(label, pad, y)
+          -- Badge from the turn's last pixel-art check (#29).
+          if e.check then
+            local bx = pad + gc:measureText(label).width + u * 3
+            local clean = e.check.errors == 0 and e.check.warnings == 0
+            iconCheck(gc, bx, y + (lh - icon) / 2, icon, e.check.errors == 0)
+            gc.color = e.check.errors > 0 and C.failed or C.dim
+            local note = clean and "Checked"
+              or (e.check.errors > 0 and string.format("%d error%s", e.check.errors, e.check.errors == 1 and "" or "s")
+                or string.format("%d warning%s", e.check.warnings, e.check.warnings == 1 and "" or "s"))
+            gc:fillText(note, bx + icon + u * 2, y)
+          end
           gc.color = C.rule
           gc:fillRect(Rectangle(pad, y + lh + u, w - pad * 2, math.max(1, u // 3)))
         end, nil, u * 4)

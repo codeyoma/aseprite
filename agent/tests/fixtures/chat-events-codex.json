@@ -12,6 +12,7 @@
   "type": "tool",
   "id": "item_4",
   "tool": "Read guide: basics",
+  "name": "read_guide",
   "kind": "read",
   "detail": "{\"topic\":\"basics\"}"
  },
@@ -19,6 +20,7 @@
   "type": "tool_result",
   "id": "item_4",
   "tool": "read_guide",
+  "name": "read_guide",
   "ok": true,
   "detail": "# Aseprite scripting basics for agents\n\nRead this before editing. Every rule here was checked against Aseprite 1.3.18.\n\n## Workflow\n\n1. `get_state` (document) and `get_context` (what the user selected).\n2. Change things with `execute_lua` or `run_command`.\n3. `snapshot` after every visual change. Look at it. Fix what is wrong.\n4. Use `read_pixels` when exact pixels matter (outlines, small sprites, palette checks).\n\nEach `execute_lua` call is one undo step. If the code raises an error, everything it did is rolled back, so a failed attempt leaves no partial changes.\n\n## Object model\n\n| Object | …"
  },
@@ -26,6 +28,7 @@
   "type": "tool",
   "id": "item_5",
   "tool": "Read sprite state",
+  "name": "get_state",
   "kind": "read",
   "detail": ""
  },
@@ -33,6 +36,7 @@
   "type": "tool_result",
   "id": "item_5",
   "tool": "get_state",
+  "name": "get_state",
   "ok": true,
   "detail": "{\n  \"activeFrame\": 1,\n  \"activeLayer\": \"Fixture\",\n  \"activeSprite\": {\n    \"colorMode\": \"rgb\",\n    \"filename\": \"Sprite\",\n    \"frameCount\": 1,\n    \"frames\": [\n      {\n        \"durationMs\": 100,\n        \"frame\": 1\n      }\n    ],\n    \"height\": 16,\n    \"layerCount\": 1,\n    \"layers\": [\n      {\n        \"celFrames\": [\n          1\n        ],\n        \"editable\": true,\n        \"group\": false,\n        \"name\": \"Fixture\",\n        \"opacity\": 255,\n        \"stackIndex\": 1,\n        \"visible\": true\n      }\n    ],\n    \"modified\": true,\n    \"palette\": {\n      \"colors\": [\n        \"#000000\",\n        \"#000000\",\n     …"
  },
@@ -40,6 +44,7 @@
   "type": "tool",
   "id": "item_6",
   "tool": "Read selection",
+  "name": "get_context",
   "kind": "read",
   "detail": ""
  },
@@ -47,6 +52,7 @@
   "type": "tool_result",
   "id": "item_6",
   "tool": "get_context",
+  "name": "get_context",
   "ok": true,
   "detail": "{\n  \"bgColor\": \"#000000\",\n  \"brush\": {\n    \"angle\": 0,\n    \"size\": 1,\n    \"type\": \"circle\"\n  },\n  \"cel\": {\n    \"bounds\": {\n      \"height\": 16,\n      \"width\": 16,\n      \"x\": 0,\n      \"y\": 0\n    },\n    \"frame\": 1,\n    \"layer\": \"Fixture\",\n    \"opacity\": 255\n  },\n  \"fgColor\": \"#ffffff\",\n  \"frame\": 1,\n  \"layer\": {\n    \"editable\": true,\n    \"group\": false,\n    \"name\": \"Fixture\",\n    \"opacity\": 255,\n    \"path\": \"Fixture\",\n    \"visible\": true\n  },\n  \"sprite\": {\n    \"colorMode\": \"rgb\",\n    \"filename\": \"Sprite\",\n    \"frameCount\": 1,\n    \"height\": 16,\n    \"layerCount\": 1,\n    \"modified\": true,\n    \"width…"
  },
@@ -54,6 +60,7 @@
   "type": "tool",
   "id": "item_7",
   "tool": "Rename Fixture to Recorded",
+  "name": "execute_lua",
   "kind": "edit",
   "detail": "local layer = app.layer\nassert(layer and layer.name == \"Fixture\", \"Expected active layer Fixture\")\nlayer.name = \"Recorded\"\nreturn {name = layer.name}"
  },
@@ -61,6 +68,7 @@
   "type": "tool_result",
   "id": "item_7",
   "tool": "execute_lua",
+  "name": "execute_lua",
   "ok": true,
   "detail": "{\n  \"value\": {\n    \"name\": \"Recorded\"\n  }\n}"
  },
@@ -68,6 +76,7 @@
   "type": "tool",
   "id": "item_8",
   "tool": "Read selection",
+  "name": "get_context",
   "kind": "read",
   "detail": ""
  },
@@ -75,6 +84,7 @@
   "type": "tool_result",
   "id": "item_8",
   "tool": "get_context",
+  "name": "get_context",
   "ok": true,
   "detail": "{\n  \"bgColor\": \"#000000\",\n  \"brush\": {\n    \"angle\": 0,\n    \"size\": 1,\n    \"type\": \"circle\"\n  },\n  \"cel\": {\n    \"bounds\": {\n      \"height\": 16,\n      \"width\": 16,\n      \"x\": 0,\n      \"y\": 0\n    },\n    \"frame\": 1,\n    \"layer\": \"Recorded\",\n    \"opacity\": 255\n  },\n  \"fgColor\": \"#ffffff\",\n  \"frame\": 1,\n  \"layer\": {\n    \"editable\": true,\n    \"group\": false,\n    \"name\": \"Recorded\",\n    \"opacity\": 255,\n    \"path\": \"Recorded\",\n    \"visible\": true\n  },\n  \"sprite\": {\n    \"colorMode\": \"rgb\",\n    \"filename\": \"Sprite\",\n    \"frameCount\": 1,\n    \"height\": 16,\n    \"layerCount\": 1,\n    \"modified\": true,\n    \"wi…"
  },
