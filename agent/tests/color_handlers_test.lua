@@ -122,4 +122,10 @@ local mc = body:cel(3)
 check("mirror: flipped and moved", mc.position.x == 5 and app.pixelColor.rgbaB(mc.image:getPixel(1, 0)) == 255)
 check("mirror: kept layer unflipped", sword:cel(3).position.x == 6)
 
+-- set_slice (#50): a 9-patch slice, replaced by name.
+local us = Sprite(20, 12, ColorMode.RGB)
+H.call("set_slice", { name = "button", x = 0, y = 0, w = 20, h = 12, center = { x = 2, y = 2, w = 16, h = 8 } })
+H.call("set_slice", { name = "button", x = 0, y = 0, w = 20, h = 12, center = { x = 3, y = 3, w = 14, h = 6 } })
+check("slice with 9-patch center, replaced by name", #us.slices == 1 and us.slices[1].center.x == 3 and us.slices[1].center.width == 14)
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

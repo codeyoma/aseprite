@@ -93,3 +93,5 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Normal map**: per-pixel surface directions for 2D lighting, made from a height field (a rounded bevel of the silhouette, the colors' lightness, or a grayscale height layer), quantized to a few tilt steps for a pixel look, in OpenGL (green up) or DirectX convention; kept on a hidden 'AI: normal <layer>' layer (`agent/bridge/src/normals.ts`).
 
 **Engine export**: frames packed into a grid sheet (trimmed with their offsets kept, padded and extruded against bleeding) plus metadata per engine: a Godot 4 SpriteFrames, a Unity .png.meta with slices and pivots, Phaser atlas and animations, a Tiled .tsx, and Aseprite's JSON hash; a normal layer gets a matching `_n` sheet (`agent/bridge/src/export.ts`).
+
+**Pixel text and UI**: text drawn from Aseprite's bitmap fonts (`aseprite` 7 px, `mini` 5 px; CC BY 4.0), parsed like Aseprite's sprite-sheet fonts; UI panels and buttons with a border, highlight, shadow and rounded corners, a 9-patch slice for stretching, button states as tagged frames, colors snapped to the palette (`agent/bridge/src/ui.ts`).

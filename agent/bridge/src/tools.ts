@@ -2,6 +2,7 @@
 // registration, the chat panel's step labels and the edit/read kind all
 // come from here. A tool without `run` forwards its input to the Aseprite
 // request method of the same name and returns the result as JSON.
+import { UI_TOOLS } from "./ui_tools.js";
 import { EXPORT_TOOLS } from "./export_tools.js";
 import { NORMAL_TOOLS } from "./normal_tools.js";
 import { DITHER_TOOLS } from "./dither_tools.js";
@@ -492,6 +493,8 @@ TOOLS.push(...DITHER_TOOLS);
 TOOLS.push(...NORMAL_TOOLS);
 // Export for game engines (#49).
 TOOLS.push(...EXPORT_TOOLS);
+// Pixel text and UI elements (#50).
+TOOLS.push(...UI_TOOLS);
 
 // The bridge's sub-agent runner (#33), set by index.ts.
 let spawner: SubAgents | undefined;

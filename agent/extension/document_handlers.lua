@@ -1715,6 +1715,26 @@ handlers.mirror_frames = function(params)
   return { from = first, to = first + #frames - 1, frames = #frames }
 end
 
+-- A slice with an optional 9-patch center (#50): engines stretch the
+-- center and keep the borders. Replaces a slice of the same name.
+handlers.set_slice = function(params)
+  local sprite = app.sprite
+  if not sprite then error("No active sprite") end
+  app.transaction("Set slice", function()
+    for _, sl in ipairs(sprite.slices) do
+      if sl.name == params.name then sprite:deleteSlice(sl) break end
+    end
+    local slice = sprite:newSlice(Rectangle(params.x or 0, params.y or 0, params.w or sprite.width, params.h or sprite.height))
+    slice.name = params.name or "slice"
+    if params.center then
+      local c = params.center
+      slice.center = Rectangle(c.x, c.y, c.w, c.h)
+    end
+  end)
+  app.refresh()
+  return { slices = #sprite.slices }
+end
+
 -- A swatch strip of colors on a new layer "AI: <name>" (one undo step).
 handlers.draw_swatches = function(params)
   local sprite = app.sprite
