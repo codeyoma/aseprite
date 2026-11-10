@@ -7,5 +7,5 @@ version=$(node -p "require('./extension/package.json').version")
 out="dist/aseprite-agent-${version}.aseprite-extension"
 mkdir -p dist
 rm -f "$out"
-(cd extension && zip -q -X "../$out" package.json agent.lua chat_panel.lua)
+(cd extension && zip -q -X "../$out" package.json agent.lua chat_panel.lua conversation.lua)
 echo "$out"

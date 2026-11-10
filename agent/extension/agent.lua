@@ -815,6 +815,7 @@ function init(plugin)
   pluginRef = plugin
 
   Panel = dofile(app.fs.joinPath(plugin.path, "chat_panel.lua")){
+    Conversation = dofile(app.fs.joinPath(plugin.path, "conversation.lua")),
     request = requestBridge,
     isConnected = function() return connected end,
     contextString = contextString,

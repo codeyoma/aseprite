@@ -32,6 +32,7 @@ mkdir -p "$E"
 ln -sf "$PWD/agent/extension/package.json" "$E/package.json"
 ln -sf "$PWD/agent/extension/agent.lua" "$E/agent.lua"
 ln -sf "$PWD/agent/extension/chat_panel.lua" "$E/chat_panel.lua"
+ln -sf "$PWD/agent/extension/conversation.lua" "$E/conversation.lua"
 ```
 
 On first use, Aseprite shows a Security dialog for `agent.lua` (reading `~/.aseprite-agent/session.json`). Tick "Give full trust to this script" and click "Give Script Full Access".
@@ -52,6 +53,21 @@ Lua handlers, in batch mode (no GUI needed):
 ASEPRITE_AGENT_TEST=1 build/bin/aseprite -b \
   --script-param ext="$PWD/agent/extension" \
   --script agent/tests/batch_test.lua
+```
+
+Chat panel conversation logic, in batch mode (replays recorded Claude and Codex turns):
+
+```bash
+build/bin/aseprite -b \
+  --script-param ext="$PWD/agent/extension" \
+  --script-param fixtures="$PWD/agent/tests/fixtures" \
+  --script agent/tests/conversation_test.lua
+```
+
+Bridge unit tests (no Aseprite needed):
+
+```bash
+cd agent/bridge && npm test
 ```
 
 Guide recipes, in batch mode (runs every `-- recipe:` block in `agent/guide/recipes.md`):

@@ -10,7 +10,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Agent Provider**: one agent CLI the chat panel can run (Claude Code, Codex). Each provider is an adapter that builds the CLI command for a message and parses the CLI's JSON output into provider events (`agent/bridge/src/providers`).
 
-**Conversation**: one chat thread with a provider, identified by the provider's own id (Claude session id, Codex thread id). The chat panel keeps the ids so a conversation survives bridge restarts.
+**Conversation**: one chat thread with a provider, identified by the provider's own id (Claude session id, Codex thread id). The chat panel's Conversation module (`agent/extension/conversation.lua`) records its messages and steps and keeps the ids, so a conversation survives bridge restarts.
 
 **Chat Panel**: the panel in Aseprite where the user types requests and sees the agent's steps.
 

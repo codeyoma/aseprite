@@ -96,3 +96,19 @@ test("providerFor defaults to claude", () => {
   assert.equal(providerFor(undefined).id, "claude");
   assert.equal(providerFor("unknown").id, "claude");
 });
+
+// The chat panel's Conversation test (agent/tests/conversation_test.lua)
+// replays the chat events the bridge produces from these recordings.
+// UPDATE_FIXTURES=1 npm test rewrites them after an intended change.
+import { writeFileSync, existsSync } from "node:fs";
+
+test("chat-event fixtures for the panel are current", () => {
+  for (const id of ["claude", "codex"]) {
+    const events = replay(PROVIDERS[id], `${id}-tool-turn.jsonl`).map((e) => toChatEvent(e, id));
+    events.push({ type: "done" });
+    const file = new URL(`../../tests/fixtures/chat-events-${id}.json`, import.meta.url);
+    const json = JSON.stringify(events, null, 1) + "\n";
+    if (process.env.UPDATE_FIXTURES || !existsSync(file)) writeFileSync(file, json);
+    assert.equal(readFileSync(file, "utf8"), json, `${id}: run UPDATE_FIXTURES=1 npm test`);
+  }
+});

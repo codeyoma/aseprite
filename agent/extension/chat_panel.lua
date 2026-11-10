@@ -4,7 +4,11 @@
 --
 -- Loaded by agent.lua: `local Panel = dofile(path)(deps)` where deps has
 --   request(method, params, callback), isConnected(), contextString(),
---   ensureBridge(callback), preferences.
+--   ensureBridge(callback), preferences, Conversation (conversation.lua).
+--
+-- The conversation itself (entries, timings, tool status, conversation ids)
+-- lives in the Conversation module; this file only draws it and keeps view
+-- state (expanded rows, layout caches, scroll).
 --
 -- Conversation layout:
 --   user messages      right-aligned bubbles
@@ -17,16 +21,14 @@ return function(deps)
   local Panel = {}
 
   local dlg = nil
-  local entries = {}          -- see Panel.onEvent for the shapes
+  local conv = deps.Conversation.new{ clock = os.time }
+  local expanded = setmetatable({}, { __mode = "k" })   -- entry -> true
+  local caches = setmetatable({}, { __mode = "k" })     -- entry -> wrapped lines per field
   local scrollPx = 0          -- distance scrolled up from the bottom, in pixels
   local hitRows = {}          -- clickable rows from the last paint: { y0, y1, entry }
   local contentH, viewH = 0, 0
-  local busy = false
   local providers = { "claude" }
-  local sessionIds = {}       -- provider -> conversation id, so chats survive bridge restarts
-  local turnStart, lastEvent = nil, nil
   local ticker = nil
-  local MAX_ENTRIES = 400
 
   local C = {
     bg = Color(38, 38, 41),
@@ -41,22 +43,16 @@ return function(deps)
     rule = Color(60, 60, 66),
   }
 
-  local PROVIDER_NAMES = { claude = "Claude", codex = "Codex" }
-
-  local function now() return os.time() end
-
   local function formatSeconds(s)
     s = math.max(0, math.floor(s + 0.5))
     if s < 60 then return s .. "s" end
     return string.format("%dm %ds", s // 60, s % 60)
   end
 
-  local function add(e)
-    entries[#entries + 1] = e
-    if #entries > MAX_ENTRIES then table.remove(entries, 1) end
+  -- New content scrolls back to the bottom.
+  local function changed()
     scrollPx = 0
     if dlg then dlg:repaint() end
-    return e
   end
 
   ---------------------------------------------------------------------------
@@ -94,11 +90,11 @@ return function(deps)
 
   -- Wrapped lines are cached per entry, field and width.
   local function wrapCached(gc, e, field, text, maxWidth)
-    e.cache = e.cache or {}
-    local c = e.cache[field]
+    caches[e] = caches[e] or {}
+    local c = caches[e][field]
     if c and c.w == maxWidth and c.text == text then return c.lines end
     local lines = wrap(gc, text, maxWidth)
-    e.cache[field] = { w = maxWidth, text = text, lines = lines }
+    caches[e][field] = { w = maxWidth, text = text, lines = lines }
     return lines
   end
 
@@ -220,8 +216,9 @@ return function(deps)
     end
 
     -- A step row: [icon] label [status] [chevron], plus the expanded detail.
-    local function stepRow(e, drawIcon, label, labelColor, status)
-      local hasDetail = (e.detail and e.detail ~= "") or (e.result and e.result ~= "")
+    local function stepRow(e, drawIcon, label, labelColor, status, detail, result)
+      local hasDetail = (detail and detail ~= "") or (result and result ~= "")
+      local open = expanded[e]
       local x = pad + (drawIcon and icon + u * 2 or 0)
       local labelLines = wrapCached(gc, e, "label", label, math.max(lh, textW - (x - pad) - icon * 2 - u * 4))
       local first = labelLines[1] or ""
@@ -239,19 +236,20 @@ return function(deps)
           iconSpinner(gc, cx, y + (h - icon) / 2, icon)
           cx = cx + icon + u * 2
         end
-        if hasDetail then iconChevron(gc, cx, y + (h - icon) / 2, icon, e.expanded) end
-      end, hasDetail and e or nil, e.expanded and u or u * 2)
+        if hasDetail then iconChevron(gc, cx, y + (h - icon) / 2, icon, open) end
+      end, hasDetail and e or nil, open and u or u * 2)
 
-      if e.expanded and hasDetail then
+      if open and hasDetail then
         local parts = {}
-        if e.detail and e.detail ~= "" then parts[#parts + 1] = e.detail end
-        if e.result and e.result ~= "" then parts[#parts + 1] = "→ " .. e.result end
+        if detail and detail ~= "" then parts[#parts + 1] = detail end
+        if result and result ~= "" then parts[#parts + 1] = "→ " .. result end
         local bh, draw = textBlock(e, "detail", table.concat(parts, "\n"), x, textW - (x - pad), C.faint)
         addRow(bh, draw, nil, u * 2)
       end
     end
 
-    for _, e in ipairs(entries) do
+    local busy = conv:isBusy()
+    for _, e in ipairs(conv:entries()) do
       local k = e.kind
       if k == "user" then
         local maxW = math.floor(w * 0.8)
@@ -289,14 +287,13 @@ return function(deps)
         end, nil, u * 3)
 
       elseif k == "thought" then
-        e.detail = e.text
-        stepRow(e, nil, "Thought for " .. formatSeconds(e.secs or 0), C.dim, nil)
+        stepRow(e, nil, "Thought for " .. formatSeconds(e.secs or 0), C.dim, nil, e.text)
 
       elseif k == "tool" then
         local drawIcon = function(g, x, y, s)
           if e.toolKind == "edit" then iconPencil(g, x, y, s, C.dim) else iconEye(g, x, y, s, C.dim) end
         end
-        stepRow(e, drawIcon, e.text, C.text, e.status or (busy and "running" or nil))
+        stepRow(e, drawIcon, e.text, C.text, e.status or (busy and "running" or nil), e.detail, e.result)
 
       elseif k == "text" then
         local h, draw = textBlock(e, "text", e.text, pad, textW, C.text)
@@ -320,11 +317,11 @@ return function(deps)
       end
     end
 
-    if busy and turnStart then
+    if busy then
       addRow(lh, function(y)
         iconSpinner(gc, pad, y + (lh - icon) / 2, icon)
         gc.color = C.dim
-        gc:fillText("Working... " .. formatSeconds(now() - turnStart), pad + icon + u * 2, y)
+        gc:fillText("Working... " .. formatSeconds(conv:elapsed() or 0), pad + icon + u * 2, y)
       end, nil, u * 2)
     end
 
@@ -377,8 +374,9 @@ return function(deps)
     if ticker then ticker:stop(); ticker = nil end
   end
 
-  local function setBusy(b)
-    busy = b
+  -- Enables Send/Stop and runs the repaint ticker while a turn runs.
+  local function syncBusy()
+    local b = conv:isBusy()
     if dlg then
       dlg:modify{ id = "send", enabled = not b }
       dlg:modify{ id = "stop", enabled = b }
@@ -393,61 +391,16 @@ return function(deps)
     end
   end
 
-  local function finishTurn(text)
-    if turnStart then add{ kind = "worked", secs = now() - turnStart } end
-    if text then add{ kind = "status", text = text } end
-    turnStart = nil
-    setBusy(false)
-    updateStatus("")
-  end
-
-  local function sinceLast()
-    local t = now()
-    local s = t - (lastEvent or t)
-    lastEvent = t
-    return s
-  end
-
-  -- Entry shapes:
-  --   { kind = "user" | "header" | "text" | "status" | "error", text }
-  --   { kind = "thought", text, secs }
-  --   { kind = "tool", text, id, toolKind = "edit"|"read", detail, status, result }
-  --   { kind = "worked", secs }
   function Panel.onEvent(ev)
-    local t = ev.type
     -- The agent may have changed the document; keep the context line current.
-    if t == "tool_result" or t == "done" or t == "error" then refreshContext() end
-
-    if t == "session" then
-      if ev.provider then sessionIds[ev.provider] = ev.sessionId end
-    elseif t == "text" then
-      sinceLast()
-      add{ kind = "text", text = ev.text or "" }
-    elseif t == "thinking" then
-      add{ kind = "thought", text = ev.text or "", secs = sinceLast() }
-    elseif t == "tool" then
-      sinceLast()
-      add{ kind = "tool", text = ev.tool or "tool", id = ev.id, toolKind = ev.kind, detail = ev.detail }
-    elseif t == "tool_result" then
-      sinceLast()
-      for i = #entries, 1, -1 do
-        local e = entries[i]
-        if e.kind == "tool" and e.status == nil and ((ev.id and e.id == ev.id) or (not ev.id and e.text == ev.tool)) then
-          e.status = ev.ok and "ok" or "failed"
-          e.result = ev.detail
-          e.cache = nil
-          break
-        end
-      end
-      if dlg then dlg:repaint() end
-    elseif t == "status" then
-      updateStatus(ev.text or "")
-    elseif t == "error" then
-      add{ kind = "error", text = ev.text or "error" }
-      finishTurn()
-    elseif t == "done" then
-      finishTurn(ev.text)
+    if ev.type == "tool_result" or ev.type == "done" or ev.type == "error" then refreshContext() end
+    local r = conv:apply(ev)
+    if r.status then updateStatus(r.status) end
+    if r.turnEnded then
+      updateStatus("")
+      syncBusy()
     end
+    changed()
   end
 
   function Panel.onConnectionChange(isConnected)
@@ -464,38 +417,39 @@ return function(deps)
           local current = deps.preferences.provider or list[1]
           dlg:modify{ id = "provider", options = list, option = current }
         end
-        if result.busy then setBusy(true) end
+        if result.busy then syncBusy() end
       end)
     end
   end
 
   local function send()
-    if busy or not dlg then return end
+    if conv:isBusy() or not dlg then return end
     local prompt = dlg.data.prompt or ""
     if prompt:match("^%s*$") then return end
     local provider = dlg.data.provider or providers[1]
     deps.preferences.provider = provider
     local context = deps.contextString()
 
-    add{ kind = "user", text = prompt }
-    add{ kind = "header", text = PROVIDER_NAMES[provider] or provider }
-    turnStart, lastEvent = now(), now()
+    conv:send(prompt, provider)
     dlg:modify{ id = "prompt", text = "" }
-    setBusy(true)
+    syncBusy()
+    changed()
     updateStatus("Connecting...")
 
+    local function fail(text)
+      conv:fail(text)
+      syncBusy()
+      updateStatus("")
+      changed()
+    end
+
     deps.ensureBridge(function(ok, err)
-      if not ok then
-        add{ kind = "error", text = err or "Could not reach the bridge" }
-        finishTurn()
-        return
-      end
+      if not ok then return fail(err or "Could not reach the bridge") end
       deps.request("chat.send", {
-        prompt = prompt, context = context, provider = provider, sessionId = sessionIds[provider] or "",
+        prompt = prompt, context = context, provider = provider, sessionId = conv:conversationId(provider) or "",
       }, function(_, error)
         if error then
-          add{ kind = "error", text = error.message or tostring(error) }
-          finishTurn()
+          fail(error.message or tostring(error))
         else
           updateStatus("")
         end
@@ -515,7 +469,7 @@ return function(deps)
     send()
   end
 
-  function Panel.isBusy() return busy end
+  function Panel.isBusy() return conv:isBusy() end
   function Panel.isOpen() return dlg ~= nil end
   function Panel.promptText() return dlg and dlg.data.prompt or nil end
   function Panel.setPrompt(text) if dlg then dlg:modify{ id = "prompt", text = text } end end
@@ -525,7 +479,7 @@ return function(deps)
   -- Entries as plain records (for tests and other scripts).
   function Panel.entries()
     local out = {}
-    for _, e in ipairs(entries) do
+    for _, e in ipairs(conv:entries()) do
       out[#out + 1] = { kind = e.kind, text = e.text, status = e.status, secs = e.secs }
     end
     return out
@@ -533,7 +487,7 @@ return function(deps)
 
   -- Expands every row with details (for screenshots and tests).
   function Panel.expandAll(state)
-    for _, e in ipairs(entries) do e.expanded = state ~= false end
+    for _, e in ipairs(conv:entries()) do expanded[e] = (state ~= false) or nil end
     if dlg then dlg:repaint() end
   end
 
@@ -566,7 +520,7 @@ return function(deps)
       onmousedown = function(ev)
         for _, r in ipairs(hitRows) do
           if ev.y >= r.y0 and ev.y <= r.y1 then
-            r.entry.expanded = not r.entry.expanded
+            expanded[r.entry] = (not expanded[r.entry]) or nil
             dlg:repaint()
             return
           end
@@ -605,15 +559,13 @@ return function(deps)
     end }
     dlg:button{ id = "new", text = "&New chat", onclick = function()
       deps.request("chat.reset", {}, function() end)
-      entries = {}
-      sessionIds = {}
-      turnStart = nil
-      setBusy(false)
+      conv:reset()
+      syncBusy()
       updateStatus("")
-      dlg:repaint()
+      changed()
     end }
     dlg:show{ wait = false }
-    if busy then setBusy(true) end
+    syncBusy()
     Panel.onConnectionChange(deps.isConnected())
   end
 
