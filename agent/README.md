@@ -50,6 +50,17 @@ Choose `claude` or `codex`; the bridge runs that agent with your own login over 
 
 The agent puts what it draws on a new `AI: <task>` layer above your layer, with your request saved on it, so your pixels stay untouched unless you ask to edit a layer in place. Ask for variations ("give me 3 swords") and the panel shows a thumbnail of each: click one to keep it as an `AI:` layer, or **Discard** them all. Each choice is one undo step.
 
+Teach the agent your own techniques with skills: markdown files in `~/.aseprite-agent/skills/` (**File > Scripts > AI Agent > New Skill...** creates one from a template). A skill can list trigger words in its frontmatter; when a message contains one, the skill goes along with it. Type `/skill:name your request` to use a skill explicitly. A skill named like a built-in guide topic (`basics`, `recipes`, `pixel-art`) replaces it for the agent.
+
+```markdown
+---
+name: dithering
+description: Ordered dithering for 16-color sprites
+triggers: [dither, gradient, shading]
+---
+Use a 2x2 Bayer pattern. Never dither single pixels.
+```
+
 Pick a mode next to the agent: **Agent** (default) makes changes; **Ask** only answers and advises; **Plan** replies with a numbered plan and an **Apply plan** button that carries it out in Agent mode. Ask and Plan runs connect to a read-only tool endpoint, so the agent cannot change the document. The panel remembers the mode.
 
 To show the agent something, click **+** and attach the selection, the active layer, the active frame or an image file (for example a reference whose palette or style you want). **File > Scripts > AI Agent** and the timeline's cel, layer and frame context menus have **Attach to AI Chat** too. Attachments are listed above the input and go with your next message as images; rendered ones are saved in `~/.aseprite-agent/attachments` and deleted after a week.
@@ -105,7 +116,7 @@ Produced by [demos/run_demos.mjs](demos/run_demos.mjs), which calls the same MCP
 | `propose_variations` | Shows the user the candidates the agent built (`variationLayer`) as thumbnails to keep one or discard |
 | `diff_visual` | What changed on the active frame since the last edit step or a saved checkpoint: PNG with changed pixels in red, bounds and count |
 | `check` | Pixel-art checks (off-palette, orphans, semi-transparent, empty cels, frame timing, outside canvas) with fixes |
-| `read_guide` | Agent guide: `basics`, `recipes`, `pixel-art` (in [guide/](guide/)) |
+| `read_guide` | Agent guide: `basics`, `recipes`, `pixel-art` (in [guide/](guide/)), plus your own skills |
 | `undo` / `redo` | Steps back and forward through the history |
 
 Several agent sessions can run at once. The newest bridge takes over Aseprite; when it exits, the previous one takes it back.

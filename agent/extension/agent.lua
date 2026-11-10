@@ -152,6 +152,48 @@ function init(plugin)
     end,
   }
 
+  -- User skills (#27): ~/.aseprite-agent/skills/<name>.md
+  local skillsDir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "skills")
+  local function openPath(path, textEditor)
+    if app.os.macos then os.execute(string.format('open %s"%s"', textEditor and "-t " or "", path))
+    elseif app.os.windows then os.execute(string.format('start "" "%s"', path))
+    else os.execute(string.format('xdg-open "%s"', path)) end
+  end
+  plugin:newMenuSeparator{ group = "ai_agent_menu" }
+  plugin:newCommand{
+    id = "AgentSkillsFolder", title = "Open Skills Folder", group = "ai_agent_menu",
+    onclick = function()
+      app.fs.makeAllDirectories(skillsDir)
+      openPath(skillsDir)
+    end,
+  }
+  plugin:newCommand{
+    id = "AgentNewSkill", title = "New Skill...", group = "ai_agent_menu",
+    onclick = function()
+      local d = Dialog{ title = "New skill" }
+      d:entry{ id = "name", label = "Name", text = "", focus = true }
+      d:entry{ id = "triggers", label = "Trigger words", text = "" }
+      d:label{ text = "Comma-separated words that bring this skill into a chat message." }
+      d:button{ id = "ok", text = "&Create" }
+      d:button{ id = "cancel", text = "&Cancel" }
+      d:show()
+      local name = (d.data.name or ""):lower():gsub("[^%w%-]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
+      if not d.data.ok or name == "" then return end
+      app.fs.makeAllDirectories(skillsDir)
+      local path = app.fs.joinPath(skillsDir, name .. ".md")
+      if not app.fs.isFile(path) then
+        local triggers = {}
+        for w in (d.data.triggers or ""):gmatch("[^,]+") do triggers[#triggers + 1] = w:match("^%s*(.-)%s*$") end
+        local f = assert(io.open(path, "w"))
+        f:write(string.format("---\nname: %s\ndescription: One line on when to use this skill\ntriggers: [%s]\n---\n# %s\n\n" ..
+          "Write your rules for the agent here: palette, outline style, how you like animations timed.\n" ..
+          "Use it in the chat with /skill:%s, or just mention a trigger word.\n", name, table.concat(triggers, ", "), name, name))
+        f:close()
+      end
+      openPath(path, true)
+    end,
+  }
+
   -- Attach to the chat from the menus and the timeline's context menus (#21).
   local function attachCommand(id, title, group, kind)
     plugin:newCommand{ id = id, title = title, group = group, onclick = function() Panel.attach(kind) end,

@@ -53,3 +53,5 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **AI layer**: a layer named `AI: <task>` that holds content the agent generated, created above the source layer with `aiLayer(task, prompt)`; the request is stored in `layer.properties("aseprite-agent").prompt`.
 
 **Variations**: candidate results for one task, built by the agent as layers `AI: <task> v<i>` in a group `AI variations: <task>` (`variationLayer(task, i)`) and shown with the `propose_variations` tool. The user keeps one (it becomes the AI layer) or discards them; each is one undo step (`agent/extension/variations.lua`).
+
+**Skill**: a markdown file of techniques for the agent. Built-in guide topics live in `agent/guide`; user skills in `~/.aseprite-agent/skills/<name>.md` with optional frontmatter (`name`, `description`, `triggers`) and replace a built-in topic of the same name. A chat message that contains a trigger word brings the skill along (inlined when short, otherwise a hint to `read_guide` it); `/skill:name` forces one (`agent/bridge/src/guide.ts`).

@@ -12,6 +12,7 @@ import type { HttpEndpoint } from "./http.js";
 import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type ProviderId } from "./providers/index.js";
 import { sessionDir } from "./session.js";
 import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
+import { skillContext } from "./guide.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
 import { acpCommand, AcpRunner, type ChatMode, type PermissionOutcome, type PermissionRequest } from "./acp.js";
 import type { AcpEvent, PlanEntry } from "./providers/acp_mapper.js";
@@ -232,6 +233,12 @@ export class ChatRunner {
 
   send(prompt: string, state: string, provider: AgentProvider, conversationId?: string, images: ImageBlock[] = [], mode: ChatMode = "agent"): void {
     if (this.busy) throw new Error("The agent is still working. Stop it first.");
+    // User skills (#27): "/skill:name" forces one; trigger words suggest them.
+    const skills = skillContext(prompt);
+    if (!skills.message.trim()) throw new Error("Add a request after /skill:name");
+    prompt = skills.message;
+    if (skills.context) state = state ? `${state}\n${skills.context}` : skills.context;
+    if (skills.used.length) this.emit({ type: "status", text: `Using skill: ${skills.used.join(", ")}` });
     if (conversationId) this.conversations[provider.id] = conversationId;
     else delete this.conversations[provider.id];
     if (this.runtimeFor(provider) === "acp") return this.sendAcp(prompt, state, provider, images, mode);

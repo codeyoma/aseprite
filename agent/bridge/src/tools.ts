@@ -5,7 +5,7 @@
 import * as z from "zod/v4";
 import type { Reply } from "./aseprite.js";
 import { describeCommand, filterCommands, findCommand, COMMANDS, suggestCommands, toWireParams } from "./commands.js";
-import { guideTopics, readGuide } from "./guide.js";
+import { guideIndex, guideTopics, readGuide } from "./guide.js";
 import { encodeSnapshot } from "./png.js";
 
 /** The seam tools use to reach Aseprite: AsepriteLink in the bridge, a fake in tests. */
@@ -252,13 +252,14 @@ export const TOOLS: Tool[] = [
     title: "Read the Aseprite agent guide",
     description:
       "Read a guide topic: 'basics' (API rules that prevent bugs; read before the first edit), 'recipes' (tested " +
-      "Lua snippets for common tasks), 'pixel-art' (style rules and working loop). Call with no topic to list topics.",
+      "Lua snippets for common tasks), 'pixel-art' (style rules and working loop), or one of the user's own skills. " +
+      "Call with no topic to list topics and skills.",
     input: z.object({ topic: z.string().optional() }),
     kind: "read",
     label: (i) => `Read guide${i?.topic ? `: ${i.topic}` : ""}`,
     async run({ topic }) {
       const topics = guideTopics();
-      if (!topic) return { content: [text(`Topics: ${topics.join(", ")}`)] };
+      if (!topic) return { content: [text(`Topics:\n${guideIndex()}`)] };
       const md = readGuide(topic);
       return md === undefined ? failure(`Unknown topic: ${topic}. Topics: ${topics.join(", ")}`) : { content: [text(md)] };
     },
