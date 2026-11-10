@@ -24,14 +24,10 @@ Never distribute this build. The Aseprite EULA allows compiling the source only 
 
 ## Install the agent extension for development
 
-Aseprite only loads extensions from real folders: it skips a symlinked extension folder. Create a folder and symlink the files into it, so edits in `agent/extension` apply on the next Aseprite restart:
+Aseprite only loads extensions from real folders: it skips a symlinked extension folder. `agent/tools/link_extension.sh` makes the folder and symlinks every file of `agent/extension` into it, so edits apply on the next Aseprite restart. Run it again after adding a Lua module (the live tests warn when one isn't linked):
 
 ```bash
-E="$HOME/Library/Application Support/Aseprite/extensions/aseprite-agent"
-mkdir -p "$E"
-for f in package.json protocol.json agent.lua document_handlers.lua bridge_connection.lua chat_panel.lua conversation.lua turn_history.lua step_capture.lua attachments.lua variations.lua saved_commands.lua timeline_text.lua scope_guard.lua; do
-  ln -sf "$PWD/agent/extension/$f" "$E/$f"
-done
+agent/tools/link_extension.sh
 ```
 
 On first use, Aseprite shows a Security dialog for `agent.lua` (reading `~/.aseprite-agent/session.json`). Tick "Give full trust to this script" and click "Give Script Full Access".
@@ -46,67 +42,30 @@ npm run build
 
 ## Tests
 
-Lua handlers, in batch mode (no GUI needed):
-
-```bash
-build/bin/aseprite -b \
-  --script-param ext="$PWD/agent/extension" \
-  --script agent/tests/batch_test.lua
-```
-
-Chat panel conversation logic, in batch mode (replays recorded Claude and Codex turns):
-
-```bash
-build/bin/aseprite -b \
-  --script-param ext="$PWD/agent/extension" \
-  --script-param fixtures="$PWD/agent/tests/fixtures" \
-  --script agent/tests/conversation_test.lua
-```
-
-Reply history (revert/restore, changes since the last reply), in batch mode:
-
-```bash
-build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/turn_history_test.lua
-```
-
-Pixel-art check rules, in batch mode:
-
-```bash
-build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/check_test.lua
-```
-
-Request params at the wire seam (schemas, layer and frame resolution), in batch mode:
-
-```bash
-build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/wire_params_test.lua
-```
-
-The pixel and color module:
-
-```bash
-build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/pixels_test.lua
-```
-
-Bridge unit tests (no Aseprite needed):
+Bridge unit tests, the skill evals and the extension checks (file access only in `agent.lua`, Lua syntax when `luac` is installed). No Aseprite needed; CI runs the same command:
 
 ```bash
 cd agent/bridge && npm test
 ```
 
-Guide recipes, in batch mode (runs every `-- recipe:` block in `agent/guide/recipes.md`):
+The extension's Lua tests in a headless Aseprite (every `agent/tests/*_test.lua`, plus a compile check of every module):
 
 ```bash
-build/bin/aseprite -b \
-  --script-param ext="$PWD/agent/extension" \
-  --script-param guide="$PWD/agent/guide" \
-  --script-param tmp="$(mktemp -d)" \
-  --script agent/tests/recipes_test.lua
+agent/tests/run_lua_tests.sh            # all
+agent/tests/run_lua_tests.sh check pixels   # some, by name
 ```
 
 Regenerate the command catalog after updating from upstream:
 
 ```bash
 python3 agent/tools/gen_commands.py
+```
+
+Live tests drive the real agents through the chat panel, with Aseprite open. `run_live.mjs` runs them with each provider, makes the scratch folders they need, and prints a summary (`--all` for every skill test, `--restart` to restart Aseprite first):
+
+```bash
+node agent/tests/run_live.mjs --restart shading normals export:unity
+node agent/tests/run_live.mjs --providers codex --all
 ```
 
 End to end, with Aseprite open:

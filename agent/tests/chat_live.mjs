@@ -13,7 +13,7 @@ const prompt =
 const { c, lua, chat, waitIdle } = await live({ provider });
 
 const started = Date.now();
-await chat(prompt, { mode: null, wait: false });
+await chat(prompt, { mode: "agent", wait: false });
 let busy = false;
 await waitIdle(300_000, 3000).catch(() => (busy = true));
 const entries = await lua(`

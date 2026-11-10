@@ -1,7 +1,23 @@
 // Shared harness for the live tests (agent/tests/*_live.mjs): a bridge
 // connected to the running Aseprite, Lua through execute_lua, chat turns
 // through the panel's AsepriteAgent API, and PASS/FAIL reporting.
+import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+
+/** The repository's current branch (Developer mode turns can switch it). */
+const branch = () => spawnSync("git", ["branch", "--show-current"], { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8" }).stdout.trim();
+
+/** Modules in agent/extension that the installed extension doesn't link (tools/link_extension.sh fixes it). */
+function unlinkedModules() {
+  const src = fileURLToPath(new URL("../extension/", import.meta.url));
+  const dest = join(homedir(), "Library", "Application Support", "Aseprite", "extensions", "aseprite-agent");
+  if (!existsSync(dest)) return [];
+  return readdirSync(src).filter((f) => /\.(lua|json)$/.test(f) && f !== "__pref.lua" && !existsSync(join(dest, f)));
+}
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -10,6 +26,9 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * Returns { c, lua, chat, waitIdle, sleep, check, done }.
  */
 export async function live({ provider = "claude", bridge = {} } = {}) {
+  const startBranch = branch();
+  const missing = unlinkedModules();
+  if (missing.length) console.warn(`WARNING: the installed extension lacks ${missing.join(", ")}; run agent/tools/link_extension.sh and restart Aseprite`);
   const c = await startBridge(bridge);
   await waitForAseprite(c);
 
@@ -47,6 +66,12 @@ export async function live({ provider = "claude", bridge = {} } = {}) {
 
   /** Prints the summary line and exits (1 when a check failed). */
   const done = (label) => {
+    // A Developer mode turn switches the repository to a dev/ branch; work
+    // committed afterwards would land there. Only developer tests may.
+    const now = branch();
+    if (now !== startBranch && !/^developer/.test(label.toLowerCase())) {
+      check(`the repository stays on ${startBranch} (now ${now}: a turn ran in Developer mode)`, false);
+    }
     console.log(failed ? `${label} TEST FAILED (${failed})` : `${label} TEST PASSED`);
     c.stop();
     process.exit(failed ? 1 : 0);
