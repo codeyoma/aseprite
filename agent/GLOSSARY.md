@@ -116,3 +116,5 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Voxel render**: a MagicaVoxel model (or layers stacked as height slices) drawn as 2:1 isometric pixel art, each voxel a 4x4 block with three shades of its material (lit top, mid left, dark right), back to front, in 90-degree turns (`agent/bridge/src/voxels.ts`).
 
 **Model render**: a 3D model (glTF/GLB or OBJ) drawn by the bridge's own software renderer at the sprite's final size: orthographic, z-buffered, sampled at pixel centers with no anti-aliasing, lit in a few toon bands, with one scale and ground line shared by every direction and frame (`agent/bridge/src/model3d.ts`).
+
+**Pixel FX engine**: renders game effects (hit sparks, loops, explosions) as pixel-art frames (`agent/bridge/src/fx/index.ts`). `renderFx(effect, options, { fps, seed, palette })` steps an effect module on a fixed 120 Hz clock and returns baked frames, the light buffer as `glow`, the origin and size, the duration and whether it loops. The engine is pixelfx's core, vendored as-is (`agent/bridge/src/fx/vendor`); its license, credits and local edits are in `agent/bridge/src/fx/NOTICE.md`.

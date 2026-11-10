@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Pixel FX engine: vendored pixelfx behind renderFx (#68)
+- **How:** pixelfx's core JS (pinned commit, MIT) is copied as-is into `bridge/src/fx/vendor/` and built with `allowJs` (`checkJs` off). `fx/index.ts` exports `renderFx`, which steps an effect module on a fixed 120 Hz clock (step j ends at exactly j / 120 s), samples it at the requested fps and returns baked frames, the light buffer as `glow`, and an optional palette snap through `snapToPalette`.
+- **Why:** vendoring keeps upstream behaviour exact and makes upgrades a reviewed diff; a hand port would drift. The exact clock makes 30 and 60 fps renders identical at shared times and makes a loop's frame at t = duration equal its frame at 0. Rig, actor, act, scene and font are cut (`NOTICE.md` lists the edits); text and actor effects throw.
+- **Architecture:** a pure module with no document or wire access: only `index.ts` and its declarations (`vendor/core/index.d.ts`) are typed; our code stays strict. Three effects are vendored as the test set; the effect library and tools come later (#69).
+
 ## Refactor wave 3: tests that keep fakes honest (#86)
 - **How:** the contract suite (`tests/contract/*.json`) replays the same wire requests against `fake_document.mjs` and the Lua handlers. `eval_live.mjs` runs the skill evals in Aseprite. Live tests split hard checks from soft checks (`soft()`). `npm run gen` is the single generator, and the Lua-tests stamp warns when the extension changed without a Lua run. The ACP fake's permission requests are checked against fixtures from the real agents.
 - **Why:** before, the fake and Lua drifted silently, and model variance failed live tests. The contract work found six Lua bugs: tilemap snapshots, `mirror_frames` tags, hidden groups, swatch layers, palette case and `create_animation` leaks.
