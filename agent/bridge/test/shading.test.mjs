@@ -83,3 +83,57 @@ test("shade_sprite and outline_sprite write through put_image", async () => {
   assert.equal(calls.filter((c) => c.m === "put_image")[0].p.new_layer, "outline");
   assert.match(o.content[0].text, /outer selout outline \(\d+ px over 1 frame\(s\)\)/);
 });
+
+test("manual anti-aliasing fills step corners between two colors, never the background", async () => {
+  const { antiAlias, ambientOcclusion, applyOcclusion } = await import("../dist/shading.js");
+  const W = 8, H = 8, d = new Uint8Array(W * H * 4);
+  const dark = [20, 20, 40, 255], fill = [200, 180, 120, 255];
+  // A diagonal staircase: dark on the upper-left, fill below-right; transparent column 0.
+  for (let y = 0; y < H; y++) for (let x = 1; x < W; x++) d.set(x - 1 < y ? fill : dark, (y * W + x) * 4);
+  const r = antiAlias({ width: W, height: H, data: d });
+  assert.ok(r.changed >= 4, `changed ${r.changed}`);
+  for (let i = 0; i < r.image.data.length; i += 4) {
+    if (!r.image.data[i + 3]) continue;
+    assert.ok(d[i + 3] === 255, "only opaque pixels change");
+    const L = r.image.data[i] + r.image.data[i + 1];
+    assert.ok(L > 40 && L < 380, "a color between the two");
+  }
+  // A 1 px line across a fill is left alone.
+  const line = new Uint8Array(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) line.set(x === y ? dark : fill, (y * W + x) * 4);
+  assert.equal(antiAlias({ width: W, height: H, data: line }).changed, 0);
+  // Palette snapping uses only palette colors.
+  const pal = [{ r: 110, g: 100, b: 80, a: 255 }, { r: 20, g: 20, b: 40, a: 255 }];
+  const snapped = antiAlias({ width: W, height: H, data: d }, { palette: pal });
+  for (let i = 0; i < snapped.image.data.length; i += 4) if (snapped.image.data[i + 3]) assert.equal(snapped.image.data[i], 110);
+});
+
+test("ambient occlusion darkens where a raised part meets a lower one", async () => {
+  const { ambientOcclusion, applyOcclusion } = await import("../dist/shading.js");
+  const W = 12, H = 12, d = new Uint8Array(W * H * 4), height = new Float64Array(W * H);
+  // A floor (height 0.2) with a raised block (height 1) in the middle.
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    d.set([120, 160, 120, 255], (y * W + x) * 4);
+    height[y * W + x] = x >= 4 && x < 8 && y >= 4 && y < 8 ? 1 : 0.2;
+  }
+  const occ = ambientOcclusion({ width: W, height: H, data: d }, height, { radius: 2, levels: 2 });
+  assert.ok(occ[5 * W + 3] > 0, "the floor next to the block is occluded");
+  assert.equal(occ[0], 0, "far floor is open");
+  assert.equal(occ[5 * W + 5], 0, "the top of the block is open");
+  const out = applyOcclusion({ width: W, height: H, data: d }, occ);
+  assert.ok(out.data[(5 * W + 3) * 4 + 1] < 160, "occluded pixels are darker");
+});
+
+test("anti_alias and ambient_occlusion tools through the document", async () => {
+  const { fakeDocument } = await import("./helpers/fake_document.mjs");
+  const { findTool, runTool } = await import("../dist/tools.js");
+  const W = 8, d = new Uint8Array(W * W * 4);
+  for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) d.set(x < y ? [200, 180, 120, 255] : [20, 20, 40, 255], (y * W + x) * 4);
+  const fake = fakeDocument({ width: W, height: W, layers: [{ name: "Body", frames: [d] }], palette: [] });
+  let r = await runTool(findTool("anti_alias"), { layer: "Body" }, fake);
+  assert.ok(!r.isError && /Softened \d+ step/.test(r.content[0].text), r.content[0].text);
+  assert.ok(fake.layerNames().includes("AI: anti-alias Body"));
+  r = await runTool(findTool("ambient_occlusion"), { layer: "Body", as_mask: true }, fake);
+  assert.ok(!r.isError, r.content[0].text);
+  assert.ok(fake.layerNames().includes("AI: ao mask Body"));
+});

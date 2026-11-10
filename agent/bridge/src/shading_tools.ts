@@ -4,7 +4,8 @@ import * as z from "zod/v4";
 import { hex, parseHex, toOklch } from "./color.js";
 import { documentOf } from "./document.js";
 import type { Rgba } from "./pixel_grid.js";
-import { makeRamp, outline, shadeFlat, type LightDir } from "./shading.js";
+import { heightField } from "./normals.js";
+import { ambientOcclusion, antiAlias, applyOcclusion, makeRamp, outline, shadeFlat, type LightDir } from "./shading.js";
 import { findOutline } from "./style.js";
 import { failure, text, type Tool } from "./tool.js";
 
@@ -115,6 +116,87 @@ export const SHADING_TOOLS: Tool[] = [
         await doc.putImage(only, { newLayer: "outline", above: layer, frame: f });
       }
       return { content: [text(`Drew a ${input.mode ?? "outer"} ${input.color ?? "darkest"} outline (${pixels} px over ${frames.length} frame(s)) on 'AI: outline' above ${layer}.`)] };
+    },
+  },
+  {
+    name: "anti_alias",
+    title: "Anti-alias steps",
+    description:
+      "Manual anti-aliasing: in each jagged step between two colors inside a layer (line art against fill, one shade " +
+      "against the next), the pixel in the step's inner corner takes a color between the two, as pixel artists do by " +
+      "hand. Never blends into the transparent background, and leaves 1 px lines thin. With snap_to_palette the new " +
+      "colors are palette colors. The added pixels go on an 'AI: anti-alias <layer>' layer above, so they can be toggled.",
+    input: z.object({
+      layer: z.string().optional(),
+      frames: framesSchema,
+      strength: z.number().min(0.2).max(1).optional().describe("How far toward the other color: 1 = halfway (default)."),
+      snap_to_palette: z.boolean().optional().describe("Use the nearest sprite palette colors. Default true when the palette has colors."),
+    }),
+    kind: "edit",
+    label: () => "Anti-alias steps",
+    async run(input, aseprite) {
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
+      const layer = input.layer ?? info.layer;
+      const frames = await doc.frames(input.frames);
+      const palette = input.snap_to_palette === false || !info.palette.length ? undefined : info.palette;
+      let changed = 0;
+      for (const f of frames) {
+        const r = antiAlias(await doc.pixels(layer, f), { palette, strength: input.strength });
+        changed += r.changed;
+        if (r.changed) await doc.putImage(r.image, { newLayer: `anti-alias ${layer}`, above: layer, frame: f });
+      }
+      if (!changed) return { content: [text(`No jagged steps between colors in ${layer}: nothing to anti-alias.`)] };
+      return { content: [text(`Softened ${changed} step corner(s) in ${frames.length} frame(s) of ${layer} on 'AI: anti-alias ${layer}'${palette ? " with palette colors" : ""}.`)] };
+    },
+  },
+  {
+    name: "ambient_occlusion",
+    title: "Ambient occlusion",
+    description:
+      "Darken creases and contact areas: occlusion from a height field (a grayscale 'height_layer', or one made from " +
+      "the shape: 'bevel' rounds from the silhouette, 'luminance' treats light as high), quantized to a few levels. " +
+      "Applied, each level darkens one palette-aware shade onto 'AI: ao <layer>' (the original is hidden); or " +
+      "as_mask writes a grayscale mask on a hidden 'AI: ao mask <layer>' layer (for engines or manual painting).",
+    input: z.object({
+      layer: z.string().optional(),
+      frames: framesSchema,
+      height_layer: z.string().optional().describe("A grayscale height layer (white = high)."),
+      source: z.enum(["bevel", "luminance"]).optional().describe("Height from the shape when there's no height layer. Default bevel."),
+      radius: z.number().int().min(1).max(8).optional().describe("How far around a pixel occludes it. Default 2."),
+      levels: z.number().int().min(1).max(3).optional().describe("Darkness steps. Default 2."),
+      strength: z.number().min(0.2).max(3).optional().describe("Default 1."),
+      as_mask: z.boolean().optional(),
+    }),
+    kind: "edit",
+    label: () => "Ambient occlusion",
+    async run(input, aseprite) {
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
+      const layer = input.layer ?? info.layer;
+      const frames = await doc.frames(input.frames);
+      let shaded = 0;
+      for (const f of frames) {
+        const img = await doc.pixels(layer, f);
+        const hl = input.height_layer ? await doc.pixels(input.height_layer, f) : undefined;
+        const height = heightField(img, hl ? { source: "height", height: hl } : { source: input.source ?? "bevel" });
+        const occ = ambientOcclusion(img, height, { radius: input.radius, levels: input.levels, strength: input.strength });
+        for (const v of occ) if (v) shaded++;
+        if (input.as_mask) {
+          const levels = input.levels ?? 2;
+          const mask = new Uint8Array(img.data.length);
+          for (let i = 0; i < occ.length; i++) {
+            if (img.data[i * 4 + 3] < 128) continue;
+            const g = Math.round(255 * (1 - occ[i] / levels));
+            mask.set([g, g, g, 255], i * 4);
+          }
+          await doc.putImage({ width: img.width, height: img.height, data: mask }, { newLayer: `ao mask ${layer}`, above: layer, hide: true, frame: f });
+        } else {
+          await doc.putImage(applyOcclusion(img, occ, info.palette.length ? info.palette : undefined), { newLayer: `ao ${layer}`, above: layer, hideSource: true, frame: f });
+        }
+      }
+      const where = input.as_mask ? `a mask on the hidden layer 'AI: ao mask ${layer}' (white = open, darker = occluded)` : `'AI: ao ${layer}' (the original is hidden)`;
+      return { content: [text(`Occluded ${shaded} px over ${frames.length} frame(s) of ${layer}: ${where}.`)] };
     },
   },
 ];

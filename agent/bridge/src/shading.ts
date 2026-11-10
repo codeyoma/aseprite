@@ -1,5 +1,5 @@
 // Ramps, auto-shading and outlines (#39).
-import { fromOklch, hex, nearest, toOklch, type RGBA } from "./color.js";
+import { fromOklab, fromOklch, hex, nearest, toOklab, toOklch, type RGBA } from "./color.js";
 import type { Rgba } from "./pixel_grid.js";
 
 // ---------------------------------------------------------------------------
@@ -232,4 +232,101 @@ export function outline(img: Rgba, o: OutlineOptions = {}): Rgba {
     }
   }
   return { width: w, height: h, data: out };
+}
+
+// ---------------------------------------------------------------------------
+// Manual anti-aliasing and ambient occlusion (#64)
+// ---------------------------------------------------------------------------
+
+/** The color halfway between two in OKLab, snapped to the palette when given. */
+export function between(a: RGBA, b: RGBA, palette?: RGBA[], t = 0.5): RGBA {
+  const x = toOklab(a), y = toOklab(b);
+  const m = fromOklab({ L: x.L + (y.L - x.L) * t, a: x.a + (y.a - x.a) * t, b: x.b + (y.b - x.b) * t });
+  return palette?.length ? nearest(m, palette).color : m;
+}
+
+/**
+ * Manual anti-aliasing for jagged steps between two colors: a pixel whose
+ * two perpendicular neighbors (e.g. above and left) share another color,
+ * while its other two neighbors share its own, sits in the inner corner
+ * of a step. It takes a color between the two, as pixel artists do by
+ * hand. Only opaque pixels change (no blending into the background), and
+ * corners on 1 px wide lines are left alone so lines don't thicken.
+ */
+export function antiAlias(img: Rgba, o: { palette?: RGBA[]; strength?: number } = {}): { image: Rgba; changed: number } {
+  const { width: w, height: h, data } = img;
+  const out = new Uint8Array(data.length);
+  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? -1 : (y * w + x) * 4);
+  const key = (i: number) => (i < 0 || data[i + 3] < 128 ? -1 : (data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
+  let changed = 0;
+  const pairs: [number, number][][] = [[[0, -1], [-1, 0]], [[0, -1], [1, 0]], [[0, 1], [-1, 0]], [[0, 1], [1, 0]]];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = at(x, y), me = key(i);
+      if (me < 0) continue;
+      for (const [[ax, ay], [bx, by]] of pairs) {
+        const a = key(at(x + ax, y + ay)), b = key(at(x + bx, y + by));
+        if (a < 0 || a !== b || a === me) continue;
+        // The opposite sides stay this pixel's color: a real step, not a spike.
+        if (key(at(x - ax, y - ay)) !== me || key(at(x - bx, y - by)) !== me) continue;
+        // The other color's diagonal neighbor is part of it too (not a 1 px line).
+        if (key(at(x + ax + bx, y + ay + by)) !== a) continue;
+        const ai = at(x + ax, y + ay);
+        const c = between({ r: data[i], g: data[i + 1], b: data[i + 2], a: 255 }, { r: data[ai], g: data[ai + 1], b: data[ai + 2], a: 255 }, o.palette, 0.5 * (o.strength ?? 1));
+        out.set([c.r, c.g, c.b, 255], i);
+        changed++;
+        break;
+      }
+    }
+  }
+  return { image: { width: w, height: h, data: out }, changed };
+}
+
+/**
+ * Ambient occlusion from a height field (0..1 per pixel, 0 outside the
+ * shape): a pixel is darker the more its neighbors within `radius` rise
+ * above it (creases, where parts meet, the inside of curls). Returns the
+ * occlusion per pixel quantized to `levels` steps (0 = open).
+ */
+export function ambientOcclusion(img: Rgba, height: Float64Array, o: { radius?: number; levels?: number; strength?: number } = {}): Uint8Array {
+  const { width: w, height: h, data } = img;
+  const r = Math.max(1, Math.round(o.radius ?? 2)), levels = Math.max(1, o.levels ?? 2), k = o.strength ?? 1;
+  const occ = new Float64Array(w * h);
+  let max = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (data[i * 4 + 3] < 128) continue;
+      let sum = 0, n = 0;
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (!dx && !dy) continue;
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        // Higher neighbors occlude; nearer ones count more.
+        sum += Math.max(0, height[ny * w + nx] - height[i]) / Math.hypot(dx, dy);
+        n++;
+      }
+      occ[i] = n ? sum / n : 0;
+      max = Math.max(max, occ[i]);
+    }
+  }
+  const out = new Uint8Array(w * h);
+  if (max <= 0) return out;
+  for (let i = 0; i < out.length; i++) {
+    const v = Math.min(1, (occ[i] / max) * k);
+    out[i] = v < 0.2 ? 0 : Math.min(levels, Math.ceil(v * levels));
+  }
+  return out;
+}
+
+/** Darkens each pixel one palette-aware step per occlusion level. */
+export function applyOcclusion(img: Rgba, occ: Uint8Array, palette?: RGBA[]): Rgba {
+  const out = new Uint8Array(img.data);
+  for (let i = 0; i < occ.length; i++) {
+    if (!occ[i]) continue;
+    let c: RGBA = { r: out[i * 4], g: out[i * 4 + 1], b: out[i * 4 + 2], a: 255 };
+    for (let s = 0; s < occ[i]; s++) c = darker(c, palette);
+    out.set([c.r, c.g, c.b], i * 4);
+  }
+  return { width: img.width, height: img.height, data: out };
 }
