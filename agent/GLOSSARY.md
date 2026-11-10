@@ -17,7 +17,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Plan**: the agent's checklist for the running turn (ACP `plan` updates), shown in the Chat Panel and updated in place.
 
-**Permission request**: an ACP agent asking before it uses a tool that is not pre-approved. The Chat Panel shows the agent's options; no answer within two minutes rejects it. In Agent mode Claude's shell runs in its "Manual" permission mode (set with `session/set_mode`), so commands that change things ask; tests drive the round trip with a scripted agent (`ASEPRITE_AGENT_ACP_AGENT`, `agent/bridge/test/helpers/fake_acp_agent.mjs`).
+**Permission request**: an ACP agent asking before it uses a tool that is not pre-approved. The Chat Panel shows the agent's options; no answer within two minutes rejects it. In Agent mode Claude has the shell and its to-do list (TodoWrite, shown as the Plan); the shell runs in its "Manual" permission mode (set with `session/set_mode`), so commands that change things ask; tests drive the round trip with a scripted agent (`ASEPRITE_AGENT_ACP_AGENT`, `agent/bridge/test/helpers/fake_acp_agent.mjs`).
 
 **Conversation**: one chat thread with a provider, identified by the provider's own id (Claude session id, Codex thread id). The chat panel's Conversation module (`agent/extension/conversation.lua`) records its messages and steps and keeps the ids, so a conversation survives bridge restarts.
 

@@ -34,14 +34,12 @@ check("the chain is stated (plan or a chain of skills)", plan || stated, { plan,
 soft("the chain was written as a plan", plan, turn.filter((e) => e.kind === "plan"));
 soft("it read a skill with read_guide when it reached it", steps.some((t) => /^Read guide: (animate|export-game|shade-sprite|review|pixel-art|recipes)$/i.test(t.trim())), steps);
 
-// A new 32x32 sprite with at least 4 frames (the walk cycle).
+// The knight: a 32x32 sprite with at least 4 frames (the walk cycle), new or the one the agent reused.
 const made = await lua(`local out = {}
-  -- app.sprites lists the newest first: the new ones are the first #app.sprites - before.
-  for i = 1, #app.sprites - ${spritesBefore} do local s = app.sprites[i]
-    out[#out + 1] = { w = s.width, h = s.height, frames = #s.frames, tags = #s.tags } end
-  return { sprites = out }`);
+  for _, s in ipairs(app.sprites) do out[#out + 1] = { w = s.width, h = s.height, frames = #s.frames, active = s == app.sprite } end
+  return { sprites = out, before = ${spritesBefore} }`);
 const knight = (made?.sprites ?? []).find((s) => s.w === 32 && s.h === 32 && s.frames >= 4);
-check("a new 32x32 sprite with at least 4 frames", !!knight, made);
+check("a 32x32 sprite with at least 4 frames", !!knight, made);
 
 // The Godot export in the folder we named.
 const files = existsSync(dir) ? readdirSync(dir) : [];

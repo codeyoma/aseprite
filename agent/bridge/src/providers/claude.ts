@@ -12,8 +12,9 @@ export const claudeProvider: AgentProvider = {
     bin: "claude-agent-acp",
     // Append our instructions to Claude Code's prompt, and allow the
     // Aseprite tools without asking each time. Agent mode adds the shell
-    // (Bash) and nothing else of Claude Code's (no file edits or web); each
-    // command asks the user through the panel's permission requests. Ask and
+    // (Bash) and the to-do list (TodoWrite, shown as the panel's Plan) and
+    // nothing else of Claude Code's (no file edits or web); each command
+    // asks the user through the panel's permission requests. Ask and
     // Plan have no built-in tools. Developer mode keeps all of Claude Code's
     // tools; edits and commands ask the user.
     sessionMeta: (systemPrompt, mode) => ({
@@ -21,7 +22,7 @@ export const claudeProvider: AgentProvider = {
       claudeCode: {
         options: mode === "developer"
           ? { allowedTools: [`mcp__${MCP_SERVER_NAME}`] }
-          : { tools: mode === "agent" ? ["Bash"] : [], allowedTools: [`mcp__${MCP_SERVER_NAME}`] },
+          : { tools: mode === "agent" ? ["Bash", "TodoWrite"] : [], allowedTools: [`mcp__${MCP_SERVER_NAME}`] },
       },
     }),
     // "Manual": commands that change things ask the user (read-only ones

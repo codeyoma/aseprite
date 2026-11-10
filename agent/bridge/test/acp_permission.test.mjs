@@ -56,7 +56,7 @@ test("a permission request reaches the panel and the answer reaches the agent", 
     // Agent mode gives Claude the shell only, asking each time.
     const news = readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((m) => m.method === "session/new");
     const opts = news[0].params._meta.claudeCode.options;
-    assert.deepEqual(opts.tools, ["Bash"]);
+    assert.deepEqual(opts.tools, ["Bash", "TodoWrite"]);
     assert.ok(!opts.allowedTools.includes("Bash"));
     // and sets Claude's "Manual" permission mode, so commands that change things ask.
     const modes = readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((m) => m.method === "session/set_mode");

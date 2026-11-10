@@ -120,7 +120,7 @@ test("developer conversations and tools are separate from normal ones", () => {
   assert.equal(conversationKey("claude", "developer"), "claude:dev");
   assert.equal(conversationKey("claude", "ask"), "claude");
   const opts = (mode) => PROVIDERS.claude.acp.sessionMeta("p", mode).claudeCode.options;
-  assert.deepEqual(opts("agent").tools, ["Bash"], "Agent mode: the shell, no other coding tools");
+  assert.deepEqual(opts("agent").tools, ["Bash", "TodoWrite"], "Agent mode: the shell and the to-do list, no other coding tools");
   assert.deepEqual(opts("ask").tools, [], "Ask mode: no built-in tools");
   assert.deepEqual(opts("plan").tools, []);
   assert.equal(opts("developer").tools, undefined, "Developer mode keeps Claude Code's tools");
