@@ -15,6 +15,22 @@ Each `execute_lua` call is one undo step. If the code raises an error, everythin
 
 Chat messages start with an `<aseprite-state>` block: sprite size and color mode, palette, layers from top to bottom with ids such as `L12`, tags, the active layer, frame and cel, and the timeline and pixel selection. Ids stay the same for the whole session. Inside `execute_lua`, `layerById("L12")` returns that layer (it also accepts a layer name).
 
+## Mentions and links
+
+Users can mention objects; you receive them as `Body (aseprite://layer/L12)`. The scheme:
+
+| URI | Object |
+|---|---|
+| `aseprite://layer/L12` | layer (id from the state block) |
+| `aseprite://frame/3` | frame (1-based) |
+| `aseprite://tag/walk` | tag (URL-encoded name) |
+| `aseprite://cel/L12:3` | cel of a layer in a frame |
+| `aseprite://palette/5` | palette entry (0-based) |
+| `aseprite://slice/hitbox` | slice |
+| `aseprite://selection` | the pixel selection |
+
+When you mention an object in a reply, write a markdown link such as `[Body](aseprite://layer/L12)`; the chat shows it as a link that selects the object.
+
 ## Object model
 
 | Object | Meaning | Access |

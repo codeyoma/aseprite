@@ -889,6 +889,16 @@ void TextEdit::setWordWrap(bool state)
   invalidate();
 }
 
+void TextEdit::moveCaretToEnd()
+{
+  if (m_lines.empty())
+    return;
+  m_caret.set(m_lines.back().i, m_lines.back().glyphCount);
+  m_selection.clear();
+  onCaretPosChange();
+  invalidate();
+}
+
 int TextEdit::rowHeight() const
 {
   return font()->metrics(nullptr);

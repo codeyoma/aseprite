@@ -1793,6 +1793,11 @@ int Dialog_modify(lua_State* L)
     if (const char* s = lua_tostring(L, -1)) {
       widget->setText(s);
 
+      // A script that rewrites a text box (e.g. inserting a mention)
+      // continues typing at the end.
+      if (widget->type() == ui::kTextEditWidget)
+        static_cast<ui::TextEdit*>(widget)->moveCaretToEnd();
+
       // Re-process mnemonics for buttons
       if (widget->type() == WidgetType::kButtonWidget)
         widget->processMnemonicFromText();

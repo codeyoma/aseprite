@@ -26,6 +26,10 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Check**: the pixel-art check gate (`check` tool): mechanical rules (off-palette, orphan, semi-transparent, empty cels in a tag, frame-duration outliers, content outside the canvas) that return findings with coordinates and a fix. Agents run it before saying they are done; the chat shows its result as a badge on the turn.
 
+**Mention**: a reference to a document object typed in the chat with `@` (picker) and shown as a `@[Body]` token; sent to the agent as `Body (aseprite://layer/L12)`.
+
+**aseprite:// URI**: the address of a document object, shared by mentions and the agent's citations: `aseprite://layer/L12`, `frame/3`, `tag/<name>`, `cel/L12:3`, `palette/5`, `slice/<name>`, `selection`. Links in replies select the object when clicked (`Uri` in `document_handlers.lua`).
+
 **Step**: one row of an agent turn in the chat panel: a thought, a tool call with its result, or the reply.
 
 **Script Panel**: a script dialog docked in the main window (`Dialog{ dockable = true }`), implemented by `ScriptPanel` in this fork.

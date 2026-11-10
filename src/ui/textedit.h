@@ -41,6 +41,9 @@ public:
   // (Shift+Enter still inserts one).
   void setSubmitOnEnter(bool state) { m_submitOnEnter = state; }
 
+  // Puts the caret after the last character.
+  void moveCaretToEnd();
+
   // Number of visual rows and the height of one row.
   int rowCount() const { return int(m_lines.size()); }
   int rowHeight() const;

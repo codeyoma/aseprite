@@ -4,6 +4,7 @@
 --
 -- Loaded by agent.lua: `local Panel = dofile(path)(deps)` where deps has
 --   request(method, params, callback), isConnected(), contextString(), stateBlock(),
+--   mentionTargets(), resolveUri(uri), selectUri(uri),
 --   ensureBridge(callback), preferences, Conversation (conversation.lua).
 --
 -- The conversation itself (entries, timings, tool status, conversation ids)
@@ -26,6 +27,9 @@ return function(deps)
   local caches = setmetatable({}, { __mode = "k" })     -- entry -> wrapped lines per field
   local scrollPx = 0          -- distance scrolled up from the bottom, in pixels
   local hitRows = {}          -- clickable rows from the last paint: { y0, y1, entry }
+  local hitLinks = {}         -- links drawn in the last paint: { x0, y0, x1, y1, uri }
+  local mentions = {}         -- @[label] -> aseprite:// URI for the draft being typed
+  local lastPrompt = ""
   local contentH, viewH = 0, 0
   local providers = { "claude" }
   local ticker = nil
@@ -36,6 +40,7 @@ return function(deps)
     dim = Color(150, 150, 158),
     faint = Color(110, 110, 118),
     bubble = Color(58, 58, 64),
+    link = Color(120, 170, 255),
     bubbleText = Color(240, 240, 244),
     accent = Color(222, 184, 135),
     ok = Color(88, 200, 120),
@@ -296,8 +301,37 @@ return function(deps)
         stepRow(e, drawIcon, e.text, C.text, e.status or (busy and "running" or nil), e.detail, e.result)
 
       elseif k == "text" then
-        local h, draw = textBlock(e, "text", e.text, pad, textW, C.text)
-        addRow(h, draw, nil, u * 3)
+        -- Replies may cite objects as [label](aseprite://...) links (#20).
+        local display, links = deps.Conversation.parseLinks(e.text)
+        local lines = wrapCached(gc, e, "text", display, textW)
+        local h = 0
+        for _, l in ipairs(lines) do h = h + lineHeight(l) + u // 2 end
+        addRow(h, function(y)
+          local li = 1   -- next link to place
+          for _, l in ipairs(lines) do
+            gc.color = C.text
+            gc:fillText(l, pad, y)
+            -- Overdraw link labels that fall on this line, in order.
+            local searchFrom = 1
+            while li <= #links do
+              local link = links[li]
+              local s, eIdx = l:find(link.label, searchFrom, true)
+              if not s then break end
+              if deps.resolveUri(link.uri) then   -- stale links stay plain text
+                local x0 = pad + gc:measureText(l:sub(1, s - 1)).width
+                local w = gc:measureText(link.label).width
+                local lh2 = lineHeight(l)
+                gc.color = C.link
+                gc:fillText(link.label, x0, y)
+                gc:fillRect(Rectangle(x0, y + lh2 - 2, w, 1))
+                hitLinks[#hitLinks + 1] = { x0 = x0, y0 = y, x1 = x0 + w, y1 = y + lh2, uri = link.uri }
+              end
+              searchFrom = eIdx + 1
+              li = li + 1
+            end
+            y = y + lineHeight(l) + u // 2
+          end
+        end, nil, u * 3)
 
       elseif k == "worked" then
         addRow(lh + u * 2, function(y)
@@ -363,6 +397,7 @@ return function(deps)
     local y = (total <= h) and pad or (h - total + scrollPx + pad)
 
     hitRows = {}
+    hitLinks = {}
     for _, r in ipairs(rows) do
       if y + r.h >= 0 and y <= h then r.draw(y) end
       if r.entry then hitRows[#hitRows + 1] = { y0 = y, y1 = y + r.h, entry = r.entry } end
@@ -434,6 +469,43 @@ return function(deps)
     end
   end
 
+  -- Inserts a mention token for a picker choice, replacing a typed "@".
+  local function insertMention(target)
+    if not dlg then return end
+    local text = dlg.data.prompt or ""
+    if text:sub(-1) == "@" then text = text:sub(1, -2) end
+    local sep = (text == "" or text:match("%s$")) and "" or " "
+    mentions[target.name] = target.uri
+    text = text .. sep .. "@[" .. target.name .. "] "
+    lastPrompt = text
+    dlg:modify{ id = "prompt", text = text }
+  end
+
+  -- The @ picker: selection, active layer/cel, layers, tags, frames, palette, slices.
+  local function openPicker()
+    local targets = deps.mentionTargets()
+    if #targets == 0 then app.tip("Open a sprite to mention its layers, frames or colors"); return end
+    local menu = Dialog()
+    local group = nil
+    for _, t in ipairs(targets) do
+      if t.group ~= group then
+        group = t.group
+        if group ~= "" then menu:separator{ text = group } end
+      end
+      menu:menuItem{ text = t.label, onclick = function() insertMention(t) end }
+    end
+    menu:showMenu()
+  end
+
+  -- Typing "@" at the end of the prompt opens the picker.
+  local function onPromptChange()
+    if not dlg then return end
+    local text = dlg.data.prompt or ""
+    local typedAt = #text == #lastPrompt + 1 and text:sub(-1) == "@" and text:sub(1, #lastPrompt) == lastPrompt
+    lastPrompt = text
+    if typedAt then openPicker() end
+  end
+
   local function send()
     if conv:isBusy() or not dlg then return end
     local prompt = dlg.data.prompt or ""
@@ -443,6 +515,10 @@ return function(deps)
     -- The document's state goes with every message (#18).
     local state = deps.stateBlock()
 
+    -- @[label] tokens become "label (aseprite://...)" for the agent (#20).
+    local expanded = deps.Conversation.expandMentions(prompt, mentions)
+    mentions = {}
+    lastPrompt = ""
     conv:send(prompt, provider)
     dlg:modify{ id = "prompt", text = "" }
     syncBusy()
@@ -459,7 +535,7 @@ return function(deps)
     deps.ensureBridge(function(ok, err)
       if not ok then return fail(err or "Could not reach the bridge") end
       deps.request("chat.send", {
-        prompt = prompt, state = state, provider = provider, sessionId = conv:conversationId(provider) or "",
+        prompt = expanded, state = state, provider = provider, sessionId = conv:conversationId(provider) or "",
       }, function(_, error)
         if error then
           fail(error.message or tostring(error))
@@ -485,7 +561,9 @@ return function(deps)
   function Panel.isBusy() return conv:isBusy() end
   function Panel.isOpen() return dlg ~= nil end
   function Panel.promptText() return dlg and dlg.data.prompt or nil end
-  function Panel.setPrompt(text) if dlg then dlg:modify{ id = "prompt", text = text } end end
+  function Panel.setPrompt(text) if dlg then lastPrompt = text; dlg:modify{ id = "prompt", text = text } end end
+  -- Adds a mention as the picker would (for tests and other scripts).
+  function Panel.mention(name, uri) insertMention{ name = name, uri = uri } end
   function Panel.close() if dlg then dlg:close() end end
   function Panel.refreshContext() refreshContext() end
 
@@ -531,6 +609,12 @@ return function(deps)
         dlg:repaint()
       end,
       onmousedown = function(ev)
+        for _, l in ipairs(hitLinks) do
+          if ev.x >= l.x0 and ev.x <= l.x1 and ev.y >= l.y0 and ev.y <= l.y1 then
+            if not deps.selectUri(l.uri) then app.tip("That no longer exists") end
+            return
+          end
+        end
         for _, r in ipairs(hitRows) do
           if ev.y >= r.y0 and ev.y <= r.y1 then
             expanded[r.entry] = (not expanded[r.entry]) or nil
@@ -558,6 +642,7 @@ return function(deps)
         focus = true,
         font = "system",
         fontsize = 7.5,
+        onchange = onPromptChange,          -- "@" opens the mention picker
         onsubmit = function() send() end,   -- Enter sends, Shift+Enter adds a line
       }
     end)
@@ -566,6 +651,7 @@ return function(deps)
     end
     dlg:newrow()
     dlg:combobox{ id = "provider", options = providers, option = deps.preferences.provider or providers[1] }
+    dlg:button{ id = "mention", text = "@", onclick = openPicker }
     dlg:button{ id = "send", text = "&Send", onclick = send }
     dlg:button{ id = "stop", text = "S&top", enabled = false, onclick = function()
       deps.request("chat.stop", {}, function() end)

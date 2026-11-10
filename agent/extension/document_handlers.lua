@@ -989,6 +989,134 @@ local function stateBlock()
 end
 
 ---------------------------------------------------------------------------
+-- aseprite:// URIs for mentions and citations (#20)
+---------------------------------------------------------------------------
+-- aseprite://layer/L12   aseprite://frame/3     aseprite://tag/walk
+-- aseprite://cel/L12:3   aseprite://palette/5   aseprite://slice/hitbox
+-- aseprite://selection
+
+local function urlEncode(s)
+  return (tostring(s):gsub("[^%w%-%._~]", function(c) return string.format("%%%02X", c:byte()) end))
+end
+local function urlDecode(s)
+  return (tostring(s):gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end))
+end
+
+local Uri = {}
+
+function Uri.layer(layer) return "aseprite://layer/" .. layerId(layer) end
+function Uri.frame(n) return "aseprite://frame/" .. math.tointeger(n) end
+function Uri.tag(tag) return "aseprite://tag/" .. urlEncode(tag.name) end
+function Uri.cel(layer, frame) return "aseprite://cel/" .. layerId(layer) .. ":" .. math.tointeger(frame) end
+function Uri.palette(index) return "aseprite://palette/" .. math.tointeger(index) end
+function Uri.slice(slice) return "aseprite://slice/" .. urlEncode(slice.name) end
+function Uri.selection() return "aseprite://selection" end
+
+-- URI -> { kind, label, layer?, frame?, tag?, index?, slice? } in the active
+-- sprite, or nil when it doesn't exist (any more).
+function Uri.resolve(uri, sprite)
+  sprite = sprite or app.sprite
+  if not sprite or type(uri) ~= "string" then return nil end
+  local kind, rest = uri:match("^aseprite://([%a]+)/?(.*)$")
+  if not kind then return nil end
+  if kind == "layer" then
+    local l = rest:match("^L%d+$") and layerById(rest, sprite)
+    return l and { kind = "layer", layer = l, label = l.name }
+  elseif kind == "frame" then
+    local n = tonumber(rest)
+    return n and sprite.frames[n] and { kind = "frame", frame = n, label = "frame " .. n }
+  elseif kind == "tag" then
+    local name = urlDecode(rest)
+    for _, t in ipairs(sprite.tags) do
+      if t.name == name then return { kind = "tag", tag = t, label = t.name } end
+    end
+  elseif kind == "cel" then
+    local lid, n = rest:match("^(L%d+):(%d+)$")
+    local l = lid and layerById(lid, sprite)
+    n = tonumber(n)
+    if l and n and sprite.frames[n] then
+      return { kind = "cel", layer = l, frame = n, label = l.name .. " frame " .. n }
+    end
+  elseif kind == "palette" then
+    local i = tonumber(rest)
+    if i and i >= 0 and i < #sprite.palettes[1] then
+      return { kind = "palette", index = i, label = "color " .. i .. " " .. colorToHex(sprite.palettes[1]:getColor(i)) }
+    end
+  elseif kind == "slice" then
+    local name = urlDecode(rest)
+    for _, sl in ipairs(sprite.slices) do
+      if sl.name == name then return { kind = "slice", slice = sl, label = sl.name } end
+    end
+  elseif kind == "selection" then
+    if not sprite.selection.isEmpty then return { kind = "selection", label = "selection" } end
+  end
+  return nil
+end
+
+-- Selects what a URI points at. Returns true, or false if it doesn't exist.
+function Uri.select(uri)
+  local r = Uri.resolve(uri)
+  if not r then return false end
+  if r.kind == "layer" then
+    app.layer = r.layer
+  elseif r.kind == "frame" then
+    app.frame = app.sprite.frames[r.frame]
+  elseif r.kind == "tag" then
+    app.frame = r.tag.fromFrame
+    local fs = {}
+    for f = r.tag.fromFrame.frameNumber, r.tag.toFrame.frameNumber do fs[#fs + 1] = app.sprite.frames[f] end
+    pcall(function() app.range.frames = fs end)
+  elseif r.kind == "cel" then
+    app.layer = r.layer
+    app.frame = app.sprite.frames[r.frame]
+  elseif r.kind == "palette" then
+    app.fgColor = app.sprite.palettes[1]:getColor(r.index)
+  elseif r.kind == "slice" then
+    pcall(function() app.range.slices = { r.slice } end)
+  end
+  app.refresh()
+  return true
+end
+
+-- Mention targets for the @ picker: { { group, label, uri }, ... }.
+function Uri.targets(limits)
+  limits = limits or {}
+  local sprite = app.sprite
+  local out = {}
+  if not sprite then return out end
+  -- label: shown in the picker; name: the token text, e.g. @[Body]
+  local function add(group, label, uri, name) out[#out + 1] = { group = group, label = label, uri = uri, name = name or label } end
+  if not sprite.selection.isEmpty then
+    local b = sprite.selection.bounds
+    add("", string.format("Selection %dx%d", b.width, b.height), Uri.selection(), "selection")
+  end
+  if app.layer then add("", "Active layer: " .. app.layer.name, Uri.layer(app.layer), app.layer.name) end
+  if app.cel then
+    local name = app.cel.layer.name .. " frame " .. app.cel.frameNumber
+    add("", "Active cel: " .. name, Uri.cel(app.cel.layer, app.cel.frameNumber), name)
+  end
+
+  local count = 0
+  local function walk(layers, depth)
+    for i = #layers, 1, -1 do
+      local l = layers[i]
+      count = count + 1
+      if count <= (limits.layers or 30) then add("Layers", string.rep("  ", depth) .. l.name, Uri.layer(l), l.name) end
+      if l.isGroup then walk(l.layers, depth + 1) end
+    end
+  end
+  walk(sprite.layers, 0)
+  for _, t in ipairs(sprite.tags) do add("Tags", t.name, Uri.tag(t)) end
+  for i = 1, math.min(#sprite.frames, limits.frames or 24) do add("Frames", "Frame " .. i, Uri.frame(i), "frame " .. i) end
+  for i = 0, math.min(#sprite.palettes[1], limits.colors or 16) - 1 do
+    local hex = colorToHex(sprite.palettes[1]:getColor(i))
+    add("Palette", string.format("%d %s", i, hex), Uri.palette(i), "color " .. i)
+  end
+  for _, sl in ipairs(sprite.slices) do add("Slices", sl.name, Uri.slice(sl)) end
+  return out
+end
+
+---------------------------------------------------------------------------
 -- Interface
 ---------------------------------------------------------------------------
 
@@ -1007,6 +1135,7 @@ function M.new(opts)
     stateBlock = stateBlock,
     layerById = layerById,
     check = check,
+    Uri = Uri,
   }
 
   -- Answers one protocol request. Errors propagate to the caller.

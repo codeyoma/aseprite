@@ -50,6 +50,9 @@ function init(plugin)
     isConnected = connection.isConnected,
     contextString = handlers.contextString,
     stateBlock = handlers.stateBlock,
+    mentionTargets = handlers.Uri.targets,
+    resolveUri = handlers.Uri.resolve,
+    selectUri = handlers.Uri.select,
     ensureBridge = connection.ensureBridge,
     preferences = plugin.preferences,
   }
@@ -65,6 +68,7 @@ function init(plugin)
     promptText = function() return Panel.promptText() end,
     setPrompt = function(text) Panel.setPrompt(text) end,
     expandAll = function(state) Panel.expandAll(state) end,
+    mention = function(name, uri) Panel.mention(name, uri) end,
   }
 
   plugin:newMenuGroup{

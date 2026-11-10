@@ -133,4 +133,38 @@ function Conversation:reset()
   self.lastEvent = nil
 end
 
+---------------------------------------------------------------------------
+-- Mentions and links (#20); pure text helpers, no app access.
+---------------------------------------------------------------------------
+
+-- "@[Body]" tokens in the user's text -> "Body (aseprite://layer/L2)", using
+-- the label -> URI map the picker filled. Unknown tokens stay as typed.
+function Conversation.expandMentions(text, mentions)
+  return (text:gsub("@%[(.-)%]", function(label)
+    local uri = mentions and mentions[label]
+    return uri and (label .. " (" .. uri .. ")") or nil
+  end))
+end
+
+-- Markdown links to aseprite:// URIs in a reply -> plain display text plus
+-- link spans { label, uri, from, to } (byte offsets in the display text).
+-- Other markdown links are left as written.
+function Conversation.parseLinks(text)
+  local out, links, pos = {}, {}, 1
+  local len = 0
+  while true do
+    local s, e, label, uri = text:find("%[([^%]]-)%]%((aseprite://[^%)%s]+)%)", pos)
+    if not s then break end
+    local before = text:sub(pos, s - 1)
+    out[#out + 1] = before
+    len = len + #before
+    links[#links + 1] = { label = label, uri = uri, from = len + 1, to = len + #label }
+    out[#out + 1] = label
+    len = len + #label
+    pos = e + 1
+  end
+  out[#out + 1] = text:sub(pos)
+  return table.concat(out), links
+end
+
 return Conversation

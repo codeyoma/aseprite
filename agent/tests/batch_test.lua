@@ -208,6 +208,48 @@ do
   if previous then app.sprite = previous end
 end
 
+-- aseprite:// URIs (#20): serialize -> resolve round trip, select, stale
+do
+  local previous = app.sprite
+  local U = H.Uri
+  local spr = Sprite(16, 16)
+  app.sprite = spr
+  local body = spr.layers[1]; body.name = "Body"
+  local fx = spr:newLayer(); fx.name = "F X"
+  spr:newEmptyFrame(); spr:newEmptyFrame()
+  local walk = spr:newTag(2, 3); walk.name = "walk left"
+  local slice = spr:newSlice(Rectangle(1, 1, 4, 4)); slice.name = "hit box"
+  spr.selection = Selection(Rectangle(0, 0, 3, 3))
+
+  local r = U.resolve(U.layer(fx))
+  check("uri layer", U.layer(fx) == "aseprite://layer/L" .. fx.id and r and r.layer == fx and r.label == "F X")
+  r = U.resolve(U.frame(3)); check("uri frame", r and r.frame == 3)
+  r = U.resolve(U.tag(walk)); check("uri tag (encoded)", U.tag(walk) == "aseprite://tag/walk%20left" and r and r.tag == walk)
+  r = U.resolve(U.cel(body, 2)); check("uri cel", r and r.layer == body and r.frame == 2)
+  r = U.resolve(U.palette(5)); check("uri palette", r and r.index == 5 and r.label:match("^color 5 #"))
+  r = U.resolve(U.slice(slice)); check("uri slice", r and r.slice == slice)
+  r = U.resolve(U.selection()); check("uri selection", r and r.kind == "selection")
+
+  check("select layer", U.select(U.layer(body)) and app.layer == body)
+  check("select frame", U.select(U.frame(2)) and app.frame.frameNumber == 2)
+  check("select cel", U.select(U.cel(fx, 3)) and app.layer == fx and app.frame.frameNumber == 3)
+  check("select tag", U.select(U.tag(walk)) and app.frame.frameNumber == 2)
+
+  local stale = U.layer(fx)
+  spr:deleteLayer(fx)
+  check("stale uri resolves to nil", U.resolve(stale) == nil and U.select(stale) == false)
+  check("malformed uris", U.resolve("aseprite://layer/xyz") == nil and U.resolve("https://x") == nil
+    and U.resolve("aseprite://frame/99") == nil and U.resolve("aseprite://palette/999") == nil)
+
+  local t = U.targets()
+  local groups = {}
+  for _, x in ipairs(t) do groups[x.group] = true end
+  check("picker targets", groups["Layers"] and groups["Tags"] and groups["Frames"] and groups["Palette"] and groups["Slices"]
+    and t[1].name == "selection")
+  spr:close()
+  if previous then app.sprite = previous end
+end
+
 -- H.call: the interface the bridge connection uses
 do
   local header, bytes = H.call("snapshot", { frame = 1 })

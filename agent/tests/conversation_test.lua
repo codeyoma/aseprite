@@ -92,4 +92,19 @@ do
   check("no check, no badge", c:entries()[#c:entries()].check == nil)
 end
 
+-- Mentions and links (#20)
+do
+  local m = { Body = "aseprite://layer/L2", walk = "aseprite://tag/walk" }
+  check("expand mentions", Conversation.expandMentions("outline @[Body] on @[walk]", m)
+    == "outline Body (aseprite://layer/L2) on walk (aseprite://tag/walk)")
+  check("unknown token stays", Conversation.expandMentions("hi @[Nope]", m) == "hi @[Nope]")
+
+  local display, links = Conversation.parseLinks("Outlined [Body](aseprite://layer/L2) on [walk](aseprite://tag/walk). See [docs](https://x.y).")
+  check("links -> display text", display == "Outlined Body on walk. See [docs](https://x.y).", display)
+  check("link spans", #links == 2 and links[1].uri == "aseprite://layer/L2"
+    and display:sub(links[1].from, links[1].to) == "Body" and display:sub(links[2].from, links[2].to) == "walk")
+  local plain, none = Conversation.parseLinks("no links here")
+  check("no links", plain == "no links here" and #none == 0)
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))
