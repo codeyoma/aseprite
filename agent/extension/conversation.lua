@@ -159,6 +159,12 @@ function Conversation:apply(ev)
   return { turnEnded = false }
 end
 
+-- Adds a plain entry ("user", "status" or "error") outside an agent turn,
+-- e.g. a saved command run from the chat (#26).
+function Conversation:note(kind, text)
+  return push(self, { kind = kind, text = text })
+end
+
 -- Variations the agent built for a task (#25), with the user's request that
 -- led to them (stored on the layer the user keeps).
 function Conversation:addVariations(task, items)

@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { WebSocket } from "ws";
 import { AsepriteLink } from "../dist/aseprite.js";
-import { chatMethods, toChatEvent } from "../dist/chat.js";
+import { bridgeMethods, toChatEvent } from "../dist/chat.js";
 import { PROTOCOL } from "../dist/protocol.js";
 import { PROVIDERS } from "../dist/providers/index.js";
 import { findTool, runTool, TOOLS } from "../dist/tools.js";
@@ -31,7 +31,7 @@ test("every tool only uses protocol requests", async () => {
 
 test("the bridge answers exactly the protocol's bridge methods", () => {
   const fakeChat = { providers: () => ({}), busy: false, send() {}, stop() {}, reset() {} };
-  assert.deepEqual(Object.keys(chatMethods(fakeChat, "0")).sort(), [...PROTOCOL.bridgeMethods].sort());
+  assert.deepEqual(Object.keys(bridgeMethods(fakeChat, "0")).sort(), [...PROTOCOL.bridgeMethods].sort());
 });
 
 test("chat events use only protocol types and fields", () => {

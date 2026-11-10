@@ -306,6 +306,7 @@ local function executeLua(params)
 
   local env = setmetatable({
     print = capturePrint, layerById = layerById,
+    args = type(params.args) == "table" and params.args or {},   -- saved commands' arguments (#26)
     -- AI layers and variations (#25), see variations.lua.
     aiLayer = variations and variations.aiLayer, variationLayer = variations and variations.variationLayer,
   }, { __index = _G })
@@ -403,6 +404,19 @@ end
 local capture
 -- AI layers and variations (variations.lua), and who shows them; set by M.new.
 local onVariations
+
+-- Saved commands (#26): syntax check before saving, and a refresh after.
+local onCommandsChanged
+
+handlers.compile_lua = function(params)
+  local fn, err = load(params.code or "", "=command", "t")
+  return { ok = fn ~= nil, error = err }
+end
+
+handlers.commands_changed = function(params)
+  if onCommandsChanged then onCommandsChanged(params.dir) end
+  return { ok = true }
+end
 
 -- Shows the variations of a task to the user (the chat panel's thumbnails).
 handlers.propose_variations = function(params)
@@ -1170,6 +1184,7 @@ function M.new(opts)
   capture = opts.capture
   variations = dofile(app.fs.joinPath(chunkDir, "variations.lua"))
   onVariations = opts.onVariations
+  onCommandsChanged = opts.onCommandsChanged
   PROTOCOL = assert(opts.protocol, "protocol required")
 
   local H = {

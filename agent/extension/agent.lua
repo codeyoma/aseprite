@@ -15,13 +15,29 @@ local function loadProtocol(dir)
   return p
 end
 
+-- File access stays in this (trusted) script: Aseprite asks permission per script file.
+local function readFile(path)
+  local f = io.open(path, "r")
+  if not f then return nil end
+  local text = f:read("a")
+  f:close()
+  return text
+end
+
 function init(plugin)
   local function load(name) return dofile(app.fs.joinPath(plugin.path, name)) end
+  local saved   -- saved commands (#26), created below
   local protocol = loadProtocol(plugin.path)
 
   local capture = load("step_capture.lua").new{ limit = 50 }
   local handlers = load("document_handlers.lua").new{ chunkDir = plugin.path, protocol = protocol, capture = capture,
-    onVariations = function(info) if Panel then Panel.showVariations(info) end end }
+    onVariations = function(info) if Panel then Panel.showVariations(info) end end,
+    -- The bridge says which folder it saved to (ASEPRITE_AGENT_COMMANDS can move it).
+    onCommandsChanged = function(dir) if saved then saved:reload(dir) end end }
+  saved = load("saved_commands.lua").new{
+    dir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "commands"),
+    readFile = readFile, plugin = plugin, executeLua = handlers.executeLua,
+  }
 
   connection = load("bridge_connection.lua").new{
     protocol = protocol,
@@ -35,13 +51,7 @@ function init(plugin)
     end,
     -- File, shell and socket access stay in this (trusted) script, because
     -- Aseprite asks permission per script file; see bridge_connection.lua.
-    readFile = function(path)
-      local f = io.open(path, "r")
-      if not f then return nil end
-      local text = f:read("a")
-      f:close()
-      return text
-    end,
+    readFile = readFile,
     runShell = function(command) os.execute(command) end,
     openSocket = function(args) return WebSocket(args) end,
   }
@@ -56,6 +66,7 @@ function init(plugin)
     resolveUri = handlers.Uri.resolve,
     selectUri = handlers.Uri.select,
     TurnHistory = load("turn_history.lua"),
+    savedCommands = saved,
     variations = handlers.variations,
     attachments = load("attachments.lua").new{
       dir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "attachments"),
@@ -73,6 +84,9 @@ function init(plugin)
   -- Scripting API for other scripts: AsepriteAgent.chat("make it blue")
   AsepriteAgent = {
     chat = function(prompt, provider, mode) Panel.submit(prompt, provider, mode) end,
+    -- Runs a saved command like the menu does (#26).
+    runCommand = function(name, args) return saved:run(name, args) end,
+    savedCommands = function() return saved:load() end,
     -- Keeps variation i of the newest variations, or discards them (nil) (#25).
     pickVariation = function(i) return Panel.resolveVariations(i) end,
     discardVariations = function() return Panel.resolveVariations(nil) end,
@@ -150,6 +164,13 @@ function init(plugin)
       connection.disconnect()
       app.tip("AI Agent disconnected")
     end,
+  }
+
+  -- Saved commands (#26): My Commands submenu, filled from the folder.
+  saved:reload()
+  plugin:newCommand{
+    id = "AgentManageCommands", title = "Manage My Commands...", group = "ai_agent_menu",
+    onclick = function() Panel.manageCommands() end,
   }
 
   -- User skills (#27): ~/.aseprite-agent/skills/<name>.md

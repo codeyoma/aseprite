@@ -13,6 +13,7 @@ import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type Pr
 import { sessionDir } from "./session.js";
 import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
 import { skillContext } from "./guide.js";
+import { SavedCommands } from "./saved_commands.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
 import { acpCommand, AcpRunner, type ChatMode, type PermissionOutcome, type PermissionRequest } from "./acp.js";
 import type { AcpEvent, PlanEntry } from "./providers/acp_mapper.js";
@@ -311,6 +312,20 @@ export class ChatRunner {
 function rejectOutcome(options: PermissionRequest["options"]): PermissionOutcome {
   const reject = options.find((o) => o.kind === "reject_once") ?? options.find((o) => o.kind?.startsWith("reject"));
   return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+}
+
+/** Every method the extension may call on the bridge (protocol.json bridgeMethods). */
+export function bridgeMethods(chat: ChatRunner, version: string): Record<string, (params: any) => unknown> {
+  return { ...chatMethods(chat, version), ...commandMethods() };
+}
+
+/** Saved commands for the panel (#26): versions, revert, enable/disable. */
+export function commandMethods(store = new SavedCommands()): Record<string, (params: any) => unknown> {
+  return {
+    "commands.history": (p: { name: string }) => ({ versions: store.history(String(p.name)) }),
+    "commands.revert": (p: { name: string; rev?: string }) => ({ restored: store.revert(String(p.name), p.rev) }),
+    "commands.setEnabled": (p: { name: string; enabled: boolean }) => ({ ok: store.setEnabled(String(p.name), !!p.enabled) }),
+  };
 }
 
 export function chatMethods(chat: ChatRunner, version: string): Record<string, (params: any) => unknown> {

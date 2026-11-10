@@ -2,6 +2,7 @@
 // registration, the chat panel's step labels and the edit/read kind all
 // come from here. A tool without `run` forwards its input to the Aseprite
 // request method of the same name and returns the result as JSON.
+import { COMMAND_NAME, commandsDir, SavedCommands, type SavedCommand } from "./saved_commands.js";
 import * as z from "zod/v4";
 import type { Reply } from "./aseprite.js";
 import { describeCommand, filterCommands, findCommand, COMMANDS, suggestCommands, toWireParams } from "./commands.js";
@@ -86,14 +87,7 @@ export const TOOLS: Tool[] = [
     label: (i) => (i?.label ? String(i.label) : "Run Lua"),
     async run({ code, label, transaction }, aseprite) {
       const { result } = await aseprite.request("execute_lua", { code, label, transaction }, 120_000);
-      const content: Content[] = [];
-      if (result.output?.length) content.push(text("Output:\n" + result.output.join("\n")));
-      if (result.ok) {
-        content.push(text(result.value === undefined ? "OK (no return value)" : { value: result.value }));
-        return { content };
-      }
-      content.push(text((result.rolledBack ? "Error (changes rolled back):\n" : "Error:\n") + result.error));
-      return { content, isError: true };
+      return formatExecute(result);
     },
   },
   {
@@ -124,6 +118,80 @@ export const TOOLS: Tool[] = [
           text(`${w}x${h} px, frame ${result.frame}${result.layer ? `, layer "${result.layer}"` : ""}, shown at ${s}x`),
         ],
       };
+    },
+  },
+  {
+    name: "save_command",
+    title: "Save as command",
+    description:
+      "Save Lua code as a command the user can run from File > Scripts > AI Agent > My Commands or by typing " +
+      "/<name> in the chat, without an agent. Save code that already worked in execute_lua. The code runs as one " +
+      "undo step on the active sprite; it gets `args`, a table of the user's arguments (from params, with defaults), " +
+      "and `layerById`. Saving an existing name updates it; every save is a version that can be reverted.",
+    input: z.object({
+      name: z.string().regex(COMMAND_NAME).describe("Lowercase with dashes, e.g. 'outline-dark'. Also the /name in the chat."),
+      title: z.string().min(1).describe("Menu title, e.g. 'Outline in Darkest Color'."),
+      description: z.string().min(1).describe("One sentence on what it does; also the version's commit message."),
+      code: z.string().min(1).describe("Lua body. Read arguments from args, e.g. local width = args.width or 1."),
+      params: z.array(z.object({ name: z.string(), description: z.string().optional(), default: z.any().optional() }))
+        .optional().describe("Arguments the command accepts. In the chat: /name key=value ..."),
+    }),
+    kind: "edit",
+    label: (a) => (a.name ? `Save command ${a.name}` : "Save command"),
+    async run(input, aseprite) {
+      const { result } = await aseprite.request("compile_lua", { code: input.code });
+      if (!result.ok) return failure(`The code does not compile, so it was not saved:\n${result.error}\nFix it and save again.`);
+      const cmd = savedCommands().save(input);
+      await aseprite.request("commands_changed", { dir: commandsDir() }).catch(() => undefined);
+      return { content: [text(`Saved "${cmd.title}" as /${cmd.name}. It is in File > Scripts > AI Agent > My Commands.`)] };
+    },
+  },
+  {
+    name: "list_saved_commands",
+    title: "List saved commands",
+    description: "List the commands saved with save_command: name, title, description, parameters and whether it is enabled.",
+    input: z.object({}),
+    kind: "read",
+    label: () => "List saved commands",
+    async run() {
+      const list = savedCommands().list();
+      if (!list.length) return { content: [text("No saved commands yet.")] };
+      return {
+        content: [text(list.map((c) =>
+          `- /${c.name}${c.enabled ? "" : " (disabled)"}: ${c.title}. ${c.description}` +
+          (c.params.length ? ` Params: ${c.params.map((p) => p.name + (p.default !== undefined ? `=${JSON.stringify(p.default)}` : "")).join(", ")}` : "")).join("\n"))],
+      };
+    },
+  },
+  {
+    name: "run_saved_command",
+    title: "Run a saved command",
+    description: "Run a saved command on the active sprite as one undo step, with optional arguments.",
+    input: z.object({
+      name: z.string().describe("The command's name."),
+      args: z.record(z.string(), z.any()).optional().describe("Arguments, e.g. { width: 2 }."),
+    }),
+    kind: "edit",
+    label: (a) => (a.name ? `Run /${a.name}` : "Run saved command"),
+    async run({ name, args }, aseprite) {
+      const store = savedCommands();
+      const cmd = store.get(name);
+      if (!cmd) return failure(`No saved command named ${name}. Saved: ${store.list().map((c) => c.name).join(", ") || "none"}`);
+      const { result } = await aseprite.request("execute_lua", { code: store.code(name), label: cmd.title, args: withDefaults(cmd, args) }, 120_000);
+      return formatExecute(result);
+    },
+  },
+  {
+    name: "delete_saved_command",
+    title: "Delete a saved command",
+    description: "Delete a saved command (its history stays in the commands folder's git log).",
+    input: z.object({ name: z.string() }),
+    kind: "edit",
+    label: (a) => (a.name ? `Delete /${a.name}` : "Delete saved command"),
+    async run({ name }, aseprite) {
+      if (!savedCommands().delete(name)) return failure(`No saved command named ${name}`);
+      await aseprite.request("commands_changed", { dir: commandsDir() }).catch(() => undefined);
+      return { content: [text(`Deleted /${name}.`)] };
     },
   },
   {
@@ -305,6 +373,29 @@ export const TOOLS: Tool[] = [
 ];
 
 /** Readable check report: a summary line, then one line per finding. */
+function savedCommands(): SavedCommands {
+  return new SavedCommands();
+}
+
+/** A saved command's arguments: the given ones over the declared defaults. */
+export function withDefaults(cmd: SavedCommand, args: Record<string, unknown> = {}): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of cmd.params) if (p.default !== undefined) out[p.name] = p.default;
+  return { ...out, ...args };
+}
+
+/** An execute_lua result: output, value or error. */
+export function formatExecute(result: any): ToolResult {
+  const content: Content[] = [];
+  if (result.output?.length) content.push(text("Output:\n" + result.output.join("\n")));
+  if (result.ok) {
+    content.push(text(result.value === undefined ? "OK (no return value)" : { value: result.value }));
+    return { content };
+  }
+  content.push(text((result.rolledBack ? "Error (changes rolled back):\n" : "Error:\n") + result.error));
+  return { content, isError: true };
+}
+
 /** diff_visual result: the diff PNG and a summary line. */
 export function formatDiff(result: any, binary: Buffer | undefined, scale?: number): ToolResult {
   const w = result.width as number;

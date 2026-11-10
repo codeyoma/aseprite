@@ -11,7 +11,7 @@ import { cleanAttachments } from "./attachments.js";
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { AsepriteLink, log } from "./aseprite.js";
-import { ChatRunner, chatMethods } from "./chat.js";
+import { bridgeMethods, ChatRunner } from "./chat.js";
 import { startHttpEndpoint } from "./http.js";
 import { createMcpServer, VERSION } from "./server.js";
 import { newToken } from "./session.js";
@@ -27,7 +27,9 @@ async function main() {
   const chat = new ChatRunner(link, endpoint);
   cleanAttachments(); // rendered attachments older than a week
 
-  for (const [method, handler] of Object.entries(chatMethods(chat, VERSION))) link.onRequest(method, handler);
+  for (const [method, handler] of Object.entries(bridgeMethods(chat, VERSION))) {
+    link.onRequest(method, handler);
+  }
 
   const port = await link.start(Number(process.env.ASEPRITE_AGENT_PORT ?? 0));
   log(`listening on ws://127.0.0.1:${port} (${daemon ? "daemon" : "stdio"}), MCP HTTP on ${endpoint.url}`);

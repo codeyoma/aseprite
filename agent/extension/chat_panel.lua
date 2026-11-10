@@ -701,13 +701,61 @@ return function(deps)
     menu:showMenu()
   end
 
-  -- Typing "@" at the end of the prompt opens the picker.
+  -- Typing "/" first lists saved commands and skills (#26, #27).
+  local function openSlashMenu()
+    local menu = Dialog()
+    local any = false
+    if deps.savedCommands then
+      for _, c in ipairs(deps.savedCommands:load()) do
+        if c.enabled ~= false then
+          any = true
+          menu:menuItem{ text = "/" .. c.name .. "  " .. c.title, onclick = function()
+            lastPrompt = "/" .. c.name .. " "
+            dlg:modify{ id = "prompt", text = lastPrompt }
+          end }
+        end
+      end
+    end
+    if not any then menu:menuItem{ text = "No saved commands yet", enabled = false } end
+    menu:separator{}
+    menu:menuItem{ text = "/skill:name  use one of your skills", onclick = function()
+      lastPrompt = "/skill:"
+      dlg:modify{ id = "prompt", text = lastPrompt }
+    end }
+    menu:showMenu()
+  end
+
+  -- Typing "@" at the end of the prompt opens the picker; "/" as the first
+  -- character lists commands.
   local function onPromptChange()
     if not dlg then return end
     local text = dlg.data.prompt or ""
-    local typedAt = #text == #lastPrompt + 1 and text:sub(-1) == "@" and text:sub(1, #lastPrompt) == lastPrompt
+    local grew = #text == #lastPrompt + 1 and text:sub(1, #lastPrompt) == lastPrompt
     lastPrompt = text
-    if typedAt then openPicker() end
+    if grew and text:sub(-1) == "@" then openPicker()
+    elseif grew and text == "/" then openSlashMenu() end
+  end
+
+  -- "/name args" runs a saved command right away, with no agent turn (#26).
+  -- Returns true when the prompt was a saved command.
+  local function runSlashCommand(prompt)
+    if not deps.savedCommands then return false end
+    local name, rest = prompt:match("^%s*/([%w%-]+)%s*(.-)%s*$")
+    if not name then return false end
+    deps.savedCommands:load()
+    if not deps.savedCommands:get(name) then return false end
+    local r = deps.savedCommands:run(name, deps.savedCommands.parseArgs(rest))
+    conv:note("user", prompt)
+    if r.ok then
+      conv:note("status", "Ran /" .. name .. (r.value ~= nil and (": " .. json.encode(r.value)) or ""))
+    else
+      conv:note("error", "/" .. name .. ": " .. tostring(r.error))
+    end
+    lastPrompt = ""
+    dlg:modify{ id = "prompt", text = "" }
+    refreshContext()
+    changed()
+    return true
   end
 
   -- providerOverride / modeOverride come from Panel.submit (scripts, Apply
@@ -716,6 +764,7 @@ return function(deps)
     if conv:isBusy() or not dlg then return end
     local prompt = dlg.data.prompt or ""
     if prompt:match("^%s*$") then return end
+    if runSlashCommand(prompt) then return end
     local provider = providerOverride or dlg.data.provider or providers[1]
     local mode = modeOverride or (dlg.data.mode or "Agent"):lower()
     deps.preferences.mode = mode:sub(1, 1):upper() .. mode:sub(2)
@@ -866,6 +915,49 @@ return function(deps)
   function Panel.lastTurn() return lastTurn end
 
   -- Entries as plain records (for tests and other scripts).
+  -- My Commands: run, enable/disable, source, revert to the previous version (#26).
+  function Panel.manageCommands()
+    local S = deps.savedCommands
+    if not S then return end
+    local list = S:load()
+    local d = Dialog{ title = "My Commands" }
+    if #list == 0 then
+      d:label{ text = "No saved commands yet. Ask the agent to save something it did as a command." }
+    end
+    for _, c in ipairs(list) do
+      d:separator{ text = "/" .. c.name .. (c.enabled == false and " (disabled)" or "") }
+      d:label{ text = c.title .. ": " .. (c.description or "") }
+      d:newrow()
+      d:button{ text = "Run", enabled = c.enabled ~= false, onclick = function()
+        local r = S:run(c.name, {})
+        if not r.ok then app.alert{ title = c.title, text = tostring(r.error) } end
+      end }
+      d:button{ text = c.enabled == false and "Enable" or "Disable", onclick = function()
+        deps.request("commands.setEnabled", { name = c.name, enabled = c.enabled == false }, function(_, err)
+          if err then app.tip(err.message or "Could not change it") else S:reload() end
+        end)
+        d:close()
+      end }
+      d:button{ text = "Source", onclick = function()
+        local src = Dialog{ title = "/" .. c.name }
+        pcall(function()
+          src:textedit{ id = "code", text = S.readFile(S:path(c.name)) or "", minlines = 12, maxlines = 24, font = "system" }
+        end)
+        src:button{ text = "Close" }
+        src:show()
+      end }
+      d:button{ text = "Revert", onclick = function()
+        deps.request("commands.revert", { name = c.name }, function(result, err)
+          if err then app.tip(err.message or "Nothing to revert to")
+          else app.tip("Restored /" .. c.name .. " from " .. tostring(result.restored)); S:reload() end
+        end)
+      end }
+    end
+    d:separator{}
+    d:button{ text = "Close" }
+    d:show{ wait = false }
+  end
+
   -- Variations from the agent's propose_variations tool (#25).
   function Panel.showVariations(info)
     Panel.open()
