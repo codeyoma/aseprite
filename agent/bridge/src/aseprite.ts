@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
-import { isRequest, PROTOCOL } from "./protocol.js";
+import { isRequest, PROTOCOL, checkParams } from "./protocol.js";
 import { keepSessionPublished, newToken, removeSession, writeSession, type Session } from "./session.js";
 
 const HELLO_TIMEOUT_MS = 5_000;
@@ -248,6 +248,7 @@ export class AsepriteLink extends EventEmitter {
 
   async request(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000): Promise<Reply> {
     if (!isRequest(method)) throw new Error(`Not a protocol request: ${method}`);
+    checkParams(method, params);
     if (!(await this.waitForConnection(3_000))) throw new AsepriteNotConnectedError();
     const id = this.nextId++;
     return new Promise<Reply>((resolve, reject) => {

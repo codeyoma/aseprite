@@ -75,6 +75,12 @@ Pixel-art check rules, in batch mode:
 build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/check_test.lua
 ```
 
+Request params at the wire seam (schemas, layer and frame resolution), in batch mode:
+
+```bash
+build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/wire_params_test.lua
+```
+
 Bridge unit tests (no Aseprite needed):
 
 ```bash

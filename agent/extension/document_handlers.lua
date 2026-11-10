@@ -14,6 +14,7 @@ local PROTOCOL = nil     -- set by new()
 local variations         -- variations.lua, loaded by new()
 local timelineText       -- timeline_text.lua, loaded by new()
 local scopeGuard         -- scope_guard.lua, loaded by new()
+local wireParams         -- wire_params.lua, loaded by new()
 
 
 ---------------------------------------------------------------------------
@@ -766,19 +767,9 @@ local function eachPixel(cel, palette, fn)
   end
 end
 
+-- Frames from a frame spec, default all (the same grammar the wire uses).
 local function framesFromParam(sprite, frames)
-  local out = {}
-  if type(frames) == "string" and frames:match("^%d+%-%d+$") then
-    local a, b = frames:match("^(%d+)%-(%d+)$")
-    for f = tonumber(a), tonumber(b) do out[#out + 1] = f end
-  elseif type(frames) == "number" then
-    out[1] = frames
-  elseif frames ~= nil and (type(frames) == "table" or type(frames) == "userdata") then
-    for _, f in ipairs(frames) do out[#out + 1] = tonumber(f) end
-  else
-    for i = 1, #sprite.frames do out[#out + 1] = i end
-  end
-  return out
+  return wireParams.resolveFrames(frames, #sprite.frames, app.frame and app.frame.frameNumber or 1, "all")
 end
 
 local function imageLayers(layers, out)
@@ -1782,6 +1773,7 @@ function M.new(opts)
   variations = dofile(app.fs.joinPath(chunkDir, "variations.lua"))
   timelineText = dofile(app.fs.joinPath(chunkDir, "timeline_text.lua"))
   scopeGuard = dofile(app.fs.joinPath(chunkDir, "scope_guard.lua"))
+  wireParams = dofile(app.fs.joinPath(chunkDir, "wire_params.lua"))
   onVariations = opts.onVariations
   onCommandsChanged = opts.onCommandsChanged
   PROTOCOL = assert(opts.protocol, "protocol required")
@@ -1807,6 +1799,10 @@ function M.new(opts)
       error({ code = -32601, message = "Unknown method: " .. tostring(method) })
     end
     params = plain(params) or {}
+    -- Schema check, layer ids and frame numbers resolved once (#53).
+    params = wireParams.check(method, PROTOCOL.requests[method].params or {}, params, {
+      sprite = app.sprite, activeFrame = app.frame and app.frame.frameNumber, layerById = layerById,
+    })
     local function run()
       if capture then return capture:around(method, withQuietAlerts, handler, params) end
       return withQuietAlerts(handler, params)

@@ -93,16 +93,16 @@ function checkSize(img: Rgba, what: string): void {
   }
 }
 
-/** Frame spec to frame numbers, against the sprite's frame count. */
-export function resolveFrames(spec: unknown, count: number, active: number): number[] {
+/** Frame spec to frame numbers, against the sprite's frame count: the grammar in protocol.json (params.frames). */
+export function resolveFrames(spec: unknown, count: number, active: number, fallback: "active" | "all" = "active"): number[] {
   let out: number[];
-  if (spec === undefined || spec === null || spec === "") out = [active];
+  if (spec === undefined || spec === null || spec === "") out = fallback === "all" ? Array.from({ length: count }, (_, i) => i + 1) : [active];
   else if (typeof spec === "number") out = [spec];
   else if (Array.isArray(spec)) out = spec.map(Number);
   else if (String(spec) === "all") out = Array.from({ length: count }, (_, i) => i + 1);
   else {
-    const m = /^(\d+)\s*-\s*(\d+)$/.exec(String(spec));
-    if (m) out = Array.from({ length: Math.max(0, +m[2] - +m[1] + 1) }, (_, i) => +m[1] + i).filter((f) => f <= count);
+    const m = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(String(spec));
+    if (m) out = Array.from({ length: Math.max(0, +m[2] - +m[1] + 1) }, (_, i) => +m[1] + i);
     else if (/^\d+$/.test(String(spec).trim())) out = [Number(spec)];
     else throw new Error(`Frames must be a number, a list, 'a-b' or 'all' (got ${JSON.stringify(spec)})`);
   }

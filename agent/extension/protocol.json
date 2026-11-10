@@ -1,44 +1,292 @@
 {
   "description": "Wire protocol between the aseprite-agent bridge and the Aseprite extension (JSON-RPC 2.0 over WebSocket). This file is the single definition: the extension ships it, the bridge copies it, and contract tests check both sides against it. Bump version on any incompatible change.",
-  "version": 19,
+  "version": 20,
   "handshake": {
     "hello": "extension -> bridge, first message: { token, protocol, asepriteVersion }",
     "welcome": "bridge -> extension: the connection is accepted",
     "incompatible": "bridge -> extension, then close: { expected, received, message }"
   },
   "requests": {
-    "ping": {},
-    "get_state": {},
-    "get_context": {},
-    "execute_lua": {},
+    "ping": {
+      "params": {}
+    },
+    "get_state": {
+      "params": {}
+    },
+    "get_context": {
+      "params": {}
+    },
+    "execute_lua": {
+      "params": {
+        "code": "string",
+        "args": "any?",
+        "label": "string?",
+        "transaction": "boolean?"
+      }
+    },
     "snapshot": {
-      "binary": true
+      "binary": true,
+      "params": {
+        "layer": "layer?",
+        "frame": "frame?"
+      }
     },
-    "read_pixels": {},
-    "run_command": {},
-    "undo": {},
-    "redo": {},
-    "check": {},
+    "read_pixels": {
+      "params": {
+        "x": "integer?",
+        "y": "integer?",
+        "width": "integer?",
+        "height": "integer?",
+        "layer": "layer?",
+        "frame": "frame?"
+      }
+    },
+    "run_command": {
+      "params": {
+        "name": "string",
+        "params": "object?"
+      }
+    },
+    "undo": {
+      "params": {
+        "steps": "integer?"
+      }
+    },
+    "redo": {
+      "params": {
+        "steps": "integer?"
+      }
+    },
+    "check": {
+      "params": {
+        "layer": "layer?",
+        "frames": "frames?all",
+        "rules": "array?"
+      }
+    },
     "diff_visual": {
-      "binary": true
+      "binary": true,
+      "params": {
+        "checkpoint": "string?",
+        "save": "string?",
+        "scale": "integer?"
+      }
     },
-    "propose_variations": {},
-    "compile_lua": {},
-    "commands_changed": {},
-    "get_timeline_text": {},
-    "apply_timeline_text": {},
-    "state_block": {},
-    "collect_colors": {},
-    "get_palette": {},
-    "set_palette": {},
-    "apply_color_map": {},
-    "draw_swatches": {},
-    "create_sprite": {},
-    "create_animation": {},
-    "split_layer_by_colors": {},
-    "put_image": {},
-    "mirror_frames": {},
-    "set_slice": {}
+    "propose_variations": {
+      "params": {
+        "task": "string"
+      }
+    },
+    "compile_lua": {
+      "params": {
+        "code": "string"
+      }
+    },
+    "commands_changed": {
+      "params": {
+        "dir": "string?"
+      }
+    },
+    "get_timeline_text": {
+      "params": {}
+    },
+    "apply_timeline_text": {
+      "params": {
+        "text": "string",
+        "plan": "boolean?"
+      }
+    },
+    "state_block": {
+      "params": {}
+    },
+    "collect_colors": {
+      "params": {
+        "layer": "layer?",
+        "frames": "frames?all",
+        "hidden": "boolean?",
+        "selection": "boolean?"
+      }
+    },
+    "get_palette": {
+      "params": {}
+    },
+    "set_palette": {
+      "params": {
+        "colors": "array",
+        "append": "boolean?",
+        "label": "string?"
+      }
+    },
+    "apply_color_map": {
+      "params": {
+        "map": "object",
+        "layer": "layer?",
+        "frames": "frames?all",
+        "label": "string?"
+      }
+    },
+    "draw_swatches": {
+      "params": {
+        "colors": "array",
+        "name": "string?",
+        "prompt": "string?",
+        "size": "integer?"
+      }
+    },
+    "create_sprite": {
+      "params": {
+        "width": "integer",
+        "height": "integer",
+        "rgba": "string",
+        "title": "string?",
+        "palette": "array?"
+      }
+    },
+    "create_animation": {
+      "params": {
+        "width": "integer",
+        "height": "integer",
+        "frames": "array",
+        "title": "string?",
+        "palette": "array?",
+        "tags": "array?"
+      }
+    },
+    "split_layer_by_colors": {
+      "params": {
+        "layer": "layer?",
+        "groups": "array"
+      }
+    },
+    "put_image": {
+      "params": {
+        "width": "integer",
+        "height": "integer",
+        "rgba": "string",
+        "frame": "frame?",
+        "layer": "layer?",
+        "new_layer": "string?",
+        "above": "layer?",
+        "hide_source": "boolean?",
+        "hide": "boolean?",
+        "x": "integer?",
+        "y": "integer?",
+        "label": "string?",
+        "prompt": "string?"
+      }
+    },
+    "mirror_frames": {
+      "params": {
+        "tag": "string?",
+        "frames": "frames?",
+        "new_tag": "string?",
+        "keep_layers": "array?"
+      }
+    },
+    "set_slice": {
+      "params": {
+        "name": "string",
+        "x": "integer",
+        "y": "integer",
+        "w": "integer",
+        "h": "integer",
+        "center": "object?"
+      }
+    }
+  },
+  "params": {
+    "types": "Each request lists its params as name: type. Types: string, integer, number, boolean, array, object, any, layer, frame, frames. A trailing ? marks it optional. Unknown params are an error, except scope (sub-agent scopes), which any request may carry.",
+    "layer": "A layer id ('L12', or 12) or a layer name (searched through groups, top first). The extension resolves it to the layer's id before the handler runs; a missing layer is an error.",
+    "frame": "A 1-based frame number in range. Omitted means the active frame; the extension fills it in.",
+    "frames": "A frame spec: a number, a list of numbers, 'a-b' (inclusive), or 'all'. The extension resolves it to a list of frame numbers in range; out-of-range frames are an error. 'frames?all' defaults to every frame, 'frames?active' to the active frame, plain 'frames?' leaves it out.",
+    "frameSpecExamples": [
+      {
+        "spec": 3,
+        "count": 4,
+        "active": 1,
+        "frames": [
+          3
+        ]
+      },
+      {
+        "spec": [
+          1,
+          3
+        ],
+        "count": 4,
+        "active": 1,
+        "frames": [
+          1,
+          3
+        ]
+      },
+      {
+        "spec": "2-4",
+        "count": 5,
+        "active": 1,
+        "frames": [
+          2,
+          3,
+          4
+        ]
+      },
+      {
+        "spec": "all",
+        "count": 3,
+        "active": 2,
+        "frames": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "spec": "5",
+        "count": 5,
+        "active": 1,
+        "frames": [
+          5
+        ]
+      },
+      {
+        "spec": null,
+        "default": "active",
+        "count": 4,
+        "active": 2,
+        "frames": [
+          2
+        ]
+      },
+      {
+        "spec": null,
+        "default": "all",
+        "count": 3,
+        "active": 2,
+        "frames": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "spec": 6,
+        "count": 5,
+        "active": 1,
+        "error": "out of range"
+      },
+      {
+        "spec": "3-9",
+        "count": 5,
+        "active": 1,
+        "error": "out of range"
+      },
+      {
+        "spec": "abc",
+        "count": 5,
+        "active": 1,
+        "error": "Frames must be"
+      }
+    ]
   },
   "binaryResults": "A request marked binary answers with a result containing binary: true, followed by exactly one binary WebSocket frame with the data.",
   "bridgeMethods": [

@@ -8,7 +8,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Session file**: `~/.aseprite-agent/session.json`, where the newest bridge publishes its port, token and path so the extension can find it.
 
-**Wire Protocol**: the JSON-RPC messages between bridge and extension, defined once in `agent/extension/protocol.json` (version, requests, binary results, bridge methods, chat events). Both sides check their code against it, and the bridge rejects a different version at hello.
+**Wire Protocol**: the JSON-RPC messages between bridge and extension, defined once in `agent/extension/protocol.json` (version, requests with their param schemas, binary results, bridge methods, chat events). Both sides check their code against it, and the bridge rejects a different version at hello. Params are checked on both sides: the bridge before sending, the extension (`wire_params.lua`) before a handler runs, which also resolves **layer references** (id or name) to layer ids and **frame specs** (`3`, `[1,3]`, `'2-4'`, `'all'`) to frame numbers in range, with one grammar shared by both sides.
 
 **Agent Provider**: one agent the chat panel can run (Claude Code, Codex). Each provider names its ACP agent package and how to pass the system prompt, and keeps a stream-json adapter (the CLI command plus a parser of its JSON output) as a fallback (`agent/bridge/src/providers`).
 

@@ -7,7 +7,9 @@ import { test } from "node:test";
 import { WebSocket } from "ws";
 import { AsepriteLink } from "../dist/aseprite.js";
 import { bridgeMethods, toChatEvent } from "../dist/chat.js";
-import { PROTOCOL } from "../dist/protocol.js";
+import { checkParams, PROTOCOL } from "../dist/protocol.js";
+import { resolveFrames } from "../dist/document.js";
+import { fakeDocument, rect } from "./helpers/fake_document.mjs";
 import { PROVIDERS } from "../dist/providers/index.js";
 import { findTool, runTool, TOOLS } from "../dist/tools.js";
 
@@ -83,4 +85,47 @@ test("hello: matching version is welcomed, other versions are told why", async (
 test("requests outside the protocol are refused before sending", async () => {
   const link = new AsepriteLink();
   await assert.rejects(link.request("format_disk"), /Not a protocol request/);
+});
+
+test("frame specs follow protocol.json's grammar (the extension runs the same examples)", () => {
+  for (const ex of PROTOCOL.params.frameSpecExamples) {
+    const run = () => resolveFrames(ex.spec ?? undefined, ex.count, ex.active, ex.default ?? "active");
+    if (ex.error) assert.throws(run, new RegExp(ex.error), JSON.stringify(ex));
+    else assert.deepEqual(run(), ex.frames, JSON.stringify(ex));
+  }
+});
+
+test("every request has a params schema; tools that forward their input match it", () => {
+  for (const [name, r] of Object.entries(PROTOCOL.requests)) assert.ok(r.params, `${name} has params`);
+  for (const t of TOOLS.filter((t) => !t.run && Object.hasOwn(PROTOCOL.requests, t.name))) {
+    const schema = PROTOCOL.requests[t.name].params;
+    for (const key of Object.keys(t.input.shape)) assert.ok(key in schema, `${t.name}: input '${key}' is in protocol.json`);
+  }
+});
+
+test("checkParams: unknown, missing and mistyped params", () => {
+  assert.throws(() => checkParams("snapshot", { bogus: 1 }), /unknown param 'bogus'/);
+  assert.throws(() => checkParams("set_slice", { x: 0, y: 0, w: 1, h: 1 }), /'name' is required/);
+  assert.throws(() => checkParams("undo", { steps: "2" }), /'steps' must be a integer/);
+  checkParams("snapshot", { layer: "L3", frame: 2, scope: {} });
+  checkParams("put_image", { width: 1, height: 1, rgba: "AAAA", frame: undefined });
+});
+
+test("every request a skill tool sends passes the schema", async () => {
+  const sent = [];
+  const base = fakeDocument({ width: 8, height: 8, frames: 2, layers: [{ name: "Body", frames: [rect(8, 8, [1, 1, 6, 6], [60, 170, 80]), rect(8, 8, [2, 1, 6, 6], [60, 170, 80])] }] });
+  const aseprite = {
+    async request(method, params = {}) {
+      sent.push([method, params]);
+      if (["get_state", "snapshot", "put_image", "create_sprite", "create_animation"].includes(method)) return base.request(method, params);
+      return { result: { ok: true, colors: [], palette: [], layers: [], title: "x" } };
+    },
+  };
+  // Each tool with the inputs the MCP layer would accept (others need real arguments).
+  for (const tool of TOOLS.filter((t) => t.run)) {
+    const input = tool.input.safeParse({ layer: "Body" }).success ? { layer: "Body" } : tool.input.safeParse({}).success ? {} : undefined;
+    if (input) await runTool(tool, input, aseprite);
+  }
+  assert.ok(sent.length > 20);
+  for (const [method, params] of sent) assert.doesNotThrow(() => checkParams(method, params), `${method} ${JSON.stringify(params).slice(0, 120)}`);
 });
