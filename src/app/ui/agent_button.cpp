@@ -11,6 +11,7 @@
 #include "app/ui/agent_button.h"
 
 #include "app/commands/commands.h"
+#include "app/ui/script_panel.h"
 #include "app/ui/skin/skin_theme.h"
 #include "app/ui_context.h"
 #include "ui/alert.h"
@@ -27,6 +28,11 @@ using namespace app::skin;
 AgentButton::AgentButton() : Button("AI")
 {
   initTheme();
+  // Highlighted while the chat panel is docked.
+  m_dockConn = ScriptPanel::DockChanged.connect([this](ScriptPanel* panel) {
+    if (panel->panelId() == kPanelId)
+      setSelected(panel->isDocked());
+  });
 }
 
 void AgentButton::onClick()

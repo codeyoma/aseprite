@@ -183,7 +183,7 @@ struct Dialog {
       window.removeChild(window.grid());
       panel->setContent(window.grid());
     }
-    mainWindow->dockScriptPanel(panel.get());
+    panel->dock();
 
     // A window focuses its focus-magnet widget when it opens; a docked
     // panel has no open event, so do it here. Otherwise keys typed in
@@ -206,8 +206,7 @@ struct Dialog {
   {
     if (!isDocked())
       return;
-    if (auto* mainWindow = App::instance()->mainWindow())
-      mainWindow->undockScriptPanel(panel.get());
+    panel->undock();
     panel->setContent(nullptr);
     window.addChild(window.grid());
     ui::CloseEvent ev(nullptr);

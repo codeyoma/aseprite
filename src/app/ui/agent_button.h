@@ -8,6 +8,7 @@
 #define APP_UI_AGENT_BUTTON_H_INCLUDED
 #pragma once
 
+#include "obs/connection.h"
 #include "ui/button.h"
 
 namespace app {
@@ -22,6 +23,10 @@ public:
 
   AgentButton();
 
+private:
+  obs::scoped_connection m_dockConn;
+
+public:
 protected:
   void onClick() override;
   void onSizeHint(ui::SizeHintEvent& ev) override;

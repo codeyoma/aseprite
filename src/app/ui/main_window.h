@@ -100,9 +100,6 @@ public:
   void loadUserLayout(const Layout* layout);
   Dock* customizableDock() { return m_customizableDock; }
 
-  // Script dialogs docked in the main window (Dialog{ dockable=true }).
-  void dockScriptPanel(ScriptPanel* panel);
-  void undockScriptPanel(ScriptPanel* panel);
   void setCustomizeDock(bool enable);
 
   // When crash::DataRecovery finish to search for sessions, this
@@ -149,10 +146,6 @@ private:
   ui::TooltipManager* m_tooltipManager;
   Dock* m_dock;
   Dock* m_customizableDock;
-  std::vector<ScriptPanel*> m_scriptPanels;
-  void redockScriptPanels();
-  void updateAgentButton();
-  void rememberScriptPanelSides();
   std::unique_ptr<Widget> m_customizableDockPlaceholder;
   std::unique_ptr<MainMenuBar> m_menuBar;
   std::unique_ptr<Notifications> m_notifications;
