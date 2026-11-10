@@ -884,13 +884,17 @@ return function(deps)
     if conv:isBusy() or not dlg then return end
     local prompt = dlg.data.prompt or ""
     if prompt:match("^%s*$") then return end
-    -- Enter on a bare "/query" picks the best match instead of sending.
+    -- A saved command's exact name runs it, even while the picker shows it.
+    if runSlashCommand(prompt) then
+      setSuggest(nil)
+      return
+    end
+    -- Enter on any other bare "/query" picks the best match instead of sending.
     if suggest and #suggest.items > 0 and prompt:match("^/[^%s]*$") then
       Panel.pickSuggestion(suggest.items[1])
       return
     end
     setSuggest(nil)
-    if runSlashCommand(prompt) then return end
     -- A skill that needs an image waits for an attachment (#35).
     local skillName = prompt:match("^%s*/skill:([%w%-_]+)")
     local skill = skillName and skillByName(skillName)
