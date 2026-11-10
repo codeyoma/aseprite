@@ -1,11 +1,11 @@
 // Sprite sheet import (#41): slice a sheet image into frames and tags.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { documentOf } from "./document.js";
 import type { Rgba } from "./pixel_grid.js";
 import {
-  detectBackground, detectCells, findSprites, frameImages, gridFrames, parseAtlasText, removeBackground, tagsFromRows,
+  describeBackground, detectBackground, detectCells, findSprites, frameImages, gridFrames, parseAtlasText, removeBackground, tagsFromRows,
   type Align, type Frame, type Tag,
 } from "./sheet.js";
 import { failure, text, type Tool } from "./tool.js";
@@ -15,6 +15,12 @@ export function readPng(path: string): Rgba {
   if (!/\.png$/i.test(path)) throw new Error("Only PNG sheets can be read");
   const png = PNG.sync.read(readFileSync(path));
   return { width: png.width, height: png.height, data: png.data };
+}
+
+export function writePng(path: string, img: Rgba): void {
+  const png = new PNG({ width: img.width, height: img.height });
+  png.data.set(img.data);
+  writeFileSync(path, PNG.sync.write(png));
 }
 
 export const SHEET_TOOLS: Tool[] = [
@@ -62,7 +68,7 @@ export const SHEET_TOOLS: Tool[] = [
         size = atlas.width && atlas.height ? { w: atlas.width, h: atlas.height } : undefined;
         how = `atlas ${atlasPath}`;
       } else {
-        img = removeBackground(img);
+        img = removeBackground(img, undefined, bg);
         if (mode === "grid") {
           const found = input.cell_w && input.cell_h ? undefined : detectCells(img);
           const cellW = input.cell_w ?? found?.cellW, cellH = input.cell_h ?? found?.cellH;
@@ -85,7 +91,7 @@ export const SHEET_TOOLS: Tool[] = [
       const result = await documentOf(aseprite).createAnimation(out.width, out.height,
         out.images.map((d, i) => ({ image: { width: out.width, height: out.height, data: d }, duration: frames[i].duration ?? input.duration_ms ?? 100 })),
         { title: input.name ?? "Imported sheet", tags });
-      const bgText = bg.transparent ? "transparent background" : `background ${bg.color!.map((v) => v.toString(16).padStart(2, "0")).join("")} made transparent`;
+      const bgText = bg.transparent ? "transparent background" : `background ${describeBackground(bg)} made transparent`;
       return {
         content: [text(`Imported ${frames.length} frames of ${out.width}x${out.height} (${how}; ${bgText}) as "${result.title}"` +
           (tags.length ? `, tags: ${tags.map((t) => `${t.name} ${t.from}-${t.to}`).join(", ")}` : "") + ".")],

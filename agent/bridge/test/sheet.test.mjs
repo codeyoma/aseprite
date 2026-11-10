@@ -117,3 +117,122 @@ test("Godot SpriteFrames .tres round-trips with the exporter", async () => {
   assert.deepEqual([a.width, a.height], [16, 16]);
   assert.equal(parseAtlasText(tres, "x.tres").frames.length, 3);
 });
+
+// Background and sprite detection as tools (#66).
+import { fakeDocument } from "./helpers/fake_document.mjs";
+import { readFileSync } from "node:fs";
+
+const GRAY = [204, 204, 204], WHITE = [255, 255, 255];
+/** A checkerboard of 4 px squares, shifted by 2 px (a cropped screenshot of a transparent image). */
+function checkerboard(w, h) {
+  const img = canvas(w, h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    img.data.set([...((Math.floor((x + 2) / 4) + Math.floor((y + 1) / 4)) % 2 ? WHITE : GRAY), 255], (y * w + x) * 4);
+  }
+  return img;
+}
+const opaqueCount = (data) => { let n = 0; for (let i = 3; i < data.length; i += 4) if (data[i] >= 128) n++; return n; };
+function pngFile(img, name) {
+  const dir = mkdtempSync(join(tmpdir(), "bg-"));
+  const png = new PNG({ width: img.width, height: img.height });
+  png.data.set(img.data);
+  writeFileSync(join(dir, name), PNG.sync.write(png));
+  return join(dir, name);
+}
+/** Three sprites on a magenta key color: two in the first row, one below. */
+function looseSheet() {
+  const img = canvas(60, 40, [255, 0, 255, 255]);
+  rect(img, 2, 2, 10, 14, RED);
+  rect(img, 30, 6, 8, 10, BLUE);
+  rect(img, 5, 24, 12, 10, BLUE);
+  return img;
+}
+
+test("detectBackground: transparent, key color and checkerboard; removal keeps sprite pixels", async () => {
+  const { describeBackground } = await import("../dist/sheet.js");
+  const clear = canvas(20, 20);
+  rect(clear, 5, 5, 4, 4, RED);
+  assert.deepEqual(detectBackground(clear), { transparent: true });
+  assert.equal(removeBackground(clear), clear, "nothing to remove");
+  assert.equal(describeBackground(detectBackground(looseSheet())), "key color #ff00ff");
+
+  const img = checkerboard(40, 30);
+  rect(img, 10, 8, 12, 12, RED);
+  rect(img, 14, 15, 2, 2, WHITE); // white inside the sprite, where the board would be gray, stays
+  const bg = detectBackground(img);
+  assert.deepEqual([bg.checker.cell, bg.checker.colors.map((c) => c.join()).sort()], [4, [GRAY.join(), WHITE.join()].sort()]);
+  assert.match(describeBackground(bg), /^checkerboard (#cccccc\/#ffffff|#ffffff\/#cccccc) in 4 px squares$/);
+  const clean = removeBackground(img, undefined, bg);
+  assert.equal(opaqueCount(clean.data), 144, "only the 12x12 sprite is left");
+  assert.deepEqual(findSprites(clean).map((s) => s.rect), [{ x: 10, y: 8, w: 12, h: 12 }]);
+  // Two colors in plain stripes are not a checkerboard.
+  const stripes = canvas(32, 32);
+  for (let y = 0; y < 32; y++) for (let x = 0; x < 32; x++) stripes.data.set([...(x < 16 ? GRAY : WHITE), 255], (y * 32 + x) * 4);
+  assert.equal(detectBackground(stripes).checker, undefined);
+});
+
+test("detect_background: reports, writes a PNG without the key color, or puts the sprite on 'AI: no background'", async () => {
+  const path = pngFile(looseSheet(), "sheet.png");
+  const fake = fakeDocument({ width: 8, height: 8, layers: [{ name: "Layer 1", frames: [new Uint8Array(8 * 8 * 4)] }] });
+  const tool = findTool("detect_background");
+  assert.equal(tool.label({ remove: true }), "Remove background");
+  const r = await runTool(tool, { path }, fake);
+  assert.match(r.content[0].text, /^60x40 image: the background is key color #ff00ff, 86% of the pixels\.$/);
+  assert.ok(!fake.calls.some((c) => c.method === "put_image"), "a report changes nothing");
+
+  const w = await runTool(tool, { path, remove: true }, fake);
+  const out = path.replace(/\.png$/, "-nobg.png");
+  assert.match(w.content[0].text, new RegExp(`Wrote it with a transparent background to ${out}`));
+  const png = PNG.sync.read(readFileSync(out));
+  assert.equal(opaqueCount(png.data), 140 + 80 + 120);
+
+  // A layer showing a checkerboard screenshot.
+  const shot = checkerboard(40, 30);
+  rect(shot, 10, 8, 12, 12, RED);
+  const doc = fakeDocument({ width: 40, height: 30, layers: [{ name: "Shot", frames: [shot.data] }] });
+  const d = await runTool(tool, { source: "layer", layer: "Shot", remove: true }, doc);
+  assert.match(d.content[0].text, /checkerboard .* \(a screenshot of a transparent image\).* on 'AI: no background' \(the original is hidden\)/);
+  assert.deepEqual(doc.layerNames(), ["Shot", "AI: no background"]);
+  assert.equal(doc.active.sprite.layers[0].visible, false);
+  assert.equal(opaqueCount(doc.cel("AI: no background")), 144);
+});
+
+test("find_sprites: boxes in reading order, cut into bottom-aligned frames or onto layers", async () => {
+  const path = pngFile(looseSheet(), "loose.png");
+  const tool = findTool("find_sprites");
+  const fake = fakeDocument({ width: 60, height: 40, layers: [{ name: "Layer 1", frames: [new Uint8Array(60 * 40 * 4)] }] });
+  const list = await runTool(tool, { path }, fake);
+  assert.equal(list.content[0].text,
+    "3 sprites in 2 rows on a key color #ff00ff background (similar sizes: they fit as frames of one animation):\n" +
+    "row 1: 1: 2,2 10x14; 2: 30,6 8x10\nrow 2: 3: 5,24 12x10");
+  assert.equal(fake.calls.length, 0, "a path source with as 'list' needs no Aseprite");
+
+  // Layers: each sprite at its place on its own layer of the current sprite.
+  const l = await runTool(tool, { path, as: "layers" }, fake);
+  assert.match(l.content[0].text, /Cut onto 3 layers: AI: sprite 1, AI: sprite 2, AI: sprite 3\.$/);
+  assert.deepEqual(fake.layerNames(), ["Layer 1", "AI: sprite 1", "AI: sprite 2", "AI: sprite 3"]);
+  const s2 = fake.cel("AI: sprite 2");
+  assert.equal(opaqueCount(s2), 80);
+  assert.equal(s2[(6 * 60 + 30) * 4 + 3], 255, "sprite 2 keeps its place");
+  assert.deepEqual([...s2.subarray((6 * 60 + 30) * 4, (6 * 60 + 30) * 4 + 3)], BLUE);
+
+  // Frames: a new animation, one frame per sprite, bottom-aligned, rows as tags.
+  const f = await runTool(tool, { path, as: "frames", row_tags: ["idle", "walk"], merge_distance: 1 }, fake);
+  assert.match(f.content[0].text, /Opened "Sprites": 3 frames of 12x14, bottom-aligned, tags idle 1-2, walk 3-3\.$/);
+  const anim = fake.active.sprite;
+  assert.deepEqual([anim.width, anim.height, anim.durations.length], [12, 14, 3]);
+  assert.deepEqual(anim.tags.map((t) => t.name), ["idle", "walk"]);
+  assert.deepEqual(anim.palette.sort(), ["#29adff", "#ff004d"]);
+  const f2 = anim.layers[0].cels[1]; // the 8x10 sprite, centered on the bottom line
+  assert.equal(f2[(13 * 12 + 2) * 4 + 3], 255);
+  assert.equal(f2[(3 * 12 + 2) * 4 + 3], 0);
+  assert.equal(opaqueCount(f2), 80);
+
+  // merge_distance joins a nearby speck; min_pixels drops it.
+  const specked = looseSheet();
+  rect(specked, 14, 4, 1, 1, RED);
+  const p2 = pngFile(specked, "specked.png");
+  assert.match((await runTool(tool, { path: p2, merge_distance: 2 }, fake)).content[0].text, /1: 2,2 13x14/);
+  assert.match((await runTool(tool, { path: p2, merge_distance: 0, min_pixels: 2 }, fake)).content[0].text, /^3 sprites/);
+  assert.match((await runTool(tool, { path: p2, merge_distance: 0, min_pixels: 1 }, fake)).content[0].text, /^4 sprites/);
+});

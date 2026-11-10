@@ -10,15 +10,16 @@ import { encodeSnapshot } from "./png.js";
 import { failure, text, type Tool } from "./tool.js";
 
 
-const sourceSchema = z.object({
+/** One image to read: a PNG file (e.g. an attachment), the sprite, or a layer, in one frame. */
+export const sourceSchema = z.object({
   source: z.enum(["file", "sprite", "layer"]).optional().describe("Default 'file' when a path is given, else 'sprite'."),
   path: z.string().optional().describe("Image file (PNG), e.g. an attachment."),
   layer: z.string().optional().describe("Layer name for source 'layer'."),
   frame: z.number().int().min(1).optional().describe("Frame for sprite/layer. Default: active."),
 });
-type Source = z.infer<typeof sourceSchema>;
+export type Source = z.infer<typeof sourceSchema>;
 
-async function readPixels(src: Source, doc: Document): Promise<Rgba> {
+export async function readPixels(src: Source, doc: Document): Promise<Rgba> {
   if (src.path && src.source !== "sprite" && src.source !== "layer") {
     if (!/\.png$/i.test(src.path)) throw new Error("Only PNG files can be read; attach the image as PNG");
     const png = PNG.sync.read(readFileSync(src.path));

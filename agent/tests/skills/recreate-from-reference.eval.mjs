@@ -33,6 +33,8 @@ export default {
   },
   steps: [
     { tool: "style_summary", input: { path } },
+    { tool: "detect_background", input: { path } },
+    { tool: "find_sprites", input: { path } },
     { tool: "recreate_from_reference", input: { path } },
   ],
   check(fake, results, assert) {
@@ -40,7 +42,9 @@ export default {
     const s = fake.active.sprite;
     assert.deepEqual([s.width, s.height, s.durations.length], [14, 14, 3]);
     assert.equal(s.palette.length, 4);
-    assert.match(textOf(results[1]), /\(the reference was scaled 3x\), 4 colors as the palette, background removed/);
+    assert.match(textOf(results[1]), /key color #5a8cc8/);
+    assert.match(textOf(results[2]), /^3 sprites in 1 row .*similar sizes/, "the poses are found before recreating");
+    assert.match(textOf(results[3]), /\(the reference was scaled 3x\), 4 colors as the palette, background removed/);
     assert.equal(s.layers.at(-1).name, "Outline", "the outline layer is on top");
     assert.deepEqual([...colorsOf(s.layers.at(-1).cels[0])], ["#181425"]);
     const all = new Set();

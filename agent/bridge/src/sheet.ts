@@ -31,43 +31,140 @@ export interface Tag {
 // Background
 // ---------------------------------------------------------------------------
 
-/** The background: transparent, or the most common color on the border (a key color). */
-export function detectBackground(img: Rgba): { transparent: boolean; color?: [number, number, number] } {
+type RGB = [number, number, number];
+
+/** A checkerboard background: a screenshot of a transparent image in an editor. */
+export interface Checker {
+  /** The two square colors; colors[0] fills the squares where (x + offsetX) / cell + (y + offsetY) / cell is even. */
+  colors: [RGB, RGB];
+  /** Square size in px. */
+  cell: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export interface Background {
+  transparent: boolean;
+  /** The key color (a checkerboard's first color). */
+  color?: RGB;
+  /** Set when the background is a checkerboard rather than one color. */
+  checker?: Checker;
+}
+
+const rgbOf = (k: number): RGB => [(k >> 16) & 255, (k >> 8) & 255, k & 255];
+
+/** The checker color expected at (x, y). */
+export function checkerColorAt(c: Checker, x: number, y: number): RGB {
+  return (Math.floor((x + c.offsetX) / c.cell) + Math.floor((y + c.offsetY) / c.cell)) % 2 === 0 ? c.colors[0] : c.colors[1];
+}
+
+/**
+ * A checkerboard of colors a and b along the border: the square size is the
+ * most common run of one color between runs of the other (top row and left
+ * column), and the phase the one that matches most border pixels (at least 75%).
+ */
+function findChecker(img: Rgba, a: number, b: number, border: [number, number, number][]): Checker | undefined {
+  const key = (x: number, y: number) => {
+    const i = (y * img.width + x) * 4;
+    return img.data[i + 3] < 128 ? -1 : (img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2];
+  };
+  const runs = new Map<number, number>();
+  const scan = (n: number, at: (i: number) => number) => {
+    let prev = -2, len = 0, bounded = false;
+    for (let i = 0; i <= n; i++) {
+      const k = i < n ? at(i) : -2;
+      if (k === prev && k !== -2) {
+        len++;
+        continue;
+      }
+      // A run counts only between runs of the other checker color.
+      if (bounded && (prev === a || prev === b) && (k === a || k === b)) runs.set(len, (runs.get(len) ?? 0) + 1);
+      bounded = prev === a || prev === b;
+      prev = k;
+      len = 1;
+    }
+  };
+  scan(img.width, (x) => key(x, 0));
+  scan(img.height, (y) => key(0, y));
+  if (!runs.size) return undefined;
+  const cell = [...runs].sort((p, q) => q[1] - p[1] || p[0] - q[0])[0][0];
+  if (cell < 2) return undefined;
+  let best: Checker | undefined, bestN = -1;
+  for (let oy = 0; oy < cell; oy++) {
+    for (let ox = 0; ox < cell; ox++) {
+      let even = 0, odd = 0;
+      for (const [x, y, k] of border) {
+        const isEven = (Math.floor((x + ox) / cell) + Math.floor((y + oy) / cell)) % 2 === 0;
+        if (k === (isEven ? a : b)) even++;
+        if (k === (isEven ? b : a)) odd++;
+      }
+      if (even > bestN) [bestN, best] = [even, { colors: [rgbOf(a), rgbOf(b)], cell, offsetX: ox, offsetY: oy }];
+      if (odd > bestN) [bestN, best] = [odd, { colors: [rgbOf(b), rgbOf(a)], cell, offsetX: ox, offsetY: oy }];
+    }
+  }
+  return bestN >= border.length * 0.75 ? best : undefined;
+}
+
+/**
+ * The background, from the border pixels: transparent; a checkerboard (two
+ * colors in alternating squares, e.g. a screenshot of a transparent image);
+ * or the most common border color (a key color).
+ */
+export function detectBackground(img: Rgba): Background {
   const { width: w, height: h, data } = img;
   const counts = new Map<number, number>();
-  let transparent = 0, border = 0;
+  const border: [number, number, number][] = [];
+  let transparent = 0;
   const see = (x: number, y: number) => {
     const i = (y * w + x) * 4;
-    border++;
     if (data[i + 3] < 128) {
       transparent++;
+      border.push([x, y, -1]);
       return;
     }
     const key = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
     counts.set(key, (counts.get(key) ?? 0) + 1);
+    border.push([x, y, key]);
   };
   for (let x = 0; x < w; x++) {
     see(x, 0);
-    see(x, h - 1);
+    if (h > 1) see(x, h - 1);
   }
   for (let y = 1; y < h - 1; y++) {
     see(0, y);
-    see(w - 1, y);
+    if (w > 1) see(w - 1, y);
   }
-  if (transparent >= border / 2) return { transparent: true };
-  let best = 0, bestN = 0;
-  for (const [k, n] of counts) if (n > bestN) [best, bestN] = [k, n];
-  return { transparent: false, color: [(best >> 16) & 255, (best >> 8) & 255, best & 255] };
+  if (transparent >= border.length / 2) return { transparent: true };
+  const top = [...counts].sort((p, q) => q[1] - p[1]);
+  if (top.length >= 2 && top[0][1] + top[1][1] >= border.length * 0.8 && top[1][1] >= border.length * 0.2) {
+    const checker = findChecker(img, top[0][0], top[1][0], border);
+    if (checker) return { transparent: false, color: checker.colors[0], checker };
+  }
+  return { transparent: false, color: rgbOf(top[0]?.[0] ?? 0) };
 }
 
-/** A copy with the background made transparent (exact key color, within `tolerance` per channel). */
-export function removeBackground(img: Rgba, tolerance = 8): Rgba {
-  const bg = detectBackground(img);
+/** The background in words, e.g. "key color #ff00ff". */
+export function describeBackground(bg: Background): string {
+  const h = (c: RGB) => "#" + c.map((v) => v.toString(16).padStart(2, "0")).join("");
+  if (bg.transparent) return "transparent";
+  if (bg.checker) return `checkerboard ${h(bg.checker.colors[0])}/${h(bg.checker.colors[1])} in ${bg.checker.cell} px squares`;
+  return `key color ${h(bg.color!)}`;
+}
+
+/**
+ * A copy with the background made transparent: pixels within `tolerance`
+ * per channel of the key color, or of the checker color expected at their
+ * place. `bg` defaults to detectBackground(img).
+ */
+export function removeBackground(img: Rgba, tolerance = 8, bg: Background = detectBackground(img)): Rgba {
   if (bg.transparent || !bg.color) return img;
   const d = new Uint8Array(img.data);
-  for (let i = 0; i < d.length; i += 4) {
-    if (Math.abs(d[i] - bg.color[0]) <= tolerance && Math.abs(d[i + 1] - bg.color[1]) <= tolerance && Math.abs(d[i + 2] - bg.color[2]) <= tolerance) {
-      d[i + 3] = 0;
+  const near = (i: number, c: RGB) =>
+    Math.abs(d[i] - c[0]) <= tolerance && Math.abs(d[i + 1] - c[1]) <= tolerance && Math.abs(d[i + 2] - c[2]) <= tolerance;
+  for (let y = 0; y < img.height; y++) {
+    for (let x = 0; x < img.width; x++) {
+      const i = (y * img.width + x) * 4;
+      if (near(i, bg.checker ? checkerColorAt(bg.checker, x, y) : bg.color)) d[i + 3] = 0;
     }
   }
   return { ...img, data: d };
@@ -240,6 +337,17 @@ export function findSprites(img: Rgba, mergeDistance = 2, minPixels = 4): Frame[
     else rows.push([b]);
   }
   return rows.flatMap((r, ri) => r.sort((a, b) => a.x - b.x).map(({ x, y, w, h }) => ({ rect: { x, y, w, h }, row: ri })));
+}
+
+/**
+ * Whether sprites look like poses of one character: several, none smaller
+ * than 40% or larger than 250% of the median area.
+ */
+export function similarSized(sprites: Frame[]): boolean {
+  if (sprites.length < 2) return false;
+  const area = (s: Frame) => s.rect.w * s.rect.h;
+  const median = sprites.map(area).sort((a, b) => a - b)[Math.floor(sprites.length / 2)];
+  return sprites.every((s) => area(s) >= median * 0.4 && area(s) <= median * 2.5);
 }
 
 // ---------------------------------------------------------------------------
