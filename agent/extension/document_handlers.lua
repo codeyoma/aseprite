@@ -1639,6 +1639,8 @@ handlers.put_image = function(params)
         target = variations.aiLayer(params.new_layer, params.prompt, { above = source })
       end
       if params.hide_source and source then source.isVisible = false end
+      -- hide: the new layer itself stays hidden (e.g. a normal map under the colors).
+      if params.hide then target.isVisible = false end
     else
       target = layerById(params.layer, sprite) or app.layer
       if not target or target.isGroup then error("No image layer to write to") end
