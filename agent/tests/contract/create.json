@@ -55,7 +55,10 @@
       "steps": [
         { "request": "create_animation", "params": { "width": 1, "height": 1, "frames": [] }, "error": "No frames" },
         { "request": "create_animation", "params": { "width": 2, "height": 1, "frames": [{ "rgba": { "rows": ["rr"] } }, { "rgba": { "rows": ["r"] } }] },
-          "error": "Frame 2: expected 8 bytes, got 4" }
+          "error": "Frame 2: expected 8 bytes, got 4" },
+        { "request": "create_animation", "params": { "width": 1, "height": 1, "frames": [{ "rgba": { "rows": ["r"] } }], "palette": ["nope"] },
+          "error": "Invalid color: nope" },
+        { "state": { "width": 1, "height": 1, "layers": [{ "name": "Old" }] } }
       ]
     },
     {
@@ -71,8 +74,9 @@
         { "pixels": {}, "rows": ["rrgg..", "rrgg..", "ggrrrr", "ggrrrr"] },
         { "request": "create_tilemap", "params": { "tile": 2, "width": 4, "height": 2, "rgba": { "rows": ["rrgg"] }, "columns": 2, "count": 2, "map": [[0]] },
           "error": "Expected 32 bytes, got 16" },
-        { "pixels": { "layer": "Ground" }, "rows": ["......", "......", "......", "......"],
-          "fakeUnsupported": "a snapshot of a tilemap layer: the extension's pixels.lua toRgbImage does not convert tilemap images, so Aseprite returns it blank" }
+        { "pixels": { "layer": "Ground" }, "rows": ["rrgg..", "rrgg..", "ggrrrr", "ggrrrr"] },
+        { "request": "collect_colors", "params": { "layer": "Ground" },
+          "result": { "pixels": 20, "colors": { "$set": [{ "hex": "#ff0000", "count": 12 }, { "hex": "#00ff00", "count": 8 }] } } }
       ]
     }
   ]

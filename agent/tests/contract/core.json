@@ -76,9 +76,9 @@
         { "pixels": { "layer": "Art", "frame": 2 }, "rows": ["...r", "...r"] },
         { "request": "mirror_frames", "params": { "frames": [2] }, "result": { "from": 3, "to": 3, "frames": 1 } },
         { "pixels": { "layer": "Art", "frame": 3 }, "rows": ["r...", "r..."] },
-        { "request": "put_image", "params": { "width": 1, "height": 1, "rgba": { "rows": ["b"] } } },
+        { "request": "put_image", "params": { "frame": 3, "width": 1, "height": 1, "rgba": { "rows": ["b"] } } },
         { "pixels": { "layer": "Art", "frame": 3 }, "rows": ["b...", "...."] },
-        { "state": { "durations": [100, 100, 100], "activeFrame": 3, "layers": [{ "name": "Art", "cels": [1, 2, 3] }] } }
+        { "state": { "durations": [100, 100, 100], "activeFrame": 1, "layers": [{ "name": "Art", "cels": [1, 2, 3] }] } }
       ]
     },
     {

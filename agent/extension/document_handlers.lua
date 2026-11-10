@@ -186,11 +186,13 @@ function M.new(opts)
     return wireParams.resolveFrames(frames, #sprite.frames, app.frame and app.frame.frameNumber or 1, "all")
   end
 
-  -- Visible image layers (through groups), skipping reference layers.
+  -- Visible image layers (through visible groups, as the snapshot renders
+  -- them), skipping reference layers.
   local function imageLayers(layers, out)
     out = out or {}
     for _, l in ipairs(layers) do
-      if l.isGroup then imageLayers(l.layers, out)
+      if l.isGroup then
+        if l.isVisible then imageLayers(l.layers, out) end
       elseif l.isImage and l.isVisible and not l.isReference then out[#out + 1] = l end
     end
     return out
@@ -218,7 +220,7 @@ function M.new(opts)
       if layer.isGroup then error("Snapshot of a group layer is not supported; snapshot the sprite instead") end
       local cel = layer:cel(frameNumber)
       if cel then
-        local rgb = px.toRgbImage(cel.image, sprite.palettes[1])
+        local rgb = px.toRgbImage(cel.image, sprite.palettes[1], layer.isTilemap and layer.tileset or nil)
         img:drawImage(rgb, cel.position)
       end
     else

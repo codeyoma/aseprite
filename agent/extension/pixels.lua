@@ -30,8 +30,22 @@ function M.color(hex)
   return Color(M.parseHex(hex))
 end
 
-function M.toRgbImage(src, palette)
+-- An RGB image of any image. A tilemap image (tile indexes) is drawn through
+-- its layer's tileset, so the result is the tiles' size, not the map's.
+function M.toRgbImage(src, palette, tileset)
   if src.colorMode == ColorMode.RGB then return src end
+  if ColorMode.TILEMAP and src.colorMode == ColorMode.TILEMAP then
+    if not tileset then error("A tilemap image needs its tileset") end
+    local size = tileset.grid.tileSize
+    local dst = Image(src.width * size.width, src.height * size.height, ColorMode.RGB)
+    for it in src:pixels() do
+      -- Tile index 0 is the empty tile.
+      local i = app.pixelColor.tileI(it())
+      local tile = i > 0 and tileset:getTile(i)
+      if tile then dst:drawImage(M.toRgbImage(tile, palette), Point(it.x * size.width, it.y * size.height)) end
+    end
+    return dst
+  end
   local dst = Image(src.width, src.height, ColorMode.RGB)
   if src.colorMode == ColorMode.INDEXED then
     local mask = src.spec.transparentColor
@@ -55,7 +69,8 @@ end
 
 -- Calls fn(x, y, r, g, b, a) for every pixel of a cel, in sprite coordinates.
 function M.eachPixel(cel, palette, fn)
-  local img = M.toRgbImage(cel.image, palette)
+  local l = cel.layer
+  local img = M.toRgbImage(cel.image, palette, l.isTilemap and l.tileset or nil)
   local pc = app.pixelColor
   local ox, oy = cel.position.x, cel.position.y
   for it in img:pixels() do

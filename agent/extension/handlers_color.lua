@@ -38,6 +38,8 @@ return function(handlers, D)
           if cel and not seenImages[cel.image.id] then
             seenImages[cel.image.id] = true
             local img, pos = cel.image, cel.position
+            -- A tilemap's cel holds tile indexes: count the tiles' pixels.
+            if l.isTilemap then img = px.toRgbImage(img, palette, l.tileset) end
             local mode = img.colorMode
             local mask = img.spec.transparentColor
             for it in img:pixels() do
@@ -89,14 +91,18 @@ return function(handlers, D)
     local colors = params.colors or {}
     if #colors == 0 then error("No colors") end
     app.transaction(params.label or "Set palette", function()
-      -- append: add the colors after the current palette's (skipping ones it has).
+      -- append: add the colors after the current palette's (skipping ones it
+      -- has, compared as colors: "#0000FF" is "#0000ff").
       local start, list = 0, colors
       local p
       if params.append then
         local cur = sprite.palettes[1]
         local have, add = {}, {}
         for i = 0, #cur - 1 do local c = cur:getColor(i); have[px.hex(c.red, c.green, c.blue, c.alpha)] = true end
-        for _, h in ipairs(colors) do if not have[h] then add[#add + 1] = h end end
+        for _, h in ipairs(colors) do
+          local key = px.hex(px.parseHex(h))
+          if not have[key] then have[key] = true; add[#add + 1] = h end
+        end
         p = Palette(cur)
         start = #cur
         p:resize(#cur + #add)
@@ -156,13 +162,29 @@ return function(handlers, D)
     return { changed = changed, mode = sprite.colorMode == ColorMode.INDEXED and "palette entries" or "pixels" }
   end
 
-  -- A swatch strip of colors on a new layer "AI: <name>" (one undo step).
+  -- The image layer named name, anywhere in the layer tree.
+  local function findImageLayer(layers, name)
+    for _, l in ipairs(layers) do
+      if l.isGroup then
+        local f = findImageLayer(l.layers, name)
+        if f then return f end
+      elseif l.name == name then return l end
+    end
+  end
+
+  -- A swatch strip of colors on the layer "AI: <name>" (one undo step): a new
+  -- layer, or the existing one with that name, whose cel in the active frame
+  -- is replaced. Either way it becomes the active layer.
   handlers.draw_swatches = function(params)
     local sprite = app.sprite
     local colors = params.colors or {}
     local size = params.size or math.max(1, math.min(8, sprite.width // math.max(1, #colors)))
+    local layer
     app.transaction("Palette swatches", function()
-      local layer = variations.aiLayer(params.name or "palette", params.prompt)
+      local name = params.name or "palette"
+      layer = findImageLayer(sprite.layers, variations.PREFIX .. name)
+      if layer then app.layer = layer
+      else layer = variations.aiLayer(name, params.prompt) end
       local perRow = math.max(1, sprite.width // size)
       local img = Image(sprite.width, sprite.height, ColorMode.RGB)
       for i, h in ipairs(colors) do
@@ -170,10 +192,11 @@ return function(handlers, D)
         local r, g, b, a = px.parseHex(h)
         for dy = 0, size - 1 do for dx = 0, size - 1 do img:drawPixel(x + dx, y + dy, app.pixelColor.rgba(r, g, b, a)) end end
       end
+      -- newCel replaces the layer's cel in that frame, if it has one.
       sprite:newCel(layer, app.frame or 1, img, Point(0, 0))
     end)
     app.refresh()
-    return { layer = app.layer and ("L" .. app.layer.id) or nil }
+    return { layer = "L" .. layer.id }
   end
 
   -- Saves colors as a palette file in any format Aseprite writes (#62): .act,

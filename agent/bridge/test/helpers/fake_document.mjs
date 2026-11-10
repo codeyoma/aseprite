@@ -138,10 +138,10 @@ export function fakeDocument({
     active.layer = l;
     return l;
   };
-  // Visible image layers through groups (a hidden group's visible children count), as document_handlers.lua imageLayers.
+  // Visible image layers through visible groups (as the snapshot renders them), as document_handlers.lua imageLayers.
   const imageLayers = (list, out = []) => {
     for (const l of list) {
-      if (l.group) imageLayers(l.layers, out);
+      if (l.group) { if (l.visible) imageLayers(l.layers, out); }
       else if (l.visible) out.push(l);
     }
     return out;
@@ -189,13 +189,6 @@ export function fakeDocument({
     const sel = active.sprite.selection;
     return x >= sel.x && y >= sel.y && x < sel.x + sel.width && y < sel.y + sel.height;
   };
-  // sprite:newEmptyFrame at the end: tags that end on the last frame grow by one (doc_api.cpp adjustTags).
-  const appendFrame = (s, duration) => {
-    const n = s.durations.length;
-    for (const t of s.tags) if (t.to === n) t.to++;
-    s.durations.push(duration);
-    return n + 1;
-  };
   const checkBytes = (bytes, w, h, prefix = "") => {
     if (bytes.length !== w * h * 4) throw new Error(`${prefix}${prefix ? "e" : "E"}xpected ${w * h * 4} bytes, got ${bytes.length}`);
   };
@@ -238,7 +231,6 @@ export function fakeDocument({
       if (p.layer !== undefined) {
         const l = byRef(p.layer);
         if (l.group) throw new Error("Snapshot of a group layer is not supported; snapshot the sprite instead");
-        if (l.tilemap) throw unsupported("a snapshot of a tilemap layer (Aseprite returns it blank)");
         data = layerImage(s, l, f);
       } else data = composite(s, f);
       return [{ width: s.width, height: s.height, frame: f, layer: p.layer }, data];
@@ -353,10 +345,9 @@ export function fakeDocument({
       if (!colors.length) throw new Error("No colors");
       if (p.append) {
         if (s.defaultPalette) throw unsupported("appending to the default palette of a new sprite");
-        // The extension compares the raw strings with its own lowercase hex.
+        // Compared as colors ('#0000FF' is '#0000ff'), each added once.
         const have = new Set(s.palette);
-        const add = colors.filter((c) => !have.has(c));
-        s.palette = [...s.palette, ...add.map(norm)];
+        for (const c of colors.map(norm)) if (!have.has(c)) { have.add(c); s.palette.push(c); }
       } else s.palette = colors.map(norm);
       s.defaultPalette = false;
       return { size: colors.length };
@@ -387,13 +378,16 @@ export function fakeDocument({
       }
       return { changed, mode: "pixels" };
     },
-    // A swatch strip on a new 'AI: <name>' layer above the active one, in the active frame.
+    // A swatch strip on the 'AI: <name>' layer (reused when one exists, else new above the active one), in the active frame; it becomes active.
     draw_swatches: (p) => {
       const s = active.sprite, colors = p.colors;
       if (s.colorMode !== "rgb") throw unsupported(`draw_swatches in a ${s.colorMode} sprite`);
       const size = p.size ?? Math.max(1, Math.min(8, Math.floor(s.width / Math.max(1, colors.length))));
       const parsed = colors.map(parse);
-      const l = aiLayer(p.name ?? "palette");
+      const name = p.name ?? "palette";
+      let l = walk(s.layers).find((x) => !x.group && x.name === `AI: ${name}`);
+      if (l) active.layer = l;
+      else l = aiLayer(name);
       const perRow = Math.max(1, Math.floor(s.width / size));
       const cel = blank();
       parsed.forEach((c, i) => {
@@ -404,6 +398,7 @@ export function fakeDocument({
       return { layer: `L${l.id}` };
     },
     // Copies frames to new ones at the end, flipped (keep_layers unflipped), as a new tag.
+    // Existing tags keep their frames and the active frame stays.
     mirror_frames: (p) => {
       const s = active.sprite;
       let fs;
@@ -417,7 +412,7 @@ export function fakeDocument({
       const px = s.colorMode === "indexed" ? 1 : 4;
       let first;
       fs.forEach((f, i) => {
-        const nf = appendFrame(s, s.durations[f - 1]);
+        const nf = s.durations.push(s.durations[f - 1]);
         if (i === 0) first = nf;
         for (const l of images) {
           const c = l.cels[f - 1];
@@ -432,8 +427,6 @@ export function fakeDocument({
         }
       });
       if (p.new_tag) s.tags.push({ name: p.new_tag, from: first, to: first + fs.length - 1, direction: "forward" });
-      // sprite:newEmptyFrame makes each new frame the active one.
-      active.frame = s.durations.length;
       return { from: first, to: first + fs.length - 1, frames: fs.length };
     },
     // One layer per color group, across frames; the rest stays on the source (removed when empty).

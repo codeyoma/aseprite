@@ -103,7 +103,7 @@ function M.render(layer, toRgb)
   local frame = (app.frame and app.frame.frameNumber) or 1
   local img = Image(s.width, s.height, ColorMode.RGB)
   local cel = layer:cel(frame)
-  if cel then img:drawImage(toRgb(cel.image, s.palettes[1]), cel.position) end
+  if cel then img:drawImage(toRgb(cel.image, s.palettes[1], layer.isTilemap and layer.tileset or nil), cel.position) end
   return img
 end
 

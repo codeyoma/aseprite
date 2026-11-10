@@ -34,13 +34,19 @@ return function(handlers, D)
     local w, h = params.width, params.height
     local frames = params.frames or {}
     if #frames == 0 then error("No frames") end
+    -- Everything is checked before the sprite is made, so an error leaves no sprite open.
+    local images = {}
+    for i, f in ipairs(frames) do
+      local bytes = px.base64Decode(f.rgba or "")
+      if #bytes ~= w * h * 4 then error(string.format("Frame %d: expected %d bytes, got %d", i, w * h * 4, #bytes)) end
+      images[i] = bytes
+    end
+    for _, hx in ipairs(params.palette or {}) do px.parseHex(hx) end
     local sprite = Sprite(w, h, ColorMode.RGB)
     for i, f in ipairs(frames) do
       if i > 1 then sprite:newEmptyFrame() end
-      local bytes = px.base64Decode(f.rgba or "")
-      if #bytes ~= w * h * 4 then error(string.format("Frame %d: expected %d bytes, got %d", i, w * h * 4, #bytes)) end
       local img = Image(w, h, ColorMode.RGB)
-      img.bytes = bytes
+      img.bytes = images[i]
       sprite:newCel(sprite.layers[1], i, img, Point(0, 0))
       sprite.frames[i].duration = (f.duration or 100) / 1000
     end
@@ -172,7 +178,8 @@ return function(handlers, D)
   -- Copies frames (a tag, or a list) to new frames at the end, flipped
   -- horizontally, as a new tag (#43): left from right, NW from NE. Layers in
   -- keep_layers are copied unflipped (a sword hand that must stay on its
-  -- side is redrawn by hand instead). One undo step.
+  -- side is redrawn by hand instead). Existing tags keep their frames and
+  -- the active frame stays. One undo step.
   handlers.mirror_frames = function(params)
     local sprite = app.sprite
     local frames = {}
@@ -192,7 +199,11 @@ return function(handlers, D)
       if l then keep[l.id] = true end   -- by id: layer objects are new wrappers on each access
     end
     local first
+    local activeFrame = app.frame and app.frame.frameNumber
     app.transaction("Mirror frames", function()
+      -- Aseprite grows a tag that ends on the last frame over new frames; put them back.
+      local ranges = {}
+      for i, t in ipairs(sprite.tags) do ranges[i] = t.toFrame.frameNumber end
       for i, f in ipairs(frames) do
         local nf = sprite:newEmptyFrame(#sprite.frames + 1)
         nf.duration = sprite.frames[f].duration
@@ -216,11 +227,15 @@ return function(handlers, D)
         end
         copy(sprite.layers)
       end
+      for i, t in ipairs(sprite.tags) do
+        if t.toFrame.frameNumber ~= ranges[i] then t.toFrame = ranges[i] end
+      end
       if params.new_tag then
         local t = sprite:newTag(first, first + #frames - 1)
         t.name = params.new_tag
       end
     end)
+    if activeFrame then app.frame = sprite.frames[activeFrame] end
     app.refresh()
     return { from = first, to = first + #frames - 1, frames = #frames }
   end
