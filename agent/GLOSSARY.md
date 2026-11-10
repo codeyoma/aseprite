@@ -25,9 +25,9 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Tool**: an MCP tool the bridge offers agents (`get_state`, `execute_lua`, `snapshot`, ...). A tool is either an edit (changes the document) or a read.
 
-**Tool table**: the single definition of every tool (`agent/bridge/src/tools.ts`): name, input, edit/read kind, step label and behaviour. MCP registration and chat labels come from it. Skill tools live in their own `*_tools.ts` modules, listed once in the **tool module registry** (`tool_modules.ts`); the `Tool` interface and result helpers are in `tool.ts`.
+**Tool table**: the single definition of every tool (`agent/bridge/src/tools.ts`): name, input, edit/read kind, step label and behaviour. MCP registration and chat labels come from it. Every tool lives in a `*_tools.ts` module (core, command, timeline and guide tools as well as the skill tools), listed once in the **tool module registry** (`tool_modules.ts`); the `Tool` interface, result helpers and the **tool context** are in `tool.ts`. A tool runs with `run(input, ctx)`: the context is the Aseprite requester plus the Saved Commands store and, for the main agent, the sub-agent runner, built once per MCP server (no globals). Inputs several tools share (frame specs, an image source, a palette by name) are defined once in `tool_inputs.ts`.
 
-**Document module**: how skill tools see and change the active sprite (`agent/bridge/src/document.ts`): `info()` (size, frames and durations, layers with ids, tags, palette, selection, from `get_state`), frame specs, layer pixels and putting images or new sprites, over the existing wire requests. Tools never write Lua for this; tests use an in-memory fake document.
+**Document module**: how skill tools see and change the active sprite (`agent/bridge/src/document.ts`): `info()` (size, frames and durations, layers with ids, tags, palette, selection, from `get_state`), frame specs, layer pixels, putting images or new sprites, and the color and sprite writes (colors, palette, color maps, mirrored frames, layer splits, slices, swatches), over the existing wire requests. Every write refreshes `info()`. Tools never write Lua for this; tests use an in-memory fake document (`fake_document.mjs`) that does what the Lua handlers do.
 
 **State block**: the `<aseprite-state>` text sent with every chat message: sprite, palette, layers top to bottom with ids, tags, active layer/frame/cel and selections (`stateBlock()` in `document_view.lua`).
 
@@ -38,6 +38,8 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Mention**: a reference to a document object typed in the chat with `@` (picker) and shown as a `@[Body]` token; sent to the agent as `Body (aseprite://layer/L12)`.
 
 **aseprite:// URI**: the address of a document object, shared by mentions and the agent's citations: `aseprite://layer/L12`, `frame/3`, `tag/<name>`, `cel/L12:3`, `palette/5`, `slice/<name>`, `selection`. Links in replies select the object when clicked (`Uri` in `document_view.lua`).
+
+**Turn controller**: the life of one reply in the Chat Panel (`turns.lua`): it starts the turn in the Conversation and Turn History, claims step captures for edit steps, finishes or fails it, and answers revert, restore and what changed since the last reply. Questions the panel asks the user (permissions, Developer apply and discard, revert anyway) go through the **Prompter** (`prompter.lua`): `app.alert` in the app, scripted answers in tests.
 
 **Turn History**: where each agent reply sits in the sprite's undo history (`turn_history.lua`). It reverts and restores a whole reply and summarises what changed since the last reply (`<changes-since-your-last-reply>`, sent before the state block).
 
