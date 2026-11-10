@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { findFx } from "../dist/fx/library.js";
-import { fxCanvas } from "../dist/fx_tools.js";
+import { fxAnchorPoint, fxCanvas } from "../dist/fx_tools.js";
 import { fxImpact, hitStopPlan, layerAnchor, overlayPlan, splitMs } from "../dist/fx_timing_tools.js";
 import { findTool, runTool } from "../dist/tools.js";
 import { fakeDocument, rect } from "./helpers/fake_document.mjs";
@@ -112,6 +112,10 @@ test("fx_overlay resample on a tag: no frames added when it fits, the impact on 
   assert.ok(lit(fake.image("AI: fx hit-spark", 2)) > 0, "the spark is on the hit frame");
   assert.equal(fake.image("AI: fx hit-spark", 1), undefined, "and not before it (its impact comes first)");
   assert.match(textOf(r), /One undo step/);
+  // The record export reads (#71): the origin where the centre went to 40, 36, in the same write.
+  const e = findFx("hit-spark"), c = fxAnchorPoint(e, "center", {}, e.seed, fxCanvas(e, false, 0));
+  assert.deepEqual(layerOf(st, "AI: fx hit-spark").fx,
+    { id: "hit-spark", x: 40 - c.x + e.origin.x, y: 36 - c.y + e.origin.y, fps: 30, loop: false, windupMs: fxImpact(e, {}, e.seed, fxCanvas(e, false, 0)).ms });
 });
 
 test("fx_overlay retime: frames inserted, the character's cels linked, the tag grows, the timing kept", async () => {

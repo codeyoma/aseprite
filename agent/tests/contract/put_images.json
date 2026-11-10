@@ -154,6 +154,66 @@
         { "request": "put_images", "params": { "hit": { "frame": 2, "freeze_ms": -1 }, "images": [] }, "error": "hit: freeze_ms must be whole ms, 0 or more" },
         { "state": { "durations": [60, 50, 100, 10, 30, 40, 100], "hits": [{ "frame": 5 }] } }
       ]
+    },
+    {
+      "name": "put_images records an effect on a layer (fx), also one it made, and the sprite snapshot adds its Addition glow",
+      "notes": "One undo step in Aseprite: the record is a layer property set in the same transaction. fx.layer names a layer made in the request ('AI: <new_layer>') or any layer by id or name. Bad fx params fail before anything changes.",
+      "fixture": {
+        "width": 3, "height": 1,
+        "layers": [{ "name": "Body", "cels": { "1": ["rr."] } }]
+      },
+      "steps": [
+        { "request": "put_images", "params": {
+          "images": [
+            { "new_layer": "fx spark", "frame": 1, "width": 3, "height": 1, "rgba": { "rows": ["..y"] } },
+            { "new_layer": "fx spark glow", "above": "AI: fx spark", "frame": 1, "width": 3, "height": 1, "rgba": { "rows": [".b."] }, "blend_mode": "addition" }
+          ],
+          "fx": { "layer": "AI: fx spark", "id": "spark", "x": 2, "y": 0, "fps": 30, "loop": false, "windup_ms": 66 }
+        }, "result": { "layers": [{ "name": "AI: fx spark" }, { "name": "AI: fx spark glow" }] } },
+        { "state": { "layers": [
+          { "name": "AI: fx spark glow", "blendMode": "addition", "fx": { "$absent": true } },
+          { "name": "AI: fx spark", "fx": { "id": "spark", "x": 2, "y": 0, "fps": 30, "loop": false, "windupMs": 66 } },
+          { "name": "Body", "fx": { "$absent": true } }
+        ] } },
+        { "pixels": {}, "rows": ["rmy"] },
+        { "request": "put_images", "params": { "images": [], "fx": { "layer": { "$id": "Body" }, "id": "aura", "x": 1, "y": 1, "fps": 12.5, "loop": true, "windup_ms": 0 } },
+          "result": { "layers": [] } },
+        { "state": { "layers": [
+          { "name": "AI: fx spark glow" },
+          { "name": "AI: fx spark", "fx": { "id": "spark" } },
+          { "name": "Body", "fx": { "id": "aura", "x": 1, "y": 1, "fps": 12.5, "loop": true, "windupMs": 0 } }
+        ] } },
+        { "request": "put_images", "params": { "images": [], "fx": { "layer": "Body", "id": "a", "x": 0, "y": 0, "fps": 30, "windup_ms": 0 } },
+          "error": "fx: loop must be true or false" },
+        { "request": "put_images", "params": { "images": [], "fx": { "id": "a", "x": 0, "y": 0, "fps": 30, "loop": true, "windup_ms": 0 } },
+          "error": "fx: layer is required" },
+        { "request": "put_images", "params": { "images": [], "fx": { "layer": "Body", "id": "a", "x": "1", "y": 0, "fps": 30, "loop": true, "windup_ms": 0 } },
+          "error": "fx: x and y are whole pixels" },
+        { "request": "put_images", "params": { "images": [], "fx": { "layer": "Body", "id": "a", "x": 0, "y": 0, "fps": 30, "loop": true, "windup_ms": 0, "z": 1 } },
+          "error": "fx: unknown param 'z'" },
+        { "state": { "layers": [{ "name": "AI: fx spark glow" }, { "name": "AI: fx spark", "fx": { "id": "spark" } }, { "name": "Body", "fx": { "id": "aura" } }] } }
+      ]
+    },
+    {
+      "name": "the sprite snapshot blends an Addition layer at partial opacity as drawSprite does; create_animation records an effect",
+      "legend": { "p": "#ff0080", "q": "#0000ff80" },
+      "fixture": {
+        "width": 2, "height": 1,
+        "layers": [{ "name": "Body", "cels": { "1": ["r."] } }]
+      },
+      "steps": [
+        { "request": "put_image", "params": { "new_layer": "glow", "width": 2, "height": 1, "rgba": { "rows": ["bb"] }, "blend_mode": "addition", "opacity": 128 },
+          "result": { "name": "AI: glow" } },
+        { "pixels": {}, "rows": ["pq"] },
+        { "request": "create_animation", "params": {
+          "width": 1, "height": 1, "frames": [{ "rgba": { "rows": ["y"] }, "duration": 33 }],
+          "fx": { "id": "torch", "x": 0, "y": 1, "fps": 30, "loop": true, "windup_ms": 0 }
+        }, "result": { "frames": 1 } },
+        { "state": { "layers": [{ "name": "Layer 1", "fx": { "id": "torch", "x": 0, "y": 1, "fps": 30, "loop": true, "windupMs": 0 } }] } },
+        { "request": "create_animation", "params": {
+          "width": 1, "height": 1, "frames": [{ "rgba": { "rows": ["y"] } }], "fx": { "layer": "x", "id": "torch", "x": 0, "y": 1, "fps": 30, "loop": true, "windup_ms": 0 }
+        }, "error": "fx: unknown param 'layer'" }
+      ]
     }
   ]
 }

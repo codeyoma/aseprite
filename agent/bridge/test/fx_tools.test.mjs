@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { PNG } from "pngjs";
 import { renderFx, visualCenter } from "../dist/fx/index.js";
 import { FX_CATEGORIES, FX_LIBRARY, findFx, searchFx } from "../dist/fx/library.js";
-import { fxAnchorPoint, fxCanvas, fxSchedule } from "../dist/fx_tools.js";
+import { fxAnchorPoint, fxCanvas, fxImpact, fxSchedule } from "../dist/fx_tools.js";
 import { findTool, runTool } from "../dist/tools.js";
 import { fakeDocument, rect } from "./helpers/fake_document.mjs";
 
@@ -115,6 +115,11 @@ test("add_fx: a hit spark on a 64x64 sprite, glow on an Addition layer, frames a
   assert.deepEqual(st.frames.map((f) => f.durationMs), [100, ...Array(13).fill(33)]);
   assert.equal((await layer(fake, "AI: fx hit-spark glow")).blendMode, "addition");
   assert.equal((await layer(fake, "AI: fx hit-spark")).blendMode, "normal");
+  // What export needs (#71): the origin in sprite pixels, its timing and windup, on the effect's layer, same write.
+  const hs = findFx("hit-spark");
+  assert.deepEqual((await layer(fake, "AI: fx hit-spark")).fx,
+    { id: "hit-spark", x: 36, y: 40, fps: 30, loop: false, windupMs: fxImpact(hs, {}, hs.seed, fxCanvas(hs, false, 0)).ms });
+  assert.equal((await layer(fake, "AI: fx hit-spark glow")).fx, undefined);
   // The hero stays in the new frames; the spark is drawn and fades out.
   assert.ok(fake.images("Hero").every((im) => im && lit(im) > 0));
   assert.ok(lit(fake.image("AI: fx hit-spark", 1)) > 0);
@@ -285,6 +290,9 @@ test("new_fx_sprite: the effect as its own tagged sprite at 1000/fps ms a frame"
   assert.equal(st.frames.length, 11);
   assert.ok(st.frames.every((f) => f.durationMs === 50));
   assert.deepEqual(st.tags.map((t) => [t.name, t.from, t.to]), [["hit-spark", 1, 11]]);
+  const e = findFx("hit-spark");
+  assert.deepEqual(st.layers[0].fx, { id: "hit-spark", x: e.origin.x, y: e.origin.y, fps: 20, loop: false, windupMs: fxImpact(e, {}, e.seed, fxCanvas(e, false, 0)).ms },
+    "the effect's origin, timing and windup recorded on its layer (#71)");
   const frames = fake.images("Layer 1");
   assert.ok(lit({ data: frames[0] }) > 0);
   assert.equal(lit({ data: frames.at(-1) }), 0, "a one-shot ends on an empty frame");

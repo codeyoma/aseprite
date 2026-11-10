@@ -227,7 +227,7 @@ local function normalize(st)
       if l.group then item.layers = layers(l.layers)
       else
         item.cels = l.celFrames or {}; item.links = l.celLinks or {}; item.tilemap = l.tilemap and true or false
-        item.opacity = l.opacity; item.blendMode = l.blendMode
+        item.opacity = l.opacity; item.blendMode = l.blendMode; item.fx = l.fx
       end
       out[i] = item
     end

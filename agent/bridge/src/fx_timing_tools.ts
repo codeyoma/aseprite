@@ -9,7 +9,7 @@ import { documentOf, type Document, type FrameInsert, type PutImagesItem, type S
 import { renderFx } from "./fx/index.js";
 import type { FxAnchor, FxEntry } from "./fx/library.js";
 import {
-  anchorInput, effectOptions, freeLayerName, fxAnchorPoint, fxCanvas, fxPalette, hexList, isFailure, lookup, optionsInput, placed,
+  anchorInput, effectOptions, freeLayerName, fxAnchorPoint, fxCanvas, fxImpact, fxPalette, hexList, isFailure, lookup, optionsInput, placed,
 } from "./fx_tools.js";
 import { bounds, type Rgba } from "./image.js";
 import type { RGBA } from "./color.js";
@@ -116,29 +116,8 @@ export function overlayPlan(o: OverlayPlanInput): OverlayPlan {
   };
 }
 
-/** pixelfx act data: the effect's hits with freeze, shake and amp (seconds in the source). */
-interface ActHit { t: number; stop?: number; shake?: number; amp?: number }
-
-/**
- * The effect's impact: its first act hit when it has act data (melee effects), else the start of its busiest
- * frame (the largest alpha sum at its own fps), as for its visual centre. act is what pixelfx's act data
- * suggests for hit_stop (freeze and shake in ms, amp in px).
- */
-export function fxImpact(e: FxEntry, opts: Record<string, unknown>, seed: number,
-  canvas: { width: number; height: number; x: number; y: number }): { ms: number; from: "act" | "busiest frame"; act?: { freezeMs: number; shakeMs: number; amp: number } } {
-  const hit = ((e.module as unknown as { act?: { hits?: ActHit[] } }).act?.hits ?? [])[0];
-  if (hit) {
-    return { ms: Math.round(hit.t * 1000), from: "act", act: { freezeMs: Math.round((hit.stop ?? 0) * 1000), shakeMs: Math.round((hit.shake ?? 0) * 1000), amp: hit.amp ?? 0 } };
-  }
-  const r = renderFx(e.module, opts, { fps: e.fps, seed, canvas });
-  let best = 0, bestSum = -1;
-  r.frames.forEach((f, i) => {
-    let s = 0;
-    for (let j = 3; j < f.data.length; j += 4) s += f.data[j];
-    if (s > bestSum) { bestSum = s; best = i; }
-  });
-  return { ms: Math.round((best * 1000) / e.fps), from: "busiest frame" };
-}
+// fxImpact moved to fx_tools.ts (#71: add_fx and new_fx_sprite record the windup); re-exported for callers here.
+export { fxImpact };
 
 /**
  * The point of a layer the effect goes at: the centre of its opaque bounds (alpha 128 and up) for anchor
@@ -318,6 +297,10 @@ export const FX_TIMING_TOOLS: Tool[] = [
       const { append, note: paletteNote } = await fxPalette(doc, info, colorItems, input.palette);
       const res = await doc.putImages([...colorItems, ...glowItems], {
         insert: plan.inserts, durations: plan.durations, label: `Effect ${e.id} on the animation`, prompt: `fx_overlay ${e.id}`, palette: append,
+        fx: {
+          layer: colorItems.length ? `AI: ${main}` : `AI: ${main} glow`, id: e.id, x: ax - at.x + canvas.x, y: ay - at.y + canvas.y,
+          fps, loop: e.loop, windupMs: impact.ms,
+        },
       });
       const after = await doc.info();
       const first = plan.samples[0].frame, last = plan.samples.at(-1)!.frame;

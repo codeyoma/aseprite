@@ -9,6 +9,25 @@ return function(handlers, D)
   local px, layerById, variations = D.px, D.layerById, D.variations
   local framesFromParam = D.framesFromParam
 
+  -- An effect record for export (#71): params.fx = { layer?, id, x, y, fps, loop, windup_ms }, checked before
+  -- anything changes. Returns the layer property value (aseprite-agent "fx", get_state's layer fx).
+  local FX_KEY = "fx"
+  local function checkFx(fx, withLayer)
+    if type(fx) ~= "table" then error("fx: expected an object") end
+    for k in pairs(fx) do
+      if not (k == "id" or k == "x" or k == "y" or k == "fps" or k == "loop" or k == "windup_ms" or (withLayer and k == "layer")) then
+        error("fx: unknown param '" .. tostring(k) .. "'")
+      end
+    end
+    if withLayer and type(fx.layer) ~= "string" then error("fx: layer is required") end
+    if type(fx.id) ~= "string" or fx.id == "" then error("fx: id is required") end
+    if math.type(fx.x) ~= "integer" or math.type(fx.y) ~= "integer" then error("fx: x and y are whole pixels") end
+    if type(fx.fps) ~= "number" or fx.fps <= 0 then error("fx: fps must be above 0") end
+    if type(fx.loop) ~= "boolean" then error("fx: loop must be true or false") end
+    if math.type(fx.windup_ms) ~= "integer" or fx.windup_ms < 0 then error("fx: windup_ms must be whole ms, 0 or more") end
+    return { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windup_ms }
+  end
+
   -- A new RGB sprite from RGBA bytes (base64), with an optional palette.
   handlers.create_sprite = function(params)
     local w, h = params.width, params.height
@@ -29,11 +48,13 @@ return function(handlers, D)
   end
 
   -- A new animated RGB sprite: frames of RGBA bytes (base64) with durations
-  -- (ms) and tags (1-based frames), e.g. from import_sheet.
+  -- (ms) and tags (1-based frames), e.g. from import_sheet. params.fx (no
+  -- layer) records an effect on its layer (new_fx_sprite, #71).
   handlers.create_animation = function(params)
     local w, h = params.width, params.height
     local frames = params.frames or {}
     if #frames == 0 then error("No frames") end
+    local fx = params.fx ~= nil and checkFx(params.fx, false) or nil
     -- Everything is checked before the sprite is made, so an error leaves no sprite open.
     local images = {}
     for i, f in ipairs(frames) do
@@ -64,6 +85,7 @@ return function(handlers, D)
         if t.direction and dirs[t.direction] then tag.aniDir = dirs[t.direction] end
       end
     end
+    if fx then sprite.layers[1].properties(variations.KEY)[FX_KEY] = fx end
     if params.title then sprite.filename = params.title end
     app.frame = sprite.frames[1]
     app.refresh()
@@ -355,7 +377,8 @@ return function(handlers, D)
     local sprite = app.sprite
     local images = params.images or {}
     local inserts, inserted = checkInserts(sprite, params.insert)
-    if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil then error("No images") end
+    if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil and params.fx == nil then error("No images") end
+    local fx = params.fx ~= nil and checkFx(params.fx, true) or nil
     local count = math.max(#sprite.frames + inserted, params.frames or 0)
     if params.duration ~= nil and params.duration < 1 then error("duration must be at least 1 ms") end
     for i, d in ipairs(params.durations or {}) do
@@ -476,6 +499,16 @@ return function(handlers, D)
           seen[id] = true
           layers[#layers + 1] = { layer = id, name = target.name }
         end
+      end
+      -- The effect record (#71) on its layer: one written by this call (by name), else any layer by id or name.
+      if fx then
+        local target
+        for _, l in ipairs(layers) do
+          if l.name == params.fx.layer or l.layer == params.fx.layer then target = layerById(l.layer, sprite) end
+        end
+        target = target or layerById(params.fx.layer, sprite)
+        if not target or target.isGroup then error("fx: no image layer " .. tostring(params.fx.layer)) end
+        target.properties(variations.KEY)[FX_KEY] = fx
       end
     end)
     if activeFrame then app.frame = sprite.frames[activeFrame] end

@@ -40,14 +40,22 @@ const nextPow2 = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
 
 /**
  * Packs frames in a grid of equal cells (simple, predictable for engines),
- * each frame trimmed if asked and placed at its cell's top-left.
+ * each frame trimmed if asked and placed at its cell's top-left. `also`
+ * (frames of the same size, e.g. a glow sheet's) count in the trim, so a
+ * sheet placed later with placeLike keeps all of its pixels too.
  */
-export function pack(frames: Rgba[], o: PackOptions = {}): { sheet: Rgba; placed: Placed[] } {
+export function pack(frames: Rgba[], o: PackOptions = {}, also?: Rgba[]): { sheet: Rgba; placed: Placed[] } {
   const s = o.scale ?? 1;
   const scaled = frames.map((f) => scale(f, s));
   const ext = o.extrude ?? 0;
   const pad = o.padding ?? (ext ? 1 : 0);
-  const rects = scaled.map((f) => (o.trim ? trimRect(f) : { x: 0, y: 0, w: f.width, h: f.height }));
+  const trimmed = (f: Rgba, i: number) => {
+    const a = bounds(f, 1), g = also?.[i] && bounds(scale(also[i], s), 1);
+    if (!a || !g) return a ?? g ?? trimRect(f);
+    const x = Math.min(a.x, g.x), y = Math.min(a.y, g.y);
+    return { x, y, w: Math.max(a.x + a.w, g.x + g.w) - x, h: Math.max(a.y + a.h, g.y + g.h) - y };
+  };
+  const rects = scaled.map((f, i) => (o.trim ? trimmed(f, i) : { x: 0, y: 0, w: f.width, h: f.height }));
   const cellW = Math.max(...rects.map((r) => r.w)) + 2 * ext, cellH = Math.max(...rects.map((r) => r.h)) + 2 * ext;
   const cols = Math.max(1, Math.min(o.columns ?? Math.ceil(Math.sqrt(frames.length)), frames.length));
   const rows = Math.ceil(frames.length / cols);
@@ -110,6 +118,86 @@ export interface SheetInfo {
   pivot: [number, number];
   /** Slices in frame coordinates; center (relative to the slice) makes it a 9-patch. */
   slices?: Slice[];
+  /**
+   * Write the pivot on every JSON frame (TexturePacker's `pivot`, which Phaser's atlas loader reads as the
+   * frame's origin): set when the pivot was asked for or comes from an effect, so the default changes nothing.
+   */
+  framePivot?: boolean;
+  /** Effect timing for the game (meta.fx). */
+  fx?: FxMeta;
+  /** File name of the glow sheet (meta.glow), laid out like `image`. */
+  glow?: string;
+}
+
+/**
+ * meta.fx of the exported JSON (#71): the effect's frame rate, loop, windup (ms from its start to its impact),
+ * origin (px in the original, scaled frame) and id, and the hit-stops recorded on the sprite (0-based frames,
+ * like the frame keys). With several effects, the top-level fields are the first one's and `effects` lists all.
+ * A sprite with hits and no recorded effect gets { hits } only.
+ */
+export interface FxMeta {
+  id?: string;
+  fps?: number;
+  loop?: boolean;
+  windup?: number;
+  origin?: { x: number; y: number };
+  hits: { frame: number; freeze_ms: number; shake_ms?: number; amp?: number }[];
+  effects?: { id: string; layer: string; fps: number; loop: boolean; windup: number; origin: { x: number; y: number } }[];
+}
+
+/** The light (additive) layers and an image layer's pixels, for composing the color and glow sheets. */
+export interface LayerPixels {
+  image: Rgba;
+  /** 0-255. */
+  opacity: number;
+}
+
+const mul8 = (a: number, b: number) => { const t = a * b + 0x80; return ((t >> 8) + t) >> 8; };
+
+/**
+ * Layers composed bottom to top with Aseprite's normal blend (doc/blend_funcs.cpp rgba_blender_normal) at each
+ * layer's opacity: the color sheet without the light layers (#71).
+ */
+export function composeNormal(layers: LayerPixels[], width: number, height: number): Rgba {
+  const out = new Uint8Array(width * height * 4);
+  for (const { image, opacity } of layers) {
+    const d = image.data;
+    for (let i = 0; i < out.length; i += 4) {
+      const Sa0 = d[i + 3];
+      if (!Sa0) continue;
+      if (!out[i + 3]) { out[i] = d[i]; out[i + 1] = d[i + 1]; out[i + 2] = d[i + 2]; out[i + 3] = mul8(Sa0, opacity); continue; }
+      const Sa = mul8(Sa0, opacity), Ba = out[i + 3], Ra = Sa + Ba - mul8(Ba, Sa);
+      for (let k = 0; k < 3; k++) out[i + k] = out[i + k] + Math.trunc(((d[i + k] - out[i + k]) * Sa) / Ra);
+      out[i + 3] = Ra;
+    }
+  }
+  return { width, height, data: out };
+}
+
+/**
+ * Light layers summed for additive drawing (the glow sheet, #71): the light each adds (color x alpha x
+ * opacity) is summed, then stored with the largest alpha, so an engine's additive blend (src x alpha + dst)
+ * adds the same light. One layer at full opacity comes out unchanged.
+ */
+export function composeLight(layers: LayerPixels[], width: number, height: number): Rgba {
+  const n = width * height, sum = new Float64Array(n * 3), alpha = new Float64Array(n);
+  for (const { image, opacity } of layers) {
+    const d = image.data;
+    for (let p = 0; p < n; p++) {
+      const a = (d[p * 4 + 3] * opacity) / 255;
+      if (!a) continue;
+      for (let k = 0; k < 3; k++) sum[p * 3 + k] += (d[p * 4 + k] * a) / 255;
+      alpha[p] = Math.max(alpha[p], a);
+    }
+  }
+  const out = new Uint8Array(n * 4);
+  for (let p = 0; p < n; p++) {
+    const a = Math.round(alpha[p]);
+    if (!a) continue;
+    for (let k = 0; k < 3; k++) out[p * 4 + k] = Math.min(255, Math.round((sum[p * 3 + k] * 255) / alpha[p]));
+    out[p * 4 + 3] = a;
+  }
+  return { width, height, data: out };
 }
 
 export interface Slice {
@@ -145,12 +233,15 @@ export function jsonHash(s: SheetInfo): string {
       spriteSourceSize: { x: p.ox, y: p.oy, w: p.w, h: p.h },
       sourceSize: { w: p.sw, h: p.sh },
       duration: s.durations[i],
+      ...(s.framePivot ? { pivot: { x: s.pivot[0], y: s.pivot[1] } } : {}),
     };
   });
   return JSON.stringify({
     frames,
     meta: {
-      app: "aseprite-agent", image: s.image, format: "RGBA8888", size: { w: s.width, h: s.height }, scale: "1",
+      app: "aseprite-agent", image: s.image, ...(s.glow ? { glow: s.glow } : {}),
+      format: "RGBA8888", size: { w: s.width, h: s.height }, scale: "1",
+      ...(s.fx ? { fx: s.fx } : {}),
       frameTags: s.anims.map((a) => ({ name: a.name, from: a.from, to: a.to, direction: a.direction === "pingpong" ? "pingpong" : a.direction })),
       // Aseprite's slice format: one key from frame 0.
       slices: (s.slices ?? []).map((sl) => ({

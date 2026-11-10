@@ -99,7 +99,7 @@ function normalize(st) {
   const s = st.activeSprite;
   const layers = (list) => (list ?? []).map((l) => ({
     name: l.name, visible: l.visible, group: !!l.group,
-    ...(l.group ? { layers: layers(l.layers) } : { cels: l.celFrames ?? [], links: l.celLinks ?? [], tilemap: !!l.tilemap, opacity: l.opacity, blendMode: l.blendMode }),
+    ...(l.group ? { layers: layers(l.layers) } : { cels: l.celFrames ?? [], links: l.celLinks ?? [], tilemap: !!l.tilemap, opacity: l.opacity, blendMode: l.blendMode, fx: l.fx }),
   }));
   return {
     title: s.filename, width: s.width, height: s.height, colorMode: s.colorMode,

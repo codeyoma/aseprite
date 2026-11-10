@@ -105,6 +105,30 @@ export function fxAnchorPoint(e: FxEntry, anchor: FxAnchor, opts: Record<string,
   return c;
 }
 
+/** pixelfx act data: the effect's hits with freeze, shake and amp (seconds in the source). */
+interface ActHit { t: number; stop?: number; shake?: number; amp?: number }
+
+/**
+ * The effect's impact: its first act hit when it has act data (melee effects), else the start of its busiest
+ * frame (the largest alpha sum at its own fps), as for its visual centre. act is what pixelfx's act data
+ * suggests for hit_stop (freeze and shake in ms, amp in px). Its ms is the windup export reports (#71).
+ */
+export function fxImpact(e: FxEntry, opts: Record<string, unknown>, seed: number,
+  canvas: { width: number; height: number; x: number; y: number }): { ms: number; from: "act" | "busiest frame"; act?: { freezeMs: number; shakeMs: number; amp: number } } {
+  const hit = ((e.module as unknown as { act?: { hits?: ActHit[] } }).act?.hits ?? [])[0];
+  if (hit) {
+    return { ms: Math.round(hit.t * 1000), from: "act", act: { freezeMs: Math.round((hit.stop ?? 0) * 1000), shakeMs: Math.round((hit.shake ?? 0) * 1000), amp: hit.amp ?? 0 } };
+  }
+  const r = renderFx(e.module, opts, { fps: e.fps, seed, canvas });
+  let best = 0, bestSum = -1;
+  r.frames.forEach((f, i) => {
+    let s = 0;
+    for (let j = 3; j < f.data.length; j += 4) s += f.data[j];
+    if (s > bestSum) { bestSum = s; best = i; }
+  });
+  return { ms: Math.round((best * 1000) / e.fps), from: "busiest frame" };
+}
+
 export const anchorInput = z.enum(["center", "ground"]).optional()
   .describe("What x, y means. 'center': the effect's visual centre goes there (the impact point). 'ground': its origin " +
     "(the ground point under a pillar, fire or explosion) goes there. Default: the effect's own (list_fx).");
@@ -372,6 +396,11 @@ export const FX_TOOLS: Tool[] = [
       const { append, note: paletteNote } = await fxPalette(doc, info, colorItems, input.palette);
       const res = await doc.putImages([...colorItems, ...glowItems], {
         frames: plan.frames, duration: newMs, label: `Add effect ${e.id}`, prompt: `add_fx ${e.id}`, palette: append,
+        // What export needs (#71): the origin in sprite pixels, timing and windup, on the effect's layer.
+        fx: {
+          layer: colorItems.length ? `AI: ${main}` : `AI: ${main} glow`, id: e.id, x: left + canvas.x, y: top + canvas.y,
+          fps, loop: e.loop, windupMs: fxImpact(e, opts, seed, canvas).ms,
+        },
       });
       const first = plan.samples[0].frame, last = plan.samples.at(-1)!.frame;
       const layerNames = res.layers.map((l) => (l.name.endsWith(" glow") ? `${l.name} (Addition)` : l.name));
@@ -421,6 +450,7 @@ export const FX_TOOLS: Tool[] = [
       }
       const res = await documentOf(ctx).createAnimation(r.width, r.height, frames.map((image) => ({ image, duration })), {
         title: e.id, tags: [{ name: e.id, from: 1, to: frames.length }], palette,
+        fx: { id: e.id, x: r.origin.x, y: r.origin.y, fps, loop: e.loop, windupMs: fxImpact(e, opts, input.seed ?? e.seed, fxCanvas(e, false, 0)).ms },
       });
       return { content: [text(`Made "${res.title}": ${frames.length} frames of ${r.width}x${r.height} at ${fps} fps (${duration} ms each), ` +
         `tag ${e.id}${e.loop ? ", a seamless loop" : ", a one-shot ending on an empty frame"}, ${paletteNote}; ` +

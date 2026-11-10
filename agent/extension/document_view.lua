@@ -168,6 +168,11 @@ function M.new(opts)
         end
         item.celFrames = cels
         if #links > 0 then item.celLinks = links end
+        -- An effect recorded by the FX tools (#71): the layer property aseprite-agent "fx".
+        local fx = l.properties("aseprite-agent").fx
+        if type(fx) == "table" and fx.id then
+          item.fx = { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windupMs }
+        end
       end
       out[#out + 1] = item
     end

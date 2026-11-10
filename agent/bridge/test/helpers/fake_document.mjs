@@ -17,7 +17,8 @@
 // in collect_colors and apply_color_map. RGB cels hold RGBA bytes, indexed
 // cels hold palette indexes (0 is transparent). Grayscale sprites hold no
 // pixels. Layers keep a blend mode and opacity, but snapshots of the sprite
-// only blend normal layers at full opacity: anything else is refused.
+// only blend normal and addition layers (at any opacity, as drawSprite's new
+// blend method does): anything else is refused.
 import { resolveFrames } from "../../dist/document.js";
 import { checkParams, PROTOCOL } from "../../dist/protocol.js";
 
@@ -53,11 +54,34 @@ function blendOver(dst, i, src, j) {
   dst[i + 3] = Ra;
 }
 
+// The blenders drawSprite uses (render_sprite sets the new blend method), on [r, g, b, a] arrays, for normal and
+// addition layers at any opacity (#71: the glow baked into an export): doc/blend_funcs.cpp rgba_blender_normal,
+// rgba_blender_merge, rgba_blender_addition and RGBA_BLENDER_N.
+function normalB(B, S, op) {
+  if (!B[3]) return [S[0], S[1], S[2], mul(S[3], op)];
+  if (!S[3]) return B;
+  const Sa = mul(S[3], op), Ra = Sa + B[3] - mul(B[3], Sa);
+  return [0, 1, 2].map((k) => B[k] + Math.trunc((S[k] - B[k]) * Sa / Ra)).concat(Ra);
+}
+function mergeB(B, S, op) {
+  const rgb = !B[3] ? S.slice(0, 3) : !S[3] ? B.slice(0, 3) : [0, 1, 2].map((k) => B[k] + mul(S[k] - B[k], op));
+  const Ra = B[3] + mul(S[3] - B[3], op);
+  return Ra === 0 ? [0, 0, 0, 0] : [...rgb, Ra];
+}
+const additionB = (B, S, op) => normalB(B, [Math.min(B[0] + S[0], 255), Math.min(B[1] + S[1], 255), Math.min(B[2] + S[2], 255), S[3]], op);
+function additionN(B, S, op) {
+  if (!B[3]) return normalB(B, S, op);
+  const blend = additionB(B, S, op);
+  const merged = mergeB(normalB(B, S, op), blend, B[3]);
+  return mergeB(merged, blend, mul(B[3], mul(S[3], op)));
+}
+
 /**
  * layers: bottom first: [{ name, visible?, group?, layers? (a group's children, bottom first),
  *   frames: [cel per frame] }]; a cel is a sprite-size RGBA Uint8Array (placed at 0, 0) or
  *   { x, y, width, height, data } (RGBA), undefined for none.
- * opts: { width, height, frames, durations, palette: ["#rrggbb"], tags, frame, layer (name),
+ * A layer may also give blendMode, opacity and fx (an effect record, as get_state's layer fx).
+ * opts: { width, height, frames, durations, palette: ["#rrggbb"], tags, frame, layer (name), hits (fxHits),
  *         colorMode: "rgb" | "indexed" | "grayscale", selection: { x, y, width, height },
  *         slices: [{ name, bounds: { x, y, width, height }, center? }], title }
  * Indexed sprites take RGBA cels too: each color must be a palette entry other than index 0.
@@ -65,7 +89,7 @@ function blendOver(dst, i, src, j) {
  */
 export function fakeDocument({
   width, height, frames = 1, durations, layers = [], palette = ["#000000", "#ffffff"], tags = [], frame = 1, layer,
-  colorMode = "rgb", selection, slices = [], title, extra = {},
+  colorMode = "rgb", selection, slices = [], title, hits, extra = {},
 }) {
   let nextId = 1;
   const sprite = {
@@ -75,6 +99,7 @@ export function fakeDocument({
     slices: slices.map((s) => ({ ...s })),
     durations: durations ? [...durations] : Array.from({ length: frames }, () => 100),
     layers: [],
+    ...(hits ? { hits: hits.map((h) => ({ ...h })) } : {}),
   };
   // The palette index of a color in an indexed sprite (exact entries only, never the transparent index 0).
   const indexOf = (s, r, g, b, a) => {
@@ -102,7 +127,10 @@ export function fakeDocument({
     return out;
   };
   const build = (s, list, parent) => list.map((l) => {
-    const node = { id: nextId++, name: l.name, visible: l.visible !== false, group: !!l.group, parent, cels: [], blendMode: "normal", opacity: 255 };
+    const node = {
+      id: nextId++, name: l.name, visible: l.visible !== false, group: !!l.group, parent, cels: [],
+      blendMode: l.blendMode ?? "normal", opacity: l.opacity ?? 255, ...(l.fx ? { fx: { ...l.fx } } : {}),
+    };
     if (l.group) node.layers = build(s, l.layers ?? [], node);
     else node.cels = (l.frames ?? []).map((c) => {
       if (!c) return undefined;
@@ -177,10 +205,21 @@ export function fakeDocument({
         if (!l.visible) continue;
         if (l.group) paint(l.layers);
         else if (l.cels[f - 1]) {
-          if ((l.blendMode ?? "normal") !== "normal" || (l.opacity ?? 255) !== 255) {
+          const mode = l.blendMode ?? "normal", op = l.opacity ?? 255;
+          if (mode === "normal" && op === 255) { draw(out, s, l.cels[f - 1], true); continue; }
+          if (mode !== "normal" && mode !== "addition") {
             throw unsupported(`blending layer '${l.name}' (${l.blendMode}, opacity ${l.opacity}) into a snapshot`);
           }
-          draw(out, s, l.cels[f - 1], true);
+          const img = new Uint8Array(s.width * s.height * 4), has = new Uint8Array(s.width * s.height);
+          draw(img, s, l.cels[f - 1], false);
+          const c = l.cels[f - 1];
+          for (let y = Math.max(0, c.y); y < Math.min(s.height, c.y + c.height); y++) for (let x = Math.max(0, c.x); x < Math.min(s.width, c.x + c.width); x++) has[y * s.width + x] = 1;
+          const blender = mode === "addition" ? additionN : normalB;
+          for (let p = 0; p < has.length; p++) {
+            if (!has[p]) continue;
+            const i = p * 4;
+            out.set(blender([...out.subarray(i, i + 4)], [...img.subarray(i, i + 4)], op), i);
+          }
         }
       }
     };
@@ -213,6 +252,7 @@ export function fakeDocument({
       celFrames: l.cels.flatMap((c, i) => (c ? [i + 1] : [])),
       ...linksOf(l),
       ...(l.tilemap ? { tilemap: true } : {}),
+      ...(l.fx ? { fx: { ...l.fx } } : {}),
     }),
   }));
   // Linked cels are one cel object in several frames; celLinks lists each group of 2+ frames (document_view.lua).
@@ -221,6 +261,19 @@ export function fakeDocument({
     l.cels.forEach((c, i) => { if (c) groups.set(c, [...(groups.get(c) ?? []), i + 1]); });
     const links = [...groups.values()].filter((g) => g.length > 1).sort((a, b) => a[0] - b[0]);
     return links.length ? { celLinks: links } : {};
+  };
+  // An effect record (handlers_sprite.lua checkFx): the layer property value, or the extension's error.
+  const checkFx = (fx, withLayer) => {
+    if (!fx || typeof fx !== "object" || Array.isArray(fx)) throw new Error("fx: expected an object");
+    const keys = ["id", "x", "y", "fps", "loop", "windup_ms", ...(withLayer ? ["layer"] : [])];
+    for (const k of Object.keys(fx)) if (!keys.includes(k)) throw new Error(`fx: unknown param '${k}'`);
+    if (withLayer && typeof fx.layer !== "string") throw new Error("fx: layer is required");
+    if (typeof fx.id !== "string" || !fx.id) throw new Error("fx: id is required");
+    if (!Number.isInteger(fx.x) || !Number.isInteger(fx.y)) throw new Error("fx: x and y are whole pixels");
+    if (typeof fx.fps !== "number" || fx.fps <= 0) throw new Error("fx: fps must be above 0");
+    if (typeof fx.loop !== "boolean") throw new Error("fx: loop must be true or false");
+    if (!Number.isInteger(fx.windup_ms) || fx.windup_ms < 0) throw new Error("fx: windup_ms must be whole ms, 0 or more");
+    return { id: fx.id, x: fx.x, y: fx.y, fps: fx.fps, loop: fx.loop, windupMs: fx.windup_ms };
   };
   const pathOf = (l) => (l.parent ? `${pathOf(l.parent)}/${l.name}` : l.name);
   // A new layer's blend mode and opacity from wire params, checked first (handlers_sprite.lua layerLook).
@@ -325,7 +378,8 @@ export function fakeDocument({
         if (inserts[i].after === inserts[i - 1].after) throw new Error(`Insert: frame ${inserts[i].after} is listed twice`);
       }
       const inserted = inserts.reduce((n, x) => n + x.durations.length, 0);
-      if (!p.images.length && !inserts.length && p.durations === undefined && p.hit === undefined) throw new Error("No images");
+      if (!p.images.length && !inserts.length && p.durations === undefined && p.hit === undefined && p.fx === undefined) throw new Error("No images");
+      const fx = p.fx !== undefined ? checkFx(p.fx, true) : undefined;
       const count = Math.max(s.durations.length + inserted, p.frames ?? 0);
       if (p.duration !== undefined && p.duration < 1) throw new Error("duration must be at least 1 ms");
       (p.durations ?? []).forEach((d, i) => {
@@ -402,6 +456,13 @@ export function fakeDocument({
         const target = putOne(s, { ...im, prompt: p.prompt }, checked[i].bytes, im.frame, checked[i].look);
         if (!seen.has(target.id)) { seen.add(target.id); layers.push({ layer: `L${target.id}`, name: target.name }); }
       });
+      // The effect record on its layer: one written by this call (by name), else any layer by id or name.
+      if (fx) {
+        const made = layers.find((l) => l.name === p.fx.layer || l.layer === p.fx.layer);
+        const target = byRef(made ? made.layer : p.fx.layer);
+        if (!target || target.group) throw new Error(`fx: no image layer ${p.fx.layer}`);
+        target.fx = fx;
+      }
       return { layers, frames: s.durations.length, added, inserted, ...(paletteAdd ? { paletteAdded: paletteAdd.length } : {}) };
     },
     create_sprite: (p) => {
@@ -417,8 +478,9 @@ export function fakeDocument({
     },
     create_animation: (p) => {
       if (!p.frames.length) throw new Error("No frames");
+      const fx = p.fx !== undefined ? checkFx(p.fx, false) : undefined;
       const s = newSprite({ width: p.width, height: p.height, durations: [] });
-      const l = { id: nextId++, name: "Layer 1", visible: true, group: false, parent: null, cels: [] };
+      const l = { id: nextId++, name: "Layer 1", visible: true, group: false, parent: null, cels: [], ...(fx ? { fx } : {}) };
       s.layers = [l];
       p.frames.forEach((f, i) => {
         const bytes = decode(f.rgba);

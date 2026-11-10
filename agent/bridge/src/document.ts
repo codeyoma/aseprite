@@ -20,6 +20,26 @@ export interface LayerInfo {
   blendMode?: string;
   /** Image layers: groups of 2+ frames whose cels are linked (share one image), e.g. [[2, 3, 4]]. */
   links?: number[][];
+  /** An effect the FX tools put on this layer (layer property aseprite-agent "fx"), for exporters (#71). */
+  fx?: FxInfo;
+}
+
+/**
+ * What export needs about an effect on a layer (#71), recorded by add_fx, fx_overlay and new_fx_sprite in the
+ * layer property aseprite-agent "fx" (get_state's layer `fx`). A property of the layer, so several effects can
+ * share a sprite and deleting the layer drops its record.
+ */
+export interface FxInfo {
+  /** The library effect's id. */
+  id: string;
+  /** The effect's origin (pixelfx's ground point) in sprite pixels. */
+  x: number;
+  y: number;
+  /** The effect's frame rate and whether it loops. */
+  fps: number;
+  loop: boolean;
+  /** ms from the effect's start to its impact (fxImpact). */
+  windupMs: number;
 }
 
 /** A hit hit_stop recorded (sprite property aseprite-agent "fx.hits"), for exporters (#71). */
@@ -117,6 +137,8 @@ export interface PutImagesOptions {
   durations?: { frame: number; ms: number }[];
   /** A hit to record (numbered after the inserts). */
   hit?: { frame: number; freezeMs: number; shakeMs?: number; amp?: number };
+  /** An effect to record on a layer (an id or name, also 'AI: <newLayer>' made in this call), after the images. */
+  fx?: FxInfo & { layer: string };
 }
 
 /** One image of putImages: put at (x, y) in a frame, onto a new 'AI: ' layer or into a layer. */
@@ -197,7 +219,8 @@ export interface Document {
   putImages(items: PutImagesItem[], o?: PutImagesOptions):
     Promise<{ layers: { layer: string; name: string }[]; frames: number; added: number; inserted?: number; paletteAdded?: number }>;
   createSprite(img: Rgba, o?: NewSprite): Promise<{ title: string }>;
-  createAnimation(width: number, height: number, frames: AnimationFrame[], o?: NewSprite & { tags?: { name: string; from: number; to: number }[] }): Promise<{ title: string }>;
+  /** A new animated sprite; fx records an effect on its one layer (FxInfo). */
+  createAnimation(width: number, height: number, frames: AnimationFrame[], o?: NewSprite & { tags?: { name: string; from: number; to: number }[]; fx?: FxInfo }): Promise<{ title: string }>;
   /** Text rendered by Aseprite in a font file or system font (PasteText spec), white, trimmed. */
   renderFontText(text: string, font: string, size: number): Promise<Rgba>;
   /** A new sprite with a tilemap layer: `set` cut into `count` tiles of `tile` px, placed by `map` (0-based indices, -1 empty). */
@@ -219,6 +242,9 @@ export interface Document {
   /** Draws a swatch strip of colors on a new 'AI: <name>' layer (default 'palette'). One undo step. */
   drawSwatches(colors: RGBA[], o?: { name?: string; size?: number }): Promise<{ layer?: string }>;
 }
+
+/** An FxInfo as wire params (put_images' and create_animation's fx). */
+const fxWire = (f: FxInfo) => ({ id: f.id, x: f.x, y: f.y, fps: f.fps, loop: f.loop, windup_ms: f.windupMs });
 
 const encode = (img: Rgba) => Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength).toString("base64");
 
@@ -250,12 +276,16 @@ export function resolveFrames(spec: unknown, count: number, active: number, fall
   return out;
 }
 
+const fxOf = (f: any): FxInfo => ({ id: String(f.id ?? ""), x: f.x, y: f.y, fps: f.fps, loop: !!f.loop, windupMs: f.windupMs ?? 0 });
+
 function flatten(tree: any[], path: string[] = []): LayerInfo[] {
   const out: LayerInfo[] = [];
   for (const l of tree ?? []) {
     out.push({
       id: String(l.id ?? ""), name: l.name, visible: l.visible !== false, group: !!l.group, path,
-      ...(l.group ? {} : { opacity: l.opacity, blendMode: l.blendMode, ...(l.celLinks ? { links: l.celLinks } : {}) }),
+      ...(l.group ? {} : {
+        opacity: l.opacity, blendMode: l.blendMode, ...(l.celLinks ? { links: l.celLinks } : {}), ...(l.fx ? { fx: fxOf(l.fx) } : {}),
+      }),
     });
     if (l.group) out.push(...flatten(l.layers, [...path, l.name]));
   }
@@ -343,7 +373,7 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       const hit = o.hit && { frame: o.hit.frame, freeze_ms: o.hit.freezeMs, shake_ms: o.hit.shakeMs, amp: o.hit.amp };
       return write("put_images", {
         images, frames: o.frames, duration: o.duration, label: o.label, prompt: o.prompt, palette: o.palette,
-        insert, durations: o.durations, hit,
+        insert, durations: o.durations, hit, fx: o.fx && { layer: o.fx.layer, ...fxWire(o.fx) },
       });
     },
     async createSprite(img, o = {}) {
@@ -355,7 +385,7 @@ export function documentOf(aseprite: AsepriteRequester): Document {
     async createAnimation(width, height, frames, o = {}) {
       for (const f of frames) checkSize(f.image, "create_animation");
       const { result } = await aseprite.request("create_animation", {
-        width, height, title: o.title, palette: o.palette, tags: o.tags,
+        width, height, title: o.title, palette: o.palette, tags: o.tags, fx: o.fx && fxWire(o.fx),
         frames: frames.map((f) => ({ rgba: encode(f.image), duration: f.duration ?? 100 })),
       }, 120_000);
       wrote();
