@@ -23,13 +23,13 @@ export function frameList(spec: unknown, count: number, active: number): number[
   return [Number(spec)];
 }
 
-async function layerPixels(aseprite: AsepriteRequester, layer: string | undefined, frame: number): Promise<Rgba> {
+export async function layerPixels(aseprite: AsepriteRequester, layer: string | undefined, frame: number): Promise<Rgba> {
   const { result, binary } = await aseprite.request("snapshot", { layer, frame });
   if (!binary) throw new Error("Aseprite sent no pixel data");
   return { width: result.width, height: result.height, data: binary };
 }
 
-async function spriteInfo(aseprite: AsepriteRequester): Promise<{ frames: number; frame: number; layer: string; palette: RGBA[] }> {
+export async function spriteInfo(aseprite: AsepriteRequester): Promise<{ frames: number; frame: number; layer: string; palette: RGBA[] }> {
   const { result } = await aseprite.request("execute_lua", {
     code: `local s = app.sprite if not s then error("No active sprite") end
       local p, o = s.palettes[1], {}
