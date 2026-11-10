@@ -68,12 +68,13 @@ export function devStatus(root: string): DevStatus {
   const branch = currentBranch(root);
   const base = git(root, "config", `branch.${branch}.aseprite-agent-base`).out || undefined;
   const range = base ? [`${base}...HEAD`] : [];
-  const committed = base ? git(root, "diff", "--name-only", ...range).out.split("\n") : [];
+  // "--" ends the revisions: the base branch may share its name with a folder (agent/).
+  const committed = base ? git(root, "diff", "--name-only", ...range, "--").out.split("\n") : [];
   // Porcelain lines are "XY path"; read them untrimmed (X may be a space).
   const porcelain = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" }).stdout ?? "";
   const working = porcelain.split("\n").filter(Boolean).map((l) => l.slice(3).replace(/^.* -> /, ""));
   const files = [...new Set([...committed, ...working].filter(Boolean))].sort();
-  const stat = git(root, "diff", "--stat", base ?? "HEAD").out;
+  const stat = git(root, "diff", "--stat", base ?? "HEAD", "--").out;
   const needsBuild = files.some((f) => /^(src|laf|third_party)\//.test(f) || /\.(cpp|h|cmake|txt)$/.test(f));
   return { repo: root, branch, base, files, diffStat: stat, needsBuild };
 }

@@ -38,6 +38,7 @@ test("a developer turn runs on a dev/ branch that remembers its base", () => {
   writeFileSync(join(dir, "agent", "extension", "chat_panel.lua"), "local P = 'Hi'\n");
   let s = devStatus(dir);
   assert.deepEqual([s.branch, s.base, s.files, s.needsBuild], [b, "agent", ["agent/extension/chat_panel.lua"], false]);
+  assert.match(s.diffStat, /chat_panel\.lua \| 2/, "the base branch is named like the agent/ folder");
   mkdirSync(join(dir, "src"));
   writeFileSync(join(dir, "src", "x.cpp"), "int x;\n");
   s = devStatus(dir);
