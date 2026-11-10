@@ -2,6 +2,7 @@
 // registration, the chat panel's step labels and the edit/read kind all
 // come from here. A tool without `run` forwards its input to the Aseprite
 // request method of the same name and returns the result as JSON.
+import { COLOR_TOOLS } from "./color_tools.js";
 import { formatSubResults, type SubAgents } from "./subagents.js";
 import { COMMAND_NAME, commandsDir, SavedCommands, type SavedCommand } from "./saved_commands.js";
 import * as z from "zod/v4";
@@ -457,8 +458,9 @@ export const TOOLS: Tool[] = [
     label: () => "Redo",
   },
 ];
+// Palette and tone tools (#36, #38).
+TOOLS.push(...COLOR_TOOLS);
 
-/** Readable check report: a summary line, then one line per finding. */
 // The bridge's sub-agent runner (#33), set by index.ts.
 let spawner: SubAgents | undefined;
 export function setAgentSpawner(s: SubAgents | undefined): void {
@@ -514,6 +516,7 @@ export function formatDiff(result: any, binary: Buffer | undefined, scale?: numb
   return { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }, text(summary)] };
 }
 
+/** Readable check report: a summary line, then one line per finding. */
 export function formatCheck(result: any): string {
   const findings: any[] = result?.findings ?? [];
   const head = `Check: ${result?.errors ?? 0} errors, ${result?.warnings ?? 0} warnings` +

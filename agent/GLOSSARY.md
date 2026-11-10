@@ -69,3 +69,7 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 **Sub-agent**: an agent started by the lead agent's `spawn_agents` tool for one part of a multi-frame job, scoped to some frames (and optionally layers). Up to four run at once (`agent/bridge/src/subagents.ts`); each has its own MCP endpoint (`/mcp/scope/<id>`) that adds its scope to every request, and the extension's scope guard (`agent/extension/scope_guard.lua`) undoes any step that changes something outside it and highlights the scope's frames in the timeline. Its steps appear in the panel labeled with the scope.
 
 **Skill Catalog**: guide topics, built-in skills and user skills in one list (user skills override by name), served to agents by `list_skills`/`read_guide` and to the panel by `skills.list`. Typing `/` in the chat shows matching skills and saved commands over the bottom of the log; picking a skill fills `/skill:name ` (`agent/bridge/src/guide.ts`, `chat_panel.lua`).
+
+**Known palettes**: the palettes `palette_from_image` compares against and `remap_to_palette` accepts by name: the ones Aseprite ships (`data/extensions/*` `.gpl` files) and the user's in `~/.aseprite-agent/palettes` (`.gpl`/`.hex`). None are bundled by the agent (`agent/bridge/src/palettes.ts`).
+
+**Tone**: a source's pixel-weighted OKLab statistics (lightness, saturation, contrast, warmth) used to compare and match sprites; the color math lives in `agent/bridge/src/color.ts`, and the extension only reads colors (`collect_colors`) and applies color maps (`apply_color_map`).
