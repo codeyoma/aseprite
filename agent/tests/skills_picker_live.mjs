@@ -1,23 +1,10 @@
 // Live test of the Skill Catalog's / picker (#35): typing "/query" lists
 // matching skills, picking one fills "/skill:name ", and the reply header
 // names the skill. Run with Aseprite open:  node agent/tests/skills_picker_live.mjs [claude|codex]
-import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+import { live } from "./live.mjs";
 
 const provider = process.argv[2] ?? "claude";
-const c = await startBridge();
-await waitForAseprite(c);
-const lua = async (code) => {
-  const r = await c.call("execute_lua", { code, transaction: false });
-  if (r.isError) throw new Error(textOf(r));
-  const t = textOf(r);
-  return t.includes("{") ? JSON.parse(t.slice(t.indexOf("{"))).value : undefined;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let failed = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
-  if (!ok) failed++;
-};
+const { lua, chat, sleep, check, done } = await live({ provider });
 const names = (list) => (list ?? []).map((s) => s.name);
 
 await lua(`local s = Sprite(16, 16) for i = 1, 3 do s:newFrame() end AsepriteAgent.openPanel() AsepriteAgent.typePrompt("/") return true`);
@@ -31,12 +18,7 @@ check("typing filters", names(ret)[0] === "retime-animation" && !names(ret).incl
 await lua(`AsepriteAgent.pickSuggestion(1) return true`);
 check("picking fills /skill:name", (await lua("return AsepriteAgent.promptText()")) === "/skill:retime-animation ");
 
-await lua(`AsepriteAgent.chat("/skill:retime-animation make it play at 5 fps", "${provider}", "agent") return true`);
-const t0 = Date.now();
-while (Date.now() - t0 < 300_000) {
-  await sleep(2500);
-  if (!(await lua("return AsepriteAgent.isBusy()"))) break;
-}
+await chat("/skill:retime-animation make it play at 5 fps");
 const entries = await lua("return AsepriteAgent.entries()");
 const header = entries.filter((e) => e.kind === "header").at(-1)?.text;
 check("the header names the skill", header?.endsWith("Retime an animation"), header);
@@ -45,5 +27,4 @@ check("the skill did the job", dur.every((d) => Math.abs(d - 0.2) < 0.001), dur)
 const tools = entries.filter((e) => e.kind === "tool").map((e) => e.text);
 check("it used the timeline tools", tools.some((t) => /timeline/i.test(t)), tools);
 
-console.log(failed ? `PICKER TEST FAILED (${failed})` : "PICKER TEST PASSED");
-process.exit(failed ? 1 : 0);
+done("PICKER");

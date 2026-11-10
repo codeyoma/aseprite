@@ -1,23 +1,15 @@
 // Live test of parallel sub-agents (#33): "shade all 8 frames" with 4
 // sub-agents versus one agent, the panel log, and the timeline highlight.
 // Run with Aseprite open:  node agent/tests/subagents_live.mjs [claude|codex]
-import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+import { live } from "./live.mjs";
 
 const provider = process.argv[2] ?? "claude";
-const c = await startBridge();
-await waitForAseprite(c);
-const lua = async (code) => {
-  const r = await c.call("execute_lua", { code, transaction: false });
-  if (r.isError) throw new Error(textOf(r));
-  const t = textOf(r);
-  return t.includes("{") ? JSON.parse(t.slice(t.indexOf("{"))).value : undefined;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { c, lua, chat: send, sleep, check, done } = await live({ provider });
 // Timeline range lengths seen while a turn runs (the agent cursor).
 const ranges = [];
 async function chat(prompt) {
   const t0 = Date.now();
-  await lua(`AsepriteAgent.chat(${JSON.stringify(prompt)}, "${provider}", "agent") return true`);
+  await send(prompt, { wait: false });
   while (Date.now() - t0 < 900_000) {
     await sleep(1500);
     ranges.push(await lua("local c = AsepriteAgent.agentCursor() return { range = #app.range.frames, cursor = c }"));
@@ -45,11 +37,6 @@ const changedFrames = () => lua(`local s = app.sprite local n = 0
     if changed then n = n + 1 end
   end
   return n`);
-let failed = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
-  if (!ok) failed++;
-};
 // Each frame needs its own drawing, so the work is the agents' output, not setup.
 const TASK = "Inside the blue circle of each of the 8 frames, draw a different small pixel-art face (about 10x10 px) on the " +
   "Body layer: frame 1 happy, 2 sad, 3 surprised, 4 angry, 5 sleepy, 6 winking, 7 laughing, 8 confused, each with eyes, " +
@@ -71,5 +58,4 @@ check("all 8 frames shaded (one agent)", (await changedFrames()) === 8, await ch
 console.log(`parallel ${parallel}s, one agent ${single}s`);
 check("parallel is faster", parallel < single, { parallel, single });
 
-console.log(failed ? `SUBAGENTS TEST FAILED (${failed})` : "SUBAGENTS TEST PASSED");
-process.exit(failed ? 1 : 0);
+done("SUBAGENTS");

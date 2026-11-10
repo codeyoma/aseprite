@@ -3,28 +3,15 @@
 // them, and the next Rebuild & Relaunch builds and restarts Aseprite.
 // Setup: on a dev/ branch (base recorded in git config) with a C++ syntax
 // error in src/app/cmd.cpp. Run with Aseprite open from build/bin.
-import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+import { live } from "./live.mjs";
 
 const provider = process.argv[2] ?? "claude";
-const c = await startBridge();
-await waitForAseprite(c);
-const lua = async (code) => {
-  const r = await c.call("execute_lua", { code, transaction: false });
-  if (r.isError) throw new Error(textOf(r));
-  const t = textOf(r);
-  return t.includes("{") ? JSON.parse(t.slice(t.indexOf("{"))).value : undefined;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { lua, sleep, check, done } = await live({ provider });
 const answers = `AsepriteAgent.setDeveloperAnswers(function() return true end)
   AsepriteAgent.setPermissionAnswer(function(req)
     for i, o in ipairs(req.options or {}) do if tostring(o.kind):match("^allow") then return i end end
     return 1
   end)`;
-let failed = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
-  if (!ok) failed++;
-};
 const entries = () => lua("return AsepriteAgent.entries()");
 
 await lua(`${answers} AsepriteAgent.applyDevChanges() return true`);
@@ -52,5 +39,4 @@ for (let t = 0; t < 300; t++) {
   if (last?.text?.startsWith("Aseprite restarted")) break;
 }
 check("the fixed build relaunched Aseprite with the conversation", last?.text?.startsWith("Aseprite restarted"), last);
-console.log(failed ? `DEVELOPER BUILD TEST FAILED (${failed})` : "DEVELOPER BUILD TEST PASSED");
-process.exit(failed ? 1 : 0);
+done("DEVELOPER BUILD");

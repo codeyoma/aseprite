@@ -6,25 +6,13 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "../bridge/node_modules/pngjs/lib/png.js";
-import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+import { live } from "./live.mjs";
+import { textOf } from "./mcp_client.mjs";
 
 const dir = process.argv[2];
 const provider = process.argv[3] ?? "claude";
 const aseBin = fileURLToPath(new URL("../../build/bin/aseprite", import.meta.url));
-const c = await startBridge();
-await waitForAseprite(c);
-const lua = async (code) => {
-  const r = await c.call("execute_lua", { code, transaction: false });
-  if (r.isError) throw new Error(textOf(r));
-  const t = textOf(r);
-  return t.includes("{") ? JSON.parse(t.slice(t.indexOf("{"))).value : undefined;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let failed = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
-  if (!ok) failed++;
-};
+const { c, lua, chat, check, done } = await live({ provider });
 const tagsOf = () => lua(`local o = {} for _, t in ipairs(app.sprite.tags) do o[#o + 1] = t.name .. " " .. t.fromFrame.frameNumber .. "-" .. t.toFrame.frameNumber end return { frames = #app.sprite.frames, w = app.sprite.width, h = app.sprite.height, tags = o }`);
 
 // 1. A 4x2 sheet of 24x24 cells on magenta: a bobbing body (row 1) and a stepping one (row 2).
@@ -39,12 +27,7 @@ for (let f = 0; f < 4; f++) {
 const sheet = join(dir, "hero_sheet.png");
 writeFileSync(sheet, PNG.sync.write(png));
 await lua(`Sprite(16, 16) AsepriteAgent.attach{ path = ${JSON.stringify(sheet)} } return true`);
-await lua(`AsepriteAgent.chat("/skill:import-sheet It's a 4x2 grid of 24x24 cells. Row 1 is idle, row 2 is walk.", "${provider}", "agent") return true`);
-const t0 = Date.now();
-while (Date.now() - t0 < 400_000) {
-  await sleep(2500);
-  if (!(await lua("return AsepriteAgent.isBusy()"))) break;
-}
+await chat("/skill:import-sheet It's a 4x2 grid of 24x24 cells. Row 1 is idle, row 2 is walk.");
 const s = await tagsOf();
 check("skill: 8 frames of 24x24 with idle and walk tags", s.frames === 8 && s.w === 24 && s.h === 24 &&
   s.tags.includes("idle 1-4") && s.tags.includes("walk 5-8"), s);
@@ -72,5 +55,4 @@ const same = await lua(`local s = app.sprite local ok = true
   end return ok`);
 check("atlas: pixels and durations match the original", same === true);
 
-console.log(failed ? `SHEET TEST FAILED (${failed})` : "SHEET TEST PASSED");
-process.exit(failed ? 1 : 0);
+done("SHEET");

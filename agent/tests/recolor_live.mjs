@@ -1,31 +1,10 @@
 // Live test of Recolor (#48) and Dithering: team color variants that keep
 // the shading, and a dithered sky in the palette.
 // Run with Aseprite open:  node agent/tests/recolor_live.mjs [claude|codex]
-import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+import { live } from "./live.mjs";
 
 const provider = process.argv[2] ?? "claude";
-const c = await startBridge();
-await waitForAseprite(c);
-const lua = async (code) => {
-  const r = await c.call("execute_lua", { code, transaction: false });
-  if (r.isError) throw new Error(textOf(r));
-  const t = textOf(r);
-  return t.includes("{") ? JSON.parse(t.slice(t.indexOf("{"))).value : undefined;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function chat(prompt) {
-  await lua(`AsepriteAgent.chat(${JSON.stringify(prompt)}, "${provider}", "agent") return true`);
-  const t0 = Date.now();
-  while (Date.now() - t0 < 600_000) {
-    await sleep(2500);
-    if (!(await lua("return AsepriteAgent.isBusy()"))) return;
-  }
-}
-let failed = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
-  if (!ok) failed++;
-};
+const { c, lua, chat, check, done } = await live({ provider });
 
 // A character with a 3-step blue shirt, skin and outline.
 await lua(`local s = Sprite(16, 20, ColorMode.RGB) s.layers[1].name = "Hero"
@@ -65,5 +44,4 @@ const d = await lua(`local s = app.sprite local img = Image(s.width, s.height, C
   return { colors = o, rowsMixed = mixed, topDark = app.pixelColor.rgbaR(top) < 60, bottomLight = app.pixelColor.rgbaG(bottom) > 150 }`);
 check("dither: only palette colors", d.colors.length >= 2 && d.colors.every((k) => ["1d2b53", "2978ff", "8cc8ff", "fff1e8"].includes(k)), d);
 check("dither: mixed rows (a pattern, not bands) and dark at the top", d.rowsMixed >= 4 && d.topDark && d.bottomLight, d);
-console.log(failed ? `RECOLOR TEST FAILED (${failed})` : "RECOLOR TEST PASSED");
-process.exit(failed ? 1 : 0);
+done("RECOLOR");

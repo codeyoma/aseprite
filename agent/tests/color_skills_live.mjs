@@ -1,33 +1,17 @@
 // Live test of the color skills (#36, #38): extract a palette from an
 // attached image, match one layer's tone to another, limit a sprite to a
 // named palette. Run with Aseprite open:  node agent/tests/color_skills_live.mjs <ref.png> [claude|codex]
-import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+import { live } from "./live.mjs";
+import { textOf } from "./mcp_client.mjs";
 
 const refPng = process.argv[2];
 const provider = process.argv[3] ?? "claude";
-const c = await startBridge();
-await waitForAseprite(c);
-const lua = async (code) => {
-  const r = await c.call("execute_lua", { code, transaction: false });
-  if (r.isError) throw new Error(textOf(r));
-  const t = textOf(r);
-  return t.includes("{") ? JSON.parse(t.slice(t.indexOf("{"))).value : undefined;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { c, lua, chat: send, check, done } = await live({ provider });
+// One turn; returns the panel entries.
 async function chat(prompt) {
-  await lua(`AsepriteAgent.chat(${JSON.stringify(prompt)}, "${provider}", "agent") return true`);
-  const t0 = Date.now();
-  while (Date.now() - t0 < 400_000) {
-    await sleep(2500);
-    if (!(await lua("return AsepriteAgent.isBusy()"))) break;
-  }
+  await send(prompt);
   return lua("return AsepriteAgent.entries()");
 }
-let failed = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
-  if (!ok) failed++;
-};
 const header = (e) => e.filter((x) => x.kind === "header").at(-1)?.text;
 
 // 1. Extract palette from an attached image.
@@ -60,5 +44,4 @@ const pico = ["000000","1d2b53","7e2553","008751","ab5236","5f574f","c2c3c7","ff
 const used = [...textOf(cols).matchAll(/#([0-9a-f]{6})/g)].map((m) => m[1]);
 check("remap: only PICO-8 colors remain", used.length > 0 && used.every((h) => pico.includes(h)), used);
 
-console.log(failed ? `COLOR SKILLS TEST FAILED (${failed})` : "COLOR SKILLS TEST PASSED");
-process.exit(failed ? 1 : 0);
+done("COLOR SKILLS");

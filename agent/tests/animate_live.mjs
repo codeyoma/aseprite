@@ -1,22 +1,10 @@
 // Live test of Animate (#42): a 6-frame walk cycle for a simple character.
 // Run with Aseprite open:  node agent/tests/animate_live.mjs [claude|codex]
-import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+import { live } from "./live.mjs";
+import { textOf } from "./mcp_client.mjs";
 
 const provider = process.argv[2] ?? "claude";
-const c = await startBridge();
-await waitForAseprite(c);
-const lua = async (code) => {
-  const r = await c.call("execute_lua", { code, transaction: false });
-  if (r.isError) throw new Error(textOf(r));
-  const t = textOf(r);
-  return t.includes("{") ? JSON.parse(t.slice(t.indexOf("{"))).value : undefined;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let failed = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
-  if (!ok) failed++;
-};
+const { c, lua, chat, check, done } = await live({ provider });
 
 // A 24x32 side-view character: head, torso and two legs standing.
 await lua(`local s = Sprite(24, 32, ColorMode.RGB) s.layers[1].name = "Hero"
@@ -27,12 +15,7 @@ await lua(`local s = Sprite(24, 32, ColorMode.RGB) s.layers[1].name = "Hero"
   for y = 11, 20 do for x = 9, 15 do img:drawPixel(x, y, shirt) end end
   for y = 21, 30 do img:drawPixel(10, y, pants) img:drawPixel(11, y, pants) img:drawPixel(13, y, pants) img:drawPixel(14, y, pants) end
   s.layers[1]:cel(1).image = img return true`);
-await lua(`AsepriteAgent.chat("/skill:animate Make a 6-frame walk cycle for this character, tagged walk. Keep it simple.", "${provider}", "agent") return true`);
-const t0 = Date.now();
-while (Date.now() - t0 < 900_000) {
-  await sleep(3000);
-  if (!(await lua("return AsepriteAgent.isBusy()"))) break;
-}
+await chat("/skill:animate Make a 6-frame walk cycle for this character, tagged walk. Keep it simple.");
 const s = await lua(`local s = app.sprite local tag
   for _, t in ipairs(s.tags) do if t.name:lower():match("walk") then tag = t end end
   local distinct, imgs = 0, {}
@@ -43,5 +26,4 @@ check("6 walk frames in a walk tag", s.frames >= 6 && s.tag && s.tag.startsWith(
 check("every frame differs from the one before", s.changes >= 5, s);
 const r = await c.call("check", { rules: ["duplicate-frame", "ground-jitter"] });
 check("check: no repeated frames or jittering feet", /Check: 0 errors, 0 warnings/.test(textOf(r)), textOf(r).slice(0, 400));
-console.log(failed ? `ANIMATE TEST FAILED (${failed})` : "ANIMATE TEST PASSED");
-process.exit(failed ? 1 : 0);
+done("ANIMATE");

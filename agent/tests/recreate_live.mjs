@@ -5,36 +5,19 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "../bridge/node_modules/pngjs/lib/png.js";
-import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+import { live } from "./live.mjs";
 
 const dir = process.argv[2];
 const provider = process.argv[3] ?? "claude";
-const c = await startBridge();
-await waitForAseprite(c);
-const lua = async (code) => {
-  const r = await c.call("execute_lua", { code, transaction: false });
-  if (r.isError) throw new Error(textOf(r));
-  const t = textOf(r);
-  return t.includes("{") ? JSON.parse(t.slice(t.indexOf("{"))).value : undefined;
-};
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { c, lua, chat: send, waitIdle, check, done } = await live({ provider });
+// A turn that must reach the panel (a skill that needs an image refuses to send without one).
 async function chat(prompt) {
   const headers = (await lua("return AsepriteAgent.entries()")).filter((e) => e.kind === "header").length;
-  await lua(`AsepriteAgent.chat(${JSON.stringify(prompt)}, "${provider}", "agent") return true`);
+  await send(prompt, { wait: false });
   const sent = (await lua("return AsepriteAgent.entries()")).filter((e) => e.kind === "header").length > headers;
   check(`sent: ${prompt.slice(0, 40)}…`, sent);
-  if (!sent) return;
-  const t0 = Date.now();
-  while (Date.now() - t0 < 500_000) {
-    await sleep(2500);
-    if (!(await lua("return AsepriteAgent.isBusy()"))) return;
-  }
+  if (sent) await waitIdle();
 }
-let failed = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? "PASS" : "FAIL"} ${name}${ok ? "" : ` ${JSON.stringify(detail)}`}`);
-  if (!ok) failed++;
-};
 
 // Three poses of a 16x16 outlined green blob with a 3-step ramp, on blue, scaled x3.
 const OUT = [24, 20, 37], G = [[120, 220, 120], [60, 170, 80], [30, 110, 60]];
@@ -72,5 +55,4 @@ check("the new art is in a new sprite", after.n > before.n && after.title !== be
 check("new art uses only the reference's colors", colors.n > 0 && colors.colors.every((h) => allowed.includes(h)), colors);
 check("new art at a similar size", colors.w <= 32 && colors.h <= 32, colors);
 
-console.log(failed ? `RECREATE TEST FAILED (${failed})` : "RECREATE TEST PASSED");
-process.exit(failed ? 1 : 0);
+done("RECREATE");
