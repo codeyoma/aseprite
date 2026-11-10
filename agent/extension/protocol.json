@@ -1,6 +1,6 @@
 {
   "description": "Wire protocol between the aseprite-agent bridge and the Aseprite extension (JSON-RPC 2.0 over WebSocket). This file is the single definition: the extension ships it, the bridge copies it, and contract tests check both sides against it. Bump version on any incompatible change.",
-  "version": 25,
+  "version": 26,
   "handshake": {
     "hello": "extension -> bridge, first message: { token, protocol, asepriteVersion }",
     "welcome": "bridge -> extension: the connection is accepted",
@@ -8,15 +8,20 @@
   },
   "requests": {
     "ping": {
+      "kind": "read",
       "params": {}
     },
     "get_state": {
+      "kind": "read",
       "params": {}
     },
     "get_context": {
+      "kind": "read",
       "params": {}
     },
     "execute_lua": {
+      "kind": "scoped-write",
+      "needsSprite": false,
       "params": {
         "code": "string",
         "args": "any?",
@@ -25,6 +30,8 @@
       }
     },
     "snapshot": {
+      "kind": "read",
+      "needsSprite": true,
       "binary": true,
       "params": {
         "layer": "layer?",
@@ -32,6 +39,8 @@
       }
     },
     "read_pixels": {
+      "kind": "read",
+      "needsSprite": true,
       "params": {
         "x": "integer?",
         "y": "integer?",
@@ -42,22 +51,30 @@
       }
     },
     "run_command": {
+      "kind": "scoped-write",
+      "needsSprite": false,
       "params": {
         "name": "string",
         "params": "object?"
       }
     },
     "undo": {
+      "kind": "write",
+      "needsSprite": false,
       "params": {
         "steps": "integer?"
       }
     },
     "redo": {
+      "kind": "write",
+      "needsSprite": false,
       "params": {
         "steps": "integer?"
       }
     },
     "check": {
+      "kind": "read",
+      "needsSprite": true,
       "params": {
         "layer": "layer?",
         "frames": "frames?all",
@@ -65,6 +82,7 @@
       }
     },
     "diff_visual": {
+      "kind": "read",
       "binary": true,
       "params": {
         "checkpoint": "string?",
@@ -73,33 +91,42 @@
       }
     },
     "propose_variations": {
+      "kind": "read",
       "params": {
         "task": "string"
       }
     },
     "compile_lua": {
+      "kind": "read",
       "params": {
         "code": "string"
       }
     },
     "commands_changed": {
+      "kind": "read",
       "params": {
         "dir": "string?"
       }
     },
     "get_timeline_text": {
+      "kind": "read",
+      "needsSprite": true,
       "params": {}
     },
     "apply_timeline_text": {
+      "kind": "scoped-write",
       "params": {
         "text": "string",
         "plan": "boolean?"
       }
     },
     "state_block": {
+      "kind": "read",
       "params": {}
     },
     "collect_colors": {
+      "kind": "read",
+      "needsSprite": true,
       "params": {
         "layer": "layer?",
         "frames": "frames?all",
@@ -108,9 +135,12 @@
       }
     },
     "get_palette": {
+      "kind": "read",
+      "needsSprite": true,
       "params": {}
     },
     "set_palette": {
+      "kind": "write",
       "params": {
         "colors": "array",
         "append": "boolean?",
@@ -118,6 +148,7 @@
       }
     },
     "apply_color_map": {
+      "kind": "write",
       "params": {
         "map": "object",
         "layer": "layer?",
@@ -126,6 +157,7 @@
       }
     },
     "draw_swatches": {
+      "kind": "scoped-write",
       "params": {
         "colors": "array",
         "name": "string?",
@@ -134,6 +166,8 @@
       }
     },
     "create_sprite": {
+      "kind": "write",
+      "needsSprite": false,
       "params": {
         "width": "integer",
         "height": "integer",
@@ -143,6 +177,8 @@
       }
     },
     "create_animation": {
+      "kind": "write",
+      "needsSprite": false,
       "params": {
         "width": "integer",
         "height": "integer",
@@ -153,12 +189,14 @@
       }
     },
     "split_layer_by_colors": {
+      "kind": "scoped-write",
       "params": {
         "layer": "layer?",
         "groups": "array"
       }
     },
     "put_image": {
+      "kind": "scoped-write",
       "params": {
         "width": "integer",
         "height": "integer",
@@ -176,6 +214,7 @@
       }
     },
     "mirror_frames": {
+      "kind": "scoped-write",
       "params": {
         "tag": "string?",
         "frames": "frames?",
@@ -184,6 +223,7 @@
       }
     },
     "set_slice": {
+      "kind": "write",
       "params": {
         "name": "string",
         "x": "integer",
@@ -194,6 +234,8 @@
       }
     },
     "create_tilemap": {
+      "kind": "write",
+      "needsSprite": false,
       "params": {
         "tile": "integer",
         "width": "integer",
@@ -206,6 +248,7 @@
       }
     },
     "render_text": {
+      "kind": "read",
       "binary": true,
       "params": {
         "text": "string",
@@ -214,11 +257,18 @@
       }
     },
     "save_palette": {
+      "kind": "read",
       "params": {
         "colors": "array",
         "path": "string"
       }
     }
+  },
+  "kinds": {
+    "read": "Leaves the document alone. Runs as is, also for a sub-agent.",
+    "write": "Changes the document in a way the scope guard can't check (undo history, palette, slices, another sprite). Captured as an edit step; refused for a sub-agent's scope.",
+    "scoped-write": "Changes cels, layers or frames of the active sprite. Captured as an edit step; for a sub-agent's scope, undone when it changed anything outside the scope.",
+    "needsSprite": "Whether the request needs an active sprite (\"No active sprite\" otherwise). Default: true for writes, false for reads."
   },
   "params": {
     "types": "Each request lists its params as name: type. Types: string, integer, number, boolean, array, object, any, layer, frame, frames. A trailing ? marks it optional. Unknown params are an error, except scope (sub-agent scopes), which any request may carry.",

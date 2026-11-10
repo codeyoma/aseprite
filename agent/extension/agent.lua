@@ -1,6 +1,7 @@
--- Aseprite Agent extension: the plugin entry. It wires three modules:
+-- Aseprite Agent extension: the plugin entry. It wires these modules:
 --
 --   document_handlers.lua  what the bridge can ask of Aseprite (no transport)
+--   document_view.lua      how the document is described (State block, URIs)
 --   bridge_connection.lua  session file, WebSocket, handshake, reconnects
 --   chat_panel.lua         the AI Agent chat panel (with conversation.lua)
 --
@@ -65,8 +66,11 @@ function init(plugin)
   local saved   -- saved commands (#26), created below
   local protocol = loadProtocol(plugin.path)
 
-  local capture = load("step_capture.lua").new{ limit = 50 }
-  local handlers = load("document_handlers.lua").new{ chunkDir = plugin.path, protocol = protocol, capture = capture,
+  local DocumentHandlers = load("document_handlers.lua")
+  -- Every write request is captured (the operation policy in protocol.json).
+  local capture = load("step_capture.lua").new{ limit = 50, edits = DocumentHandlers.writes(protocol) }
+  local view = load("document_view.lua").new{ px = load("pixels.lua") }
+  local handlers = DocumentHandlers.new{ chunkDir = plugin.path, protocol = protocol, capture = capture,
     onVariations = function(info) if Panel then Panel.showVariations(info) end end,
     -- The bridge says which folder it saved to (ASEPRITE_AGENT_COMMANDS can move it).
     onCommandsChanged = function(dir) if saved then saved:reload(dir) end end,
@@ -98,18 +102,18 @@ function init(plugin)
     Conversation = load("conversation.lua"),
     request = connection.request,
     isConnected = connection.isConnected,
-    contextString = handlers.contextString,
-    stateBlock = handlers.stateBlock,
-    mentionTargets = handlers.Uri.targets,
-    resolveUri = handlers.Uri.resolve,
-    selectUri = handlers.Uri.select,
+    contextString = view.contextString,
+    stateBlock = view.stateBlock,
+    mentionTargets = view.Uri.targets,
+    resolveUri = view.Uri.resolve,
+    selectUri = view.Uri.select,
     TurnHistory = load("turn_history.lua"),
     savedCommands = saved,
     saveForRelaunch = function(conversation) saveForRelaunch(conversation) end,
     variations = handlers.variations,
     attachments = load("attachments.lua").new{
       dir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "attachments"),
-      snapshot = handlers.snapshot, Uri = handlers.Uri,
+      snapshot = handlers.snapshot, Uri = view.Uri,
       writeImage = function(img, path)
         app.fs.makeAllDirectories(app.fs.filePath(path))
         img:saveAs(path)

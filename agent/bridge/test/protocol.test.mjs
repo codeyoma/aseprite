@@ -103,6 +103,23 @@ test("every request has a params schema; tools that forward their input match it
   }
 });
 
+test("every request has a kind; tools that forward to a request agree with it", () => {
+  const kinds = ["read", "write", "scoped-write"];
+  for (const [name, r] of Object.entries(PROTOCOL.requests)) {
+    assert.ok(kinds.includes(r.kind), `${name} has a kind (${r.kind})`);
+    if (r.needsSprite !== undefined) assert.equal(typeof r.needsSprite, "boolean", `${name}: needsSprite`);
+  }
+  // A tool named after its request is an edit exactly when the request writes.
+  const named = TOOLS.filter((t) => Object.hasOwn(PROTOCOL.requests, t.name));
+  assert.ok(named.length > 5);
+  for (const t of named) {
+    assert.equal(t.kind === "edit", PROTOCOL.requests[t.name].kind !== "read", `${t.name}: tool kind ${t.kind}, request kind ${PROTOCOL.requests[t.name].kind}`);
+  }
+  // Undo and redo could undo another agent's work: never allowed in a scope.
+  assert.equal(PROTOCOL.requests.undo.kind, "write");
+  assert.equal(PROTOCOL.requests.redo.kind, "write");
+});
+
 test("checkParams: unknown, missing and mistyped params", () => {
   assert.throws(() => checkParams("snapshot", { bogus: 1 }), /unknown param 'bogus'/);
   assert.throws(() => checkParams("set_slice", { x: 0, y: 0, w: 1, h: 1 }), /'name' is required/);

@@ -4,10 +4,26 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+/**
+ * What a request does to the document (the extension's operation policy):
+ * a read leaves it alone; a write changes it and is captured as an edit step,
+ * refused for a sub-agent's scope; a scoped-write changes cels, layers or
+ * frames and is undone when a sub-agent's step changed anything outside its scope.
+ */
+export type RequestKind = "read" | "write" | "scoped-write";
+
+export interface RequestSpec {
+  kind: RequestKind;
+  /** Needs an active sprite. Default: true for writes, false for reads. */
+  needsSprite?: boolean;
+  binary?: boolean;
+  /** Params: name -> type ("integer", "layer?", "frames?all", ...). */
+  params: Record<string, string>;
+}
+
 export interface Protocol {
   version: number;
-  /** Each request's params: name -> type ("integer", "layer?", "frames?all", ...). */
-  requests: Record<string, { binary?: boolean; params: Record<string, string> }>;
+  requests: Record<string, RequestSpec>;
   bridgeMethods: string[];
   notifications: { "chat.event": { types: string[]; fields: string[] } };
 }

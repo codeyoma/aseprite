@@ -1,13 +1,15 @@
 -- Step Capture: before/after images of each edit request, and their visual
--- diff (#23). The extension wraps edit requests (execute_lua, run_command,
--- undo, redo) with capture:around(); the chat panel claims a capture for each
--- edit step it shows, and the diff_visual request compares the canvas with
--- the last step or a named checkpoint.
+-- diff (#23). The extension wraps every request with capture:around(),
+-- which records the write requests (the operation policy in
+-- document_handlers.lua: kind "write" or "scoped-write" in protocol.json);
+-- the chat panel claims a capture for each edit step it shows, and the
+-- diff_visual request compares the canvas with the last step or a named
+-- checkpoint.
 --
 --   local StepCapture = dofile("step_capture.lua")
---   local capture = StepCapture.new{ limit = 50 }
+--   local capture = StepCapture.new{ limit = 50, edits = DocumentHandlers.writes(protocol) }
 --   capture:around("execute_lua", fn, ...)   -- runs fn, records a step
---   capture:claim(sinceSeq)                  -- oldest unclaimed step after sinceSeq
+--   capture:claim(sinceSeq)                  -- the unclaimed steps after sinceSeq, as one
 --   StepCapture.diff(before, after)          -- { image, bounds, changed }
 --
 -- Captures live in memory only: a ring buffer of `limit` steps.
@@ -15,7 +17,6 @@
 local M = {}
 M.__index = M
 
-M.EDITS = { execute_lua = true, run_command = true, undo = true, redo = true }
 -- Larger canvases are not captured (the diff walks every pixel).
 M.MAX_PIXELS = 512 * 512
 
@@ -67,9 +68,12 @@ function M.diff(before, after)
   return { image = out, bounds = bounds, changed = changed, sizeChanged = not sameSize }
 end
 
+-- opts.edits: the set of methods to record ({ execute_lua = true, ... }),
+-- from the operation policy (DocumentHandlers.writes(protocol)).
 function M.new(opts)
   opts = opts or {}
-  return setmetatable({ limit = opts.limit or 50, steps = {}, seqNo = 0, checkpoints = {} }, M)
+  local edits = assert(opts.edits, "edits required: DocumentHandlers.writes(protocol)")
+  return setmetatable({ limit = opts.limit or 50, edits = edits, steps = {}, seqNo = 0, checkpoints = {} }, M)
 end
 
 -- Sequence number of the newest step (0 when none yet).
@@ -78,7 +82,7 @@ function M:seq() return self.seqNo end
 -- Runs fn(...) and, for edit methods, records the active frame before and
 -- after. Errors propagate; a failed edit records nothing.
 function M:around(method, fn, ...)
-  if not M.EDITS[method] then return fn(...) end
+  if not self.edits[method] then return fn(...) end
   local okBefore, before = pcall(M.composite)
   local results = table.pack(fn(...))
   local okAfter, after, frame = pcall(M.composite)
@@ -98,15 +102,31 @@ function M:around(method, fn, ...)
   return table.unpack(results, 1, results.n)
 end
 
--- The oldest step after `sinceSeq` that no chat step has claimed yet.
+-- The steps after `sinceSeq` that no chat step has claimed yet, as one: a
+-- tool that sends several write requests (a skill tool's put_image, then
+-- apply_color_map) is one chat step. Steps on the same frame become one
+-- capture from the first one's "before" to the last one's "after";
+-- otherwise the newest step stands for them.
 function M:claim(sinceSeq)
+  local open = {}
   for _, s in ipairs(self.steps) do
     if s.seq > (sinceSeq or 0) and not s.claimed then
       s.claimed = true
-      return s
+      open[#open + 1] = s
     end
   end
-  return nil
+  if #open <= 1 then return open[1] end
+  local first, last = open[1], open[#open]
+  local methods = {}
+  for _, s in ipairs(open) do
+    if s.frame ~= last.frame then return last end
+    methods[#methods + 1] = s.method
+  end
+  local d = M.diff(first.before, last.after)
+  return {
+    seq = last.seq, method = table.concat(methods, "+"), frame = last.frame, claimed = true, merged = #open,
+    before = first.before, after = last.after, diff = d.image, bounds = d.bounds, changed = d.changed,
+  }
 end
 
 function M:last() return self.steps[#self.steps] end

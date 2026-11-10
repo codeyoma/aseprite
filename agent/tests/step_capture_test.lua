@@ -7,8 +7,9 @@ local P = (function()
   local p = json.decode(f:read("a")); f:close(); return p
 end)()
 local StepCapture = dofile(app.fs.joinPath(extDir, "step_capture.lua"))
-local capture = StepCapture.new{ limit = 3 }
-local H = dofile(app.fs.joinPath(extDir, "document_handlers.lua")).new{ chunkDir = extDir, protocol = P, capture = capture }
+local DocumentHandlers = dofile(app.fs.joinPath(extDir, "document_handlers.lua"))
+local capture = StepCapture.new{ limit = 3, edits = DocumentHandlers.writes(P) }
+local H = DocumentHandlers.new{ chunkDir = extDir, protocol = P, capture = capture }
 
 local failures = 0
 local function check(name, cond, detail)
@@ -52,11 +53,31 @@ check("unknown checkpoint errors", not pcall(H.call, "diff_visual", { checkpoint
 H.call("undo", { steps = 1 })
 check("undo recorded", capture:last().method == "undo" and capture:last().changed == 1)
 
--- Claiming hands each step to one chat step, oldest first.
+-- Claiming hands the unclaimed steps to one chat step (a tool may send
+-- several write requests), merged from the first "before" to the last "after".
 local a = capture:claim(0)
-local b = capture:claim(0)
-check("claim in order", a and b and a.seq < b.seq)
+check("claim merges unclaimed steps", a and a.merged == 3 and a.method == "execute_lua+execute_lua+undo"
+  and a.changed == 6 and a.bounds.x == 4, a and a.method)
+check("claimed steps are taken", capture:claim(0) == nil)
 check("claim since", capture:claim(capture:seq()) == nil)
+H.call("execute_lua", { code = [[app.useTool{ tool = "pencil", color = Color(0, 0, 255), points = { Point(1, 1) } }]] })
+check("one unclaimed step is claimed as is", capture:claim(0) == capture:last())
+-- Steps on different frames: the newest stands for them.
+H.call("execute_lua", { code = [[app.useTool{ tool = "pencil", color = Color(0, 0, 255), points = { Point(2, 2) } }]] })
+app.frame = sprite.frames[2]
+H.call("execute_lua", { code = [[app.useTool{ tool = "pencil", color = Color(0, 0, 255), points = { Point(3, 3) } }]] })
+check("steps on other frames: the newest", capture:claim(0) == capture:last() and capture:last().frame == 2)
+app.frame = sprite.frames[1]
+
+-- Every write request is captured, and nothing else (the operation policy).
+for name, spec in pairs(P.requests) do
+  local isWrite = spec.kind == "write" or spec.kind == "scoped-write"
+  if (capture.edits[name] == true) ~= isWrite then check("capture list follows the policy: " .. name, false) end
+end
+check("capture list follows the policy", capture.edits.put_image and capture.edits.undo and not capture.edits.snapshot)
+local seqBefore = capture:seq()
+H.call("put_image", { width = 1, height = 1, rgba = "/wAA/w==", x = 9, y = 9 })
+check("put_image is captured", capture:seq() == seqBefore + 1 and capture:last().method == "put_image")
 
 -- Ring buffer stays bounded.
 for i = 1, 5 do H.call("execute_lua", { code = string.format([[app.useTool{ tool = "pencil", color = Color(0, %d, 0), points = { Point(%d, 10) } }]], 50 * i, i) }) end
