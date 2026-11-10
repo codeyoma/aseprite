@@ -1,0 +1,63 @@
+# Builds the AI agent pieces (bridge npm package and Aseprite extension).
+# Aseprite itself is never built or published here: the EULA does not
+# allow distributing compiled builds of this fork.
+name: agent
+
+on:
+  push:
+    branches: [agent]
+    paths: ["agent/**", ".github/workflows/agent.yml"]
+    tags: ["agent-v*"]
+  pull_request:
+    paths: ["agent/**", ".github/workflows/agent.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: agent/bridge/package-lock.json
+
+      - name: Build bridge
+        working-directory: agent/bridge
+        run: |
+          npm ci
+          npm run build
+
+      - name: Check the command catalog is up to date
+        run: |
+          python3 tools/gen_commands.py
+          git diff --exit-code bridge/src/commands.json
+
+      - name: Pack bridge
+        working-directory: agent/bridge
+        run: mkdir -p ../dist && npm pack --pack-destination ../dist
+
+      - name: Package extension
+        run: tools/package_extension.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aseprite-agent
+          path: |
+            agent/dist/*.aseprite-extension
+            agent/dist/*.tgz
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/agent-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.aseprite-extension dist/*.tgz --title "$GITHUB_REF_NAME" --notes "Aseprite Agent extension and bridge. Requires Aseprite 1.3 or later."

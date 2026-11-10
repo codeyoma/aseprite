@@ -1,6 +1,6 @@
 // MCP tool definitions, shared by the stdio and HTTP transports.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
@@ -23,8 +23,11 @@ interface CommandInfo {
 const COMMANDS = commandCatalog as CommandInfo[];
 const COMMANDS_BY_NAME = new Map(COMMANDS.map((c) => [c.name.toLowerCase(), c]));
 
-// Guide markdown lives in agent/guide, next to the bridge package.
-const GUIDE_DIR = fileURLToPath(new URL("../../guide/", import.meta.url));
+// Guide markdown: bundled in the npm package (../guide), or agent/guide
+// when running from the repository.
+const GUIDE_DIR = [new URL("../guide/", import.meta.url), new URL("../../guide/", import.meta.url)]
+  .map((u) => fileURLToPath(u))
+  .find((dir) => existsSync(dir)) ?? fileURLToPath(new URL("../guide/", import.meta.url));
 function guideTopics(): string[] {
   try {
     return readdirSync(GUIDE_DIR).filter((f) => f.endsWith(".md")).map((f) => f.slice(0, -3)).sort();
@@ -33,7 +36,7 @@ function guideTopics(): string[] {
   }
 }
 
-export const VERSION = "0.3.0";
+export const VERSION = "0.4.0";
 
 export const INSTRUCTIONS = `
 You control a running Aseprite (pixel-art and animation editor) through these tools.

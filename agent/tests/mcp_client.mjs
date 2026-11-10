@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-export const bridgePath = join(here, "../bridge/dist/index.js");
+// ASEPRITE_AGENT_BRIDGE overrides the bridge entry, e.g. to test an installed package.
+export const bridgePath = process.env.ASEPRITE_AGENT_BRIDGE ?? join(here, "../bridge/dist/index.js");
 
 export async function startBridge({ args = [], env = {} } = {}) {
   const proc = spawn("node", [bridgePath, ...args], { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, ...env } });

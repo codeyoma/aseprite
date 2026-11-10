@@ -66,7 +66,7 @@ Produced by [demos/run_demos.mjs](demos/run_demos.mjs), which calls the same MCP
 
 ## Setup
 
-1. Build Aseprite and the bridge, and install the extension: see [docs/BUILD-macos.md](docs/BUILD-macos.md).
+1. Install the extension and connect your agent: see [docs/INSTALL.md](docs/INSTALL.md). To build this fork of Aseprite yourself, see [docs/BUILD-macos.md](docs/BUILD-macos.md).
 2. Connect your agent.
    - **Claude Code:** the repository root has a `.mcp.json` that starts the bridge. Run `claude` from the repository root and approve the `aseprite` server. From another folder:
      ```bash

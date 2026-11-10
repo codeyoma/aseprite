@@ -1,23 +1,40 @@
 {
   "name": "aseprite-agent",
-  "version": "0.2.0",
-  "description": "MCP server that lets Claude Code or Codex control Aseprite.",
+  "version": "0.4.0",
+  "description": "MCP bridge that lets Claude Code or Codex control Aseprite, plus the in-app chat runner.",
   "license": "MIT",
   "type": "module",
   "bin": {
     "aseprite-agent": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "guide",
+    "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-guide.mjs",
     "dev": "tsc --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "prepack": "npm run build"
   },
   "engines": {
     "node": ">=20"
   },
+  "keywords": [
+    "aseprite",
+    "mcp",
+    "claude-code",
+    "codex",
+    "pixel-art",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeyoma/aseprite.git",
+    "directory": "agent/bridge"
+  },
+  "homepage": "https://github.com/codeyoma/aseprite/tree/agent/agent",
   "dependencies": {
     "@modelcontextprotocol/node": "^2.1.2",
     "@modelcontextprotocol/server": "^2.4.0",

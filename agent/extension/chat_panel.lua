@@ -266,7 +266,13 @@ return function(deps)
     dlg:newrow()
     dlg:label{ id = "status", text = deps.isConnected() and "" or "Bridge not connected", hexpand = true }
     dlg:newrow()
-    dlg:entry{ id = "prompt", text = "", focus = true, hexpand = true }
+    dlg:entry{
+      id = "prompt",
+      text = "",
+      placeholder = "Draw, edit or animate...",
+      focus = true,
+      hexpand = true,
+    }
     dlg:newrow()
     dlg:combobox{ id = "provider", options = providers, option = deps.preferences.provider or providers[1] }
     dlg:button{ id = "send", text = "&Send", onclick = send }

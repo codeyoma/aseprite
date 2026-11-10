@@ -2,11 +2,19 @@
   "name": "aseprite-agent",
   "displayName": "Aseprite Agent",
   "description": "Lets a local AI coding agent (Claude Code, Codex) control Aseprite through an MCP bridge.",
-  "version": "0.0.1",
-  "author": { "name": "codeyoma" },
+  "version": "0.4.0",
+  "author": {
+    "name": "codeyoma"
+  },
   "license": "MIT",
-  "categories": ["Scripts"],
+  "categories": [
+    "Scripts"
+  ],
   "contributes": {
-    "scripts": [{ "path": "./agent.lua" }]
+    "scripts": [
+      {
+        "path": "./agent.lua"
+      }
+    ]
   }
 }
