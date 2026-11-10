@@ -18,7 +18,7 @@ What carries over:
 | AI and upscaled "fake" pixel art | [PerfectPixel](https://github.com/harjeb/perfectPixel), [unfake](https://pypi.org/project/unfake/), [Pixel Rehab](https://arcade.pirillo.com/pixel-rehab.html), [Pixel Grid Detector](https://spritecook.ai/pixel-grid-detector), Claude Code plugins pixel-snap and Pixel Snapper | Detect the grid (FFT, run-length GCD, edge autocorrelation), resample one color per cell, clean the palette, remove anti-aliasing |
 | Palettes and ramps | Lospec Palette Importer, [Smart Palette](https://community.aseprite.org/t/extension-smart-palette/28320), [Rampart](https://sudo-whoami.itch.io/rampart), hue-shifted ramp scripts, [palette generator](https://ziva.sh/tools/pixel-art-palette-generator) | Extract colors from an image, reduce to N, group into ramps, hue-shift shadows cool and highlights warm |
 | Generation and editing | [PixelLab](https://www.pixellab.ai/docs/options/details) (8-direction rotation, skeleton and text animation, tilesets, inpainting; also an MCP server) | Directions, animation from a pose, tiles, local fixes |
-| Tilesets | [AutoBlob](https://community.aseprite.org/t/extension-autoblob-generate-the-full-47-tile-blob-autotile-set-from-6-template-tiles/28606), [Blobsmith](https://blobsmith.itch.io/blobsmith), [Blobator](https://github.com/Enichan/blobator), Tilesetter | 47-blob or 16-tile sets from a few template tiles, export with engine terrain data |
+| Tilesets | [AutoBlob](https://community.aseprite.org/t/extension-autoblob-generate-the-full-47-tile-blob-autotile-set-from-6-template-tiles/28606), [Blobsmith](https://blobsmith.itch.io/blobsmith), [Blobator](https://github.com/Enichan/blobator), Tilesetter | #46 |
 | 3D to pixel | [SpritePress](https://thespritewizard.itch.io/sprite-press), [Pixly Bakery](https://snappyworks.itch.io/pixlybakery), [True Pixel Art Generator](https://superhivemarket.com/products/true-pixel-art-generator-v2), Blender 8-direction render, [Pixelizing 3D objects](https://medium.com/@elliotbentine/pixelizing-3d-objects-b55ec33328f1) | Render a model in N directions with toon lighting, palette, outline, no anti-aliasing; voxel previews |
 | Lighting | Aseprite Normal Maps Extension, Normal Toolkit, Normal Map Preview | Normal maps from height or by hand, preview with a light |
 
@@ -31,21 +31,23 @@ What carries over:
 
 ## Skill map
 
+The catalog itself (searchable `/` picker, built-in skills, evals) is #35; tracking: #51.
+
 | Skill | Category | Core tools | Issue |
 |---|---|---|---|
-| Extract palette | Color | `palette_from_image` | see tracking issue |
-| Fix AI / upscaled pixel art | Cleanup | `detect_pixel_grid`, `resample_to_grid`, `reduce_colors` | |
-| Match tone / unify palette | Color | `remap_to_palette`, `color_stats` | |
-| Ramps and auto-shading | Color, Drawing | `make_ramp`, `shade_flat`, outline variants | |
-| Recreate from reference | Import | `slice_sheet`, `detect_background`, `split_by_color` | |
-| Import sprite sheet | Import | `slice_sheet` | |
-| Animation helpers | Animation | inbetween, smear, squash/stretch, cycles | |
-| Directions | 2D/3D | mirror, 4/8-direction rotation, isometric | |
-| Tilesets | Tiles | `autotile`, seamless check | |
-| 3D model to sprites | 3D | headless renderer to N-direction sheets | |
-| Voxels | 3D | `.vox` import to isometric sprites | |
-| Normal maps and lighting | Lighting | `normal_from_height`, preview | |
-| Dithering | Color | ordered/pattern dithering in palette | |
-| Palette swaps | Color | index maps, LUT export | |
-| Engine export | Export | Godot/Unity/Phaser/Tiled presets | |
-| Pixel text and UI | UI | pixel fonts, 9-slice | |
+| Extract palette | Color | `palette_from_image` | #36 |
+| Fix AI / upscaled pixel art | Cleanup | `detect_pixel_grid`, `resample_to_grid`, `reduce_colors` | #37 |
+| Match tone / unify palette | Color | `remap_to_palette`, `color_stats` | #38 |
+| Ramps and auto-shading | Color, Drawing | `make_ramp`, `shade_flat`, outline variants | #39 |
+| Recreate from reference | Import | `slice_sheet`, `detect_background`, `split_by_color` | #40 |
+| Import sprite sheet | Import | `slice_sheet` | #41 |
+| Animation helpers | Animation | inbetween, smear, squash/stretch, cycles | #42 |
+| Directions | 2D/3D | mirror, 4/8-direction rotation, isometric | #43 |
+| Tilesets | Tiles | `autotile`, seamless check | #46 |
+| 3D model to sprites | 3D | headless renderer to N-direction sheets | #44 |
+| Voxels | 3D | `.vox` import to isometric sprites | #45 |
+| Normal maps and lighting | Lighting | `normal_from_height`, preview | #47 |
+| Dithering | Color | ordered/pattern dithering in palette | #48 |
+| Palette swaps | Color | index maps, LUT export | #48 |
+| Engine export | Export | Godot/Unity/Phaser/Tiled presets | #49 |
+| Pixel text and UI | UI | pixel fonts, 9-slice | #50 |
