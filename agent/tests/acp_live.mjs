@@ -1,8 +1,10 @@
 // Live test of the ACP runtime (#31) through the chat panel:
 //  1. Stop mid-turn, then a next message continues the same session.
-//  2. A permission request from the agent reaches the panel and is answered.
-//     Agents that approve on their own (Codex auto-review, Claude with only
-//     the aseprite tools) never ask, so this step can fail without a bug.
+//  2. The agent uses its shell in Agent mode. Claude asks permission for
+//     commands that change things (answered "allow" here; read-only ones
+//     like ls run on their own); Codex runs it in its sandbox with
+//     its own approvals, so it may not ask. The panel's permission round
+//     trip itself is tested with a scripted agent in permission_live.mjs.
 // Run with Aseprite open:  node agent/tests/acp_live.mjs [claude|codex]
 import { live } from "./live.mjs";
 
@@ -21,14 +23,14 @@ let turn;
 // ONLY_PERMISSION=1 skips the Stop test.
 if (!process.env.ONLY_PERMISSION) {
 // 1. Stop, then continue.
-await chat("Remember the word PINEAPPLE. Then call get_state, then read every guide topic one by one, then describe them at length.", { mode: null, wait: false });
+await chat("Remember the word PINEAPPLE. Then call get_state, then read every guide topic one by one, then describe them at length.", { mode: "agent", wait: false });
 await sleep(8000);
 await lua("AsepriteAgent.stop() return true");
 await waitIdle(60_000);
 turn = await lastTurn();
 check("stop ends the turn", turn.some((l) => l === "status: Stopped."), turn);
 
-await chat("What word did I ask you to remember? Answer with the word only.", { mode: null });
+await chat("What word did I ask you to remember? Answer with the word only.", { mode: "agent" });
 turn = await lastTurn();
 check("next message continues the session", turn.some((l) => /pineapple/i.test(l) && l.startsWith("text")), turn);
 
@@ -38,11 +40,22 @@ await lua(`AsepriteAgent.setPermissionAnswer(function(req)
   for i, o in ipairs(req.options or {}) do if tostring(o.kind):match("^allow") then return i end end
   return 1
 end) return true`);
-await chat("Use your shell to run exactly: touch ~/aseprite-acp-permission-test . Then say done.", { mode: null });
+const { existsSync, mkdtempSync, writeFileSync } = await import("node:fs");
+const { tmpdir } = await import("node:os");
+const { join } = await import("node:path");
+const shellDir = mkdtempSync(join(tmpdir(), "acp-shell-"));
+for (const n of ["a", "b", "c", "d", "e"]) writeFileSync(join(shellDir, `${n}.png`), "");
+await chat(`Use your shell to count the .png files in ${shellDir} (for example with ls). Reply with just the number.`, { mode: "agent" });
 turn = await lastTurn();
 console.log(turn.join("\n"));
-const asked = turn.find((l) => l.startsWith("status: Permission for"));
-check("permission request shown and answered", !!asked, turn);
+check("the agent used its shell and got the count", turn.some((l) => l.startsWith("tool")) && turn.some((l) => /^text: .*\b5\b/.test(l)), turn);
+// A command that changes files asks first (Claude Code runs read-only ones like ls on its own).
+if (provider === "claude") {
+  await chat(`Use your shell to create an empty file named done.txt in ${shellDir}. Then say ok.`, { mode: "agent" });
+  turn = await lastTurn();
+  check("Claude asked permission for a command that writes", turn.some((l) => l.startsWith("status: Permission for")), turn);
+  check("the allowed command ran", existsSync(join(shellDir, "done.txt")));
+}
 await lua("AsepriteAgent.setPermissionAnswer(nil) return true");
 
 done("ACP");

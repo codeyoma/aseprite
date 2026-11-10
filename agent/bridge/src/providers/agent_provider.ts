@@ -1,6 +1,7 @@
 // The Agent Provider interface: how the chat runs one agent CLI and reads
 // its output. Each provider (Claude Code, Codex) is an adapter at this seam;
 // ChatRunner drives any of them without knowing their flags or formats.
+import type { ChatMode } from "../acp.js";
 
 export type ProviderId = "claude" | "codex";
 
@@ -31,10 +32,19 @@ export interface AcpSpec {
   /** npm package that provides the ACP agent, and its bin name. */
   package: string;
   bin: string;
-  /** `_meta` for session/new and session/load. Developer mode keeps the agent's coding tools (#28). */
-  sessionMeta(systemPrompt: string, developer?: boolean): Record<string, unknown>;
-  /** Extra environment for the agent process. */
-  env(systemPrompt: string, developer?: boolean): Record<string, string>;
+  /**
+   * `_meta` for session/new and session/load, by chat mode: Agent mode has
+   * a shell (each command asks the user), Developer mode keeps the agent's
+   * coding tools (#28), Ask and Plan only read.
+   */
+  sessionMeta(systemPrompt: string, mode: ChatMode): Record<string, unknown>;
+  /**
+   * The agent's permission mode to set on each session (session/set_mode),
+   * by chat mode; undefined keeps the agent's own.
+   */
+  permissionMode?(mode: ChatMode): string | undefined;
+  /** Extra environment for the agent process, by chat mode. */
+  env(systemPrompt: string, mode: ChatMode): Record<string, string>;
 }
 
 export interface AgentProvider {

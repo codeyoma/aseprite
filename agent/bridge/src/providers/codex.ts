@@ -9,12 +9,14 @@ export const codexProvider: AgentProvider = {
     package: "@agentclientprotocol/codex-acp",
     bin: "codex-acp",
     sessionMeta: () => ({}),
-    // CODEX_CONFIG is merged into the session config.
-    // Developer mode lets Codex write in the repository (workspace-write).
-    env: (systemPrompt, developer) => ({
-      CODEX_CONFIG: JSON.stringify(
-        developer ? { developer_instructions: systemPrompt, sandbox_mode: "workspace-write" } : { developer_instructions: systemPrompt },
-      ),
+    // CODEX_CONFIG is merged into the session config. Codex's shell runs in
+    // its sandbox with its own approvals in Agent mode; Ask and Plan get a
+    // read-only sandbox; Developer mode may write in the repository.
+    env: (systemPrompt, mode) => ({
+      CODEX_CONFIG: JSON.stringify({
+        developer_instructions: systemPrompt,
+        ...(mode === "developer" ? { sandbox_mode: "workspace-write" } : mode === "ask" || mode === "plan" ? { sandbox_mode: "read-only" } : {}),
+      }),
     }),
   },
 

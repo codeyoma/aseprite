@@ -37,9 +37,14 @@ export interface AcpHandlers {
 
 const require = createRequire(import.meta.url);
 
-/** Command to start a provider's ACP agent, or undefined if it isn't installed. */
+/**
+ * Command to start a provider's ACP agent, or undefined if it isn't
+ * installed. ASEPRITE_AGENT_ACP_AGENT runs that script instead, for tests
+ * (a scripted fake agent).
+ */
 export function acpCommand(provider: AgentProvider): { command: string; args: string[] } | undefined {
   if (!provider.acp) return undefined;
+  if (process.env.ASEPRITE_AGENT_ACP_AGENT) return { command: process.execPath, args: [process.env.ASEPRITE_AGENT_ACP_AGENT] };
   try {
     const pkgJson = require.resolve(`${provider.acp.package}/package.json`);
     const pkg = JSON.parse(readFileSync(pkgJson, "utf8"));
@@ -62,6 +67,8 @@ export class AcpRunner {
   private loading = false;
   private mapper = new AcpMapper();
   private current?: string; // session of the running prompt
+  private mode: ChatMode = "agent"; // the mode the agent process was started for
+  private permissionModes = new Map<string, string>(); // permission mode set on each session
 
   constructor(
     private readonly provider: AgentProvider,
@@ -98,7 +105,7 @@ export class AcpRunner {
     const proc = spawn(cmd.command, cmd.args, {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...this.provider.acp!.env(this.systemPrompt, this.developer) },
+      env: { ...process.env, ...this.provider.acp!.env(this.systemPrompt, this.mode) },
     });
     this.proc = proc;
     let stderr = "";
@@ -145,9 +152,23 @@ export class AcpRunner {
     }
   }
 
-  /** Session for a conversation: reuse, load (after a restart) or create. */
+  /** Session for a conversation: reuse, load (after a restart) or create; then its permission mode. */
   private async session(conversationId: string | undefined, mode: ChatMode): Promise<string> {
-    const params = { cwd: this.cwd, mcpServers: this.mcpServers(mode), _meta: this.provider.acp!.sessionMeta(this.systemPrompt, this.developer) };
+    const id = await this.openSession(conversationId, mode);
+    const want = this.provider.acp!.permissionMode?.(this.developer ? "developer" : mode);
+    if (want && this.permissionModes.get(id) !== want) {
+      try {
+        await this.agent.request("session/set_mode", { sessionId: id, modeId: want });
+        this.permissionModes.set(id, want);
+      } catch (err) {
+        log(`acp: couldn't set permission mode ${want}: ${String(err)}`);
+      }
+    }
+    return id;
+  }
+
+  private async openSession(conversationId: string | undefined, mode: ChatMode): Promise<string> {
+    const params = { cwd: this.cwd, mcpServers: this.mcpServers(mode), _meta: this.provider.acp!.sessionMeta(this.systemPrompt, this.developer ? "developer" : mode) };
     if (conversationId && this.sessions.has(conversationId)) return conversationId;
     if (conversationId && this.loadSupported) {
       this.loading = true; // the agent replays history as updates; don't show it again
@@ -183,6 +204,7 @@ export class AcpRunner {
       log(`acp: switching ${conversationId} to ${mode} mode`);
       this.dispose();
     }
+    if (!this.agent) this.mode = this.developer ? "developer" : mode;
     await this.start();
     const sessionId = await this.session(conversationId, mode);
     this.mapper = new AcpMapper();
@@ -211,5 +233,6 @@ export class AcpRunner {
     this.agent = undefined;
     this.sessions.clear();
     this.sessionModes.clear();
+    this.permissionModes.clear();
   }
 }
