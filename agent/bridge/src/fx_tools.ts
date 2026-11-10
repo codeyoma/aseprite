@@ -126,13 +126,13 @@ export function fxColors(images: Rgba[]): string[] {
   return [...seen].sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1)).map(([h]) => h);
 }
 
-/** The most entries a palette takes before add_fx snaps instead of appending. */
+/** The most entries an indexed sprite's palette takes before add_fx snaps instead of appending (RGB palettes grow past it). */
 export const FX_PALETTE_CAP = 256;
 
 /**
  * The palette for an effect's color items, shared by the placing tools. By default (palette undefined) the colors
  * on the Normal effect layer join the sprite palette (returned as `append`, for put_images' palette, so it is the
- * same undo step; the glow layer is light, not palette pixels); past FX_PALETTE_CAP entries the items are snapped
+ * same undo step; the glow layer is light, not palette pixels); in an indexed sprite, past FX_PALETTE_CAP entries the items are snapped
  * to the sprite palette instead (in place). A ramp or 'sprite' leaves the sprite palette alone.
  */
 export async function fxPalette(doc: Document, info: SpriteInfo, colorItems: PutImagesItem[], palette: unknown): Promise<{ append?: string[]; note: string }> {
@@ -140,7 +140,7 @@ export async function fxPalette(doc: Document, info: SpriteInfo, colorItems: Put
   const current = await doc.palette();
   const have = new Set(current.map((c) => (c.a < 255 ? hex6(c.r, c.g, c.b) + c.a.toString(16).padStart(2, "0") : hex6(c.r, c.g, c.b))));
   const missing = fxColors(colorItems.map((it) => it.image)).filter((h) => !have.has(h));
-  if (current.length + missing.length <= FX_PALETTE_CAP) {
+  if (info.colorMode !== "indexed" || current.length + missing.length <= FX_PALETTE_CAP) {
     return {
       append: missing,
       note: missing.length
@@ -297,7 +297,7 @@ export const FX_TOOLS: Tool[] = [
       "the effect lands, by its anchor: 'center' puts its visual centre there (the impact point of a hit, slash, burst " +
       "or bolt), 'ground' puts its origin there (the floor under a pillar, fire, explosion or magic circle). Each effect " +
       "has a default anchor (list_fx). Unless palette is 'sprite' or a ramp, the effect's colors are appended to the " +
-      "sprite palette (in the same undo step; past 256 entries they are snapped to it instead). From start_frame, " +
+      "sprite palette (in the same undo step; in an indexed sprite past 256 entries they are snapped to it instead). From start_frame, " +
       "each sprite frame shows the effect at that frame's start time (using the sprite's frame durations); a one-shot " +
       "ends when its duration is up, a loop wraps and fills every frame to the end. When the effect outlasts the " +
       "sprite, frames are added at the end (copies of the last frame, 1000/fps ms each). The effect goes on a new " +

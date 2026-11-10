@@ -255,21 +255,14 @@ test("add_fx appends the effect's colors to the sprite palette in the same write
   assert.equal(fake.calls.filter((c) => c.method === "put_images").at(-1).params.palette, undefined);
 });
 
-test("add_fx snaps to the sprite palette instead when appending would pass 256 entries", async () => {
-  const greys = Array.from({ length: 254 }, (_, i) => "#" + [i, i, (i + 1) % 256].map((v) => v.toString(16).padStart(2, "0")).join(""));
-  const fake = fakeDocument({ width: 64, height: 64, palette: greys, layers: [{ name: "Hero", frames: [rect(64, 64, [0, 0, 1, 1], [0, 0, 1])] }], layer: "Hero" });
+test("add_fx appends past 256 entries in an RGB sprite (a full default palette doesn't snap the effect)", async () => {
+  const blacks = Array.from({ length: 256 }, () => "#000000");
+  const fake = fakeDocument({ width: 64, height: 64, palette: blacks, layers: [{ name: "Hero", frames: [rect(64, 64, [0, 0, 1, 1], [0, 0, 1])] }], layer: "Hero" });
   const r = await runTool(findTool("add_fx"), { id: "hit-spark", x: 32, y: 32 }, fake);
   assert.ok(!r.isError, textOf(r));
-  assert.match(textOf(r), /past 256 entries \(it has 254\), so they were snapped to the sprite palette instead/);
-  assert.equal(fake.calls.find((c) => c.method === "put_images").params.palette, undefined);
-  const pal = new Set((await fake.request("get_palette")).result.colors);
-  assert.equal(pal.size, 254);
-  for (const im of fake.images("AI: fx hit-spark")) {
-    if (!im) continue;
-    for (let i = 0; i < im.length; i += 4) {
-      if (im[i + 3]) assert.ok(pal.has("#" + [im[i], im[i + 1], im[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join("")));
-    }
-  }
+  const added = fake.calls.find((c) => c.method === "put_images").params.palette;
+  assert.ok(added.length > 1, String(added));
+  assert.equal((await fake.request("get_palette")).result.colors.length, 256 + added.length);
 });
 
 test("preview_fx: a numbered contact sheet PNG, nothing written", async () => {

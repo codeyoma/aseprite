@@ -33,7 +33,7 @@ const hitsOf = (o) => (Array.isArray(o.hits) ? o.hits : []);
 
 await lua(attack);
 const before = await info();
-await chat("Add a slash effect to the attack, hitting on frame 4, with a 120 ms hit-stop");
+await chat("Add a slash effect from the FX library to the attack, hitting on frame 4, with a 120 ms hit-stop");
 const a = await info();
 const fxLayer = a.layers.find((n) => /^AI: fx /.test(n));
 check("an AI: fx layer exists", !!fxLayer, a.layers);

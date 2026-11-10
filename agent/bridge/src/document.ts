@@ -63,6 +63,7 @@ export interface SpriteInfo {
   slices: SliceInfo[];
   /** Hits recorded by hit_stop, in frame order of recording. */
   hits: HitInfo[];
+  colorMode: "rgb" | "indexed" | "grayscale";
 }
 
 export interface SliceInfo {
@@ -285,6 +286,7 @@ export function parseState(state: any): SpriteInfo {
       bounds: { x: sl.bounds.x, y: sl.bounds.y, w: sl.bounds.width, h: sl.bounds.height },
       center: sl.center ? { x: sl.center.x, y: sl.center.y, w: sl.center.width, h: sl.center.height } : undefined,
     })),
+    colorMode: s.colorMode ?? "rgb",
     hits: (s.fxHits ?? []).map((h: any) => ({
       frame: h.frame, freezeMs: h.freezeMs, ...(h.shakeMs !== undefined ? { shakeMs: h.shakeMs } : {}), ...(h.amp !== undefined ? { amp: h.amp } : {}),
     })),
