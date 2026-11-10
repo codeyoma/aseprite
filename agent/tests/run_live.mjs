@@ -29,6 +29,8 @@ const ARGS = {
   sheet: ["@tmp"], tileset: ["@tmp"], voxels: ["@tmp"], color_skills: ["@ref"],
 };
 const NO_PROVIDER = new Set(["permission", "daemon"]);
+// Environment some tests need; "@tmp" is a fresh scratch folder.
+const ENV = { commands: { ASEPRITE_AGENT_COMMANDS: "@tmp" } };
 const NOT_IN_ALL = new Set(["developer", "developer_build", "daemon", "chat", "pixel_snap"]);
 const liveTests = () => readdirSync(here).filter((f) => f.endsWith("_live.mjs") && f !== "run_live.mjs").map((f) => f.slice(0, -9));
 
@@ -71,9 +73,9 @@ async function restartAseprite() {
   await new Promise((r) => setTimeout(r, 8000));
 }
 
-function run(script, args) {
+function run(script, args, env = {}) {
   return new Promise((resolve) => {
-    const p = spawn(process.execPath, [script, ...args], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(process.execPath, [script, ...args], { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } });
     let out = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (out += d));
@@ -94,7 +96,8 @@ for (const spec of names) {
   for (const provider of NO_PROVIDER.has(name) ? [undefined] : providers) {
     const args = [...base.map(expand), ...(provider ? [provider] : [])];
     const t0 = Date.now();
-    const { code, out } = await run(script, args);
+    const env = Object.fromEntries(Object.entries(ENV[name] ?? {}).map(([k, v]) => [k, expand(v)]));
+    const { code, out } = await run(script, args, env);
     const lines = out.split("\n").filter((l) => /^(PASS|FAIL)\b|TEST (PASSED|FAILED)|TIMEOUT|^Error|^WARNING/.test(l));
     const ok = code === 0 && !lines.some((l) => /^FAIL|TIMEOUT/.test(l));
     console.log(`### ${name}${provider ? ` (${provider})` : ""}: ${ok ? "ok" : "FAILED"} in ${Math.round((Date.now() - t0) / 1000)}s`);
