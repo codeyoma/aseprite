@@ -65,6 +65,8 @@ Use a 2x2 Bayer pattern. Never dither single pixels.
 
 Pick a mode next to the agent: **Agent** (default) makes changes; **Ask** only answers and advises; **Plan** replies with a numbered plan and an **Apply plan** button that carries it out in Agent mode. Ask and Plan runs connect to a read-only tool endpoint, so the agent cannot change the document. The panel remembers the mode.
 
+**Developer** mode (asks once before the first use) lets the agent change this Aseprite fork itself: it works in the repository with its coding tools, asks you before edits and commands, and commits on a `dev/<date>-<task>` branch. Its reply gets **Rebuild & Relaunch**: Aseprite is rebuilt when C++ changed (build errors go back to the agent to fix) and restarted with your open sprites and the conversation; **Discard** stashes uncommitted changes and returns to the branch you were on. Builds of the fork are for your own use only (Aseprite EULA).
+
 To show the agent something, click **+** and attach the selection, the active layer, the active frame or an image file (for example a reference whose palette or style you want). **File > Scripts > AI Agent** and the timeline's cel, layer and frame context menus have **Attach to AI Chat** too. Attachments are listed above the input and go with your next message as images; rendered ones are saved in `~/.aseprite-agent/attachments` and deleted after a week.
 
 ![chat panel](demos/output/7-chat-panel.png)
