@@ -369,8 +369,53 @@ end
 -- Request dispatch
 ---------------------------------------------------------------------------
 
+-- Sends a message to the bridge. The socket can close at any time (bridge
+-- restart, handover); a failed send is dropped, not raised.
 local function send(obj)
-  if ws then ws:sendText(json.encode(obj)) end
+  if not ws then return false end
+  return (pcall(ws.sendText, ws, json.encode(obj)))
+end
+
+local function sendBinary(bytes)
+  if not ws then return false end
+  return (pcall(ws.sendBinary, ws, bytes))
+end
+
+-- Confirmation alerts that would block an agent with a modal dialog even
+-- when it passes ui=false: "format doesn't support layers", "overwrite
+-- files?", per-format option prompts. Muted while a request runs, then the
+-- user's settings are restored.
+local QUIET_ALERTS = {
+  { "save_file", "show_file_format_doesnt_support_alert" },
+  { "save_file", "show_export_animation_in_sequence_alert" },
+  { "export_file", "show_overwrite_files_alert" },
+  { "sprite_sheet", "show_overwrite_files_alert" },
+  { "gif", "show_alert" }, { "jpeg", "show_alert" }, { "svg", "show_alert" },
+  { "tga", "show_alert" }, { "css", "show_alert" }, { "webp", "show_alert" },
+}
+
+local function withQuietAlerts(fn, ...)
+  local saved = {}
+  for i, key in ipairs(QUIET_ALERTS) do
+    local ok, section = pcall(function() return app.preferences[key[1]] end)
+    if ok and section then
+      saved[i] = section[key[2]]
+      pcall(function() section[key[2]] = false end)
+    end
+  end
+  local results = table.pack(pcall(fn, ...))
+  for i, key in ipairs(QUIET_ALERTS) do
+    -- Restore only what is still muted, so a request that sets one of
+    -- these preferences on purpose keeps its value.
+    if saved[i] ~= nil then
+      pcall(function()
+        local section = app.preferences[key[1]]
+        if section[key[2]] == false then section[key[2]] = saved[i] end
+      end)
+    end
+  end
+  if not results[1] then error(results[2], 0) end
+  return table.unpack(results, 2, results.n)
 end
 
 -- Requests this extension sends to the bridge (chat). String ids keep them
@@ -629,13 +674,12 @@ local function handleRequest(msg)
     return
   end
 
-  local ok, result, bytes = xpcall(handler, debug.traceback, msg.params or {})
+  local ok, result, bytes = xpcall(withQuietAlerts, debug.traceback, handler, msg.params or {})
   if not ok then
     send({ jsonrpc = "2.0", id = id, error = { code = -32000, message = tostring(result) } })
   elseif bytes ~= nil then
     result.binary = true
-    send({ jsonrpc = "2.0", id = id, result = result })
-    ws:sendBinary(bytes)
+    if send({ jsonrpc = "2.0", id = id, result = result }) then sendBinary(bytes) end
   else
     send({ jsonrpc = "2.0", id = id, result = result })
   end
