@@ -943,7 +943,8 @@ return function(deps)
     updateAttachments()
     -- The header names the skill, so the bubble shows only the request.
     if skill then shown = shown:gsub("^%s*/skill:[%w%-_]+%s*", "", 1) end
-    conv:send(shown, provider, mode, skill and skill.title or nil)
+    -- Before the catalog arrives (right after start), name the skill by its id.
+    conv:send(shown, provider, mode, skill and skill.title or skillName)
     -- Record where this reply starts in the undo history (#22).
     local header = conv:entries()[#conv:entries()]
     currentTurn = deps.TurnHistory.begin(app.sprite)
@@ -1238,6 +1239,7 @@ return function(deps)
 
   function Panel.open()
     if dlg then return end
+    if #catalogRows == 0 and deps.isConnected() then refreshCatalog() end
     dlg = Dialog{
       title = "AI Agent",
       resizeable = true,

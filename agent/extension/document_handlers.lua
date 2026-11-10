@@ -1361,8 +1361,22 @@ handlers.set_palette = function(params)
   local colors = params.colors or {}
   if #colors == 0 then error("No colors") end
   app.transaction(params.label or "Set palette", function()
-    local p = Palette(#colors)
-    for i, h in ipairs(colors) do p:setColor(i - 1, Color(hexRgba(h))) end
+    -- append: add the colors after the current palette's (skipping ones it has).
+    local start, list = 0, colors
+    local p
+    if params.append then
+      local cur = sprite.palettes[1]
+      local have, add = {}, {}
+      for i = 0, #cur - 1 do local c = cur:getColor(i); have[rgbaHex(c.red, c.green, c.blue, c.alpha)] = true end
+      for _, h in ipairs(colors) do if not have[h] then add[#add + 1] = h end end
+      p = Palette(cur)
+      start = #cur
+      p:resize(#cur + #add)
+      list = add
+    else
+      p = Palette(#colors)
+    end
+    for i, h in ipairs(list) do p:setColor(start + i - 1, Color(hexRgba(h))) end
     sprite:setPalette(p)
   end)
   app.refresh()
@@ -1551,6 +1565,45 @@ handlers.split_layer_by_colors = function(params)
   for gi = 1, #params.groups do names[#names + 1] = made[gi].name end
   app.refresh()
   return { layers = names }
+end
+
+-- Writes RGBA pixels (base64, canvas-sized at x, y) into a frame of a layer
+-- (#39): params.layer (id or name) replaces that layer's cel, or
+-- params.new_layer = name puts them on an "AI: <name>" layer above
+-- params.above (created once, reused by later frames). hide_source hides
+-- the layer it was made from. One undo step.
+handlers.put_image = function(params)
+  local sprite = app.sprite
+  if not sprite then error("No active sprite") end
+  local w, h = params.width, params.height
+  local bytes = base64Decode(params.rgba or "")
+  if #bytes ~= w * h * 4 then error(string.format("Expected %d bytes, got %d", w * h * 4, #bytes)) end
+  local frame = params.frame or (app.frame and app.frame.frameNumber) or 1
+  local target
+  app.transaction(params.label or "AI image", function()
+    if params.new_layer then
+      local name = variations.PREFIX .. params.new_layer
+      for _, l in ipairs(sprite.layers) do if l.name == name then target = l end end
+      local source = params.above and layerById(params.above, sprite) or nil
+      if not target then
+        target = variations.aiLayer(params.new_layer, params.prompt, { above = source })
+      end
+      if params.hide_source and source then source.isVisible = false end
+    else
+      target = layerById(params.layer, sprite) or app.layer
+      if not target or target.isGroup then error("No image layer to write to") end
+    end
+    local img = Image(w, h, ColorMode.RGB)
+    img.bytes = bytes
+    if sprite.colorMode ~= ColorMode.RGB then
+      local conv = Image(w, h, sprite.colorMode)
+      conv:drawImage(img)
+      img = conv
+    end
+    sprite:newCel(target, frame, img, Point(params.x or 0, params.y or 0))
+  end)
+  app.refresh()
+  return { layer = "L" .. target.id, name = target.name }
 end
 
 -- A swatch strip of colors on a new layer "AI: <name>" (one undo step).

@@ -2,6 +2,7 @@
 // registration, the chat panel's step labels and the edit/read kind all
 // come from here. A tool without `run` forwards its input to the Aseprite
 // request method of the same name and returns the result as JSON.
+import { SHADING_TOOLS } from "./shading_tools.js";
 import { RECREATE_TOOLS } from "./recreate_tools.js";
 import { SHEET_TOOLS } from "./sheet_tools.js";
 import { PIXEL_TOOLS } from "./pixel_tools.js";
@@ -469,6 +470,8 @@ TOOLS.push(...PIXEL_TOOLS);
 TOOLS.push(...SHEET_TOOLS);
 // Recreate from a reference (#40).
 TOOLS.push(...RECREATE_TOOLS);
+// Ramps, shading and outlines (#39).
+TOOLS.push(...SHADING_TOOLS);
 
 // The bridge's sub-agent runner (#33), set by index.ts.
 let spawner: SubAgents | undefined;

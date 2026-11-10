@@ -83,4 +83,23 @@ check("split covers every frame", outline:cel(1) and outline:cel(2)
 app.undo()
 check("split is one undo step", #sp.layers == 1 and sp.layers[1].name == "Layer 1")
 
+-- put_image (#39): onto a new AI layer reused across frames, source hidden.
+local ps = Sprite(2, 1, ColorMode.RGB)
+ps:newFrame()
+ps.layers[1].name = "Body"
+app.layer = ps.layers[1]
+H.call("put_image", { new_layer = "shaded Body", above = "Body", hide_source = true, frame = 1, width = 2, height = 1, rgba = "/wBN/wAAAAA=" })
+H.call("put_image", { new_layer = "shaded Body", above = "Body", hide_source = true, frame = 2, width = 2, height = 1, rgba = "AAAAAP8ATf8=" })
+check("put_image: one AI layer for both frames", #ps.layers == 2 and ps.layers[2].name == "AI: shaded Body"
+  and ps.layers[2]:cel(1) and ps.layers[2]:cel(2) and not ps.layers[1].isVisible)
+H.call("put_image", { layer = "Body", frame = 1, width = 2, height = 1, rgba = "AAAAAP8ATf8=" })
+check("put_image: into an existing layer", app.pixelColor.rgbaA(ps.layers[1]:cel(1).image:getPixel(0, 0)) == 0
+  or ps.layers[1]:cel(1).position.x == 1)
+
+-- set_palette append (#39): only new colors are added.
+H.call("set_palette", { colors = { "#000000", "#ff004d" } })
+H.call("set_palette", { colors = { "#ff004d", "#29adff" }, append = true })
+local pp = H.call("get_palette", {}).colors
+check("palette append", #pp == 3 and pp[3] == "#29adff", table.concat(pp, ","))
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))
