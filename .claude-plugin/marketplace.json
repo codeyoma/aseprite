@@ -1,0 +1,12 @@
+{
+  "name": "aseprite-agent",
+  "owner": { "name": "codeyoma" },
+  "description": "Aseprite Agent: natural-language control of Aseprite for Claude Code.",
+  "plugins": [
+    {
+      "name": "aseprite",
+      "source": "./agent/claude-plugin",
+      "description": "Aseprite MCP tools and the agent guide as skills."
+    }
+  ]
+}

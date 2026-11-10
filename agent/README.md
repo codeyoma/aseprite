@@ -91,7 +91,11 @@ Produced by [demos/run_demos.mjs](demos/run_demos.mjs), which calls the same MCP
 
 1. Install the extension and connect your agent: see [docs/INSTALL.md](docs/INSTALL.md). To build this fork of Aseprite yourself, see [docs/BUILD-macos.md](docs/BUILD-macos.md).
 2. Connect your agent.
-   - **Claude Code:** the repository root has a `.mcp.json` that starts the bridge. Run `claude` from the repository root and approve the `aseprite` server. From another folder:
+   - **Claude Code, any folder:** install the plugin (tools plus the guide as skills, see [claude-plugin/](claude-plugin/)):
+     ```
+     /plugin install aseprite --marketplace codeyoma/aseprite
+     ```
+   - **Claude Code, this repository:** the repository root has a `.mcp.json` that starts the bridge. Run `claude` from the repository root and approve the `aseprite` server. Or add it by hand:
      ```bash
      claude mcp add aseprite -- node /path/to/aseprite/agent/bridge/dist/index.js
      ```
@@ -103,6 +107,21 @@ Produced by [demos/run_demos.mjs](demos/run_demos.mjs), which calls the same MCP
      ```
 3. Open Aseprite. The extension connects to the bridge automatically (File > Scripts > AI Agent > Connect / Disconnect).
 4. Ask: "Make a 32×32 sprite with a red circle on a layer called Body."
+
+## Command line
+
+`ase` (the bridge package's second command) uses the same tools from a shell. Live commands talk to the running Aseprite; `check` and `render` on a file run Aseprite headless.
+
+```bash
+ase state --json
+ase snapshot --frame 3 -o frame3.png
+ase run -e 'return #app.sprite.layers'
+ase timeline
+ase check hero.aseprite          # exits 1 when there are errors
+ase render hero.aseprite --sheet hero.png --data hero.json
+```
+
+Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to do>` and exit 1. Set `ASEPRITE_BIN` if `aseprite` isn't on PATH.
 
 ## Tools
 

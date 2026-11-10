@@ -261,6 +261,7 @@ export class AsepriteLink extends EventEmitter {
 }
 
 export function log(message: string): void {
-  // stdout carries MCP traffic, so logs go to stderr.
+  // stdout carries MCP traffic, so logs go to stderr. The ase CLI turns them off.
+  if (process.env.ASEPRITE_AGENT_QUIET) return;
   process.stderr.write(`[aseprite-agent] ${message}\n`);
 }

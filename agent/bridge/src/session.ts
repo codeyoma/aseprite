@@ -20,6 +20,21 @@ export function newToken(): string {
   return randomBytes(24).toString("hex");
 }
 
+/**
+ * Where this bridge is installed, kept after it exits (unlike the session
+ * file), so a Claude Code plugin in any folder can start it (#30).
+ */
+export const bridgeFile = join(sessionDir, "bridge.json");
+
+export function recordBridge(bridgePath: string, version: string): void {
+  try {
+    mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
+    writeFileSync(bridgeFile, JSON.stringify({ bridgePath, version }, null, 2) + "\n");
+  } catch {
+    // Not fatal: the plugin falls back to npx.
+  }
+}
+
 /** Publish the port and token so the Aseprite extension can find this bridge. */
 export function writeSession(session: Session): void {
   mkdirSync(sessionDir, { recursive: true, mode: 0o700 });

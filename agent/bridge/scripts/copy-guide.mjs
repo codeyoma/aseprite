@@ -15,6 +15,15 @@ rmSync(dst, { recursive: true, force: true });
 cpSync(src, dst, { recursive: true });
 console.log(`copied guide -> ${dst}`);
 
+// The ase CLI's file mode runs the extension's document handlers headless.
+const ext = join(root, "extension");
+rmSync(ext, { recursive: true, force: true });
+cpSync(join(root, "..", "extension"), ext, {
+  recursive: true,
+  filter: (p) => !p.includes("__pref") && (p === join(root, "..", "extension") || p.endsWith(".lua") || p.endsWith(".json")),
+});
+console.log(`copied extension -> ${ext}`);
+
 // The wire protocol definition ships with the extension; the package needs a copy.
 cpSync(join(root, "..", "extension", "protocol.json"), join(root, "protocol.json"));
 console.log(`copied protocol.json -> ${join(root, "protocol.json")}`);

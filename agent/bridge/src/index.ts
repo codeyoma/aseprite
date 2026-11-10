@@ -14,7 +14,7 @@ import { AsepriteLink, log } from "./aseprite.js";
 import { bridgeMethods, ChatRunner } from "./chat.js";
 import { startHttpEndpoint } from "./http.js";
 import { createMcpServer, VERSION } from "./server.js";
-import { newToken } from "./session.js";
+import { newToken, recordBridge } from "./session.js";
 
 const DAEMON_IDLE_EXIT_MS = 120_000;
 
@@ -22,6 +22,7 @@ async function main() {
   const daemon = process.argv.includes("--daemon");
   const link = new AsepriteLink();
   link.sessionExtra = { bridgePath: fileURLToPath(import.meta.url), version: VERSION, mode: daemon ? "daemon" : "stdio" };
+  recordBridge(fileURLToPath(import.meta.url), VERSION);
 
   const endpoint = await startHttpEndpoint(link, newToken());
   const chat = new ChatRunner(link, endpoint);

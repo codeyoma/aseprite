@@ -1,0 +1,10 @@
+{
+  "name": "aseprite",
+  "version": "0.4.0",
+  "description": "Control a running Aseprite (pixel art and animation) through MCP tools, with the agent guide as skills.",
+  "author": {
+    "name": "codeyoma"
+  },
+  "homepage": "https://github.com/codeyoma/aseprite",
+  "license": "MIT"
+}

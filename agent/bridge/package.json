@@ -5,16 +5,18 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "aseprite-agent": "dist/index.js"
+    "aseprite-agent": "dist/index.js",
+    "ase": "dist/cli.js"
   },
   "files": [
     "dist",
     "guide",
     "protocol.json",
-    "README.md"
+    "README.md",
+    "extension"
   ],
   "scripts": {
-    "build": "tsc && node scripts/copy-guide.mjs",
+    "build": "tsc && node scripts/copy-guide.mjs && node scripts/sync-plugin.mjs",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "prepack": "npm run build",
