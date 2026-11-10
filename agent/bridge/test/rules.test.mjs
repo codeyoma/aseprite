@@ -130,7 +130,7 @@ test("MCP resources rules://<chapter> are listed and readable", async () => {
     const client = new Client({ name: "test", version: "1" });
     await client.connect(new StreamableHTTPClientTransport(new URL(ep.url), { requestInit: { headers: { Authorization: "Bearer t0k" } } }));
     const { resources } = await client.listResources();
-    assert.deepEqual(resources.map((r) => r.uri).sort(), CHAPTERS.map((c) => `rules://${c}`));
+    assert.deepEqual(resources.map((r) => r.uri).filter((u) => u.startsWith("rules://")).sort(), CHAPTERS.map((c) => `rules://${c}`));
     const r = await client.readResource({ uri: "rules://tiles" });
     assert.match(r.contents[0].text, /^# Tiles \{#tile\}/);
     assert.equal(r.contents[0].mimeType, "text/markdown");

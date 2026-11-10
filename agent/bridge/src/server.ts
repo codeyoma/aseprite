@@ -1,9 +1,11 @@
 // The MCP server, shared by the stdio and HTTP transports. Tools come from
 // the Tool table (tools.ts); resources are the pixel-art rule chapters
-// (rules://<chapter>, rules.ts), read only when a client asks for one.
+// (rules://<chapter>, rules.ts) and the skills (skill://<name>), read only
+// when a client asks for one; prompts are the skills (skill_mcp.ts).
 
 import { McpServer } from "@modelcontextprotocol/server";
 import { ruleChapters } from "./rules.js";
+import { registerSkills } from "./skill_mcp.js";
 import { runTool, TOOLS, type ToolContext } from "./tools.js";
 
 export const VERSION = "0.4.0";
@@ -57,6 +59,9 @@ export function createMcpServer(ctx: ToolContext, opts: { readOnly?: boolean; su
     );
   }
   registerRuleResources(server);
+  // Read-only endpoints (Ask and Plan) keep the skill resources but not the
+  // prompts: a prompt asks the agent to carry out a workflow that edits.
+  registerSkills(server, { prompts: !opts.readOnly });
   return server;
 }
 
