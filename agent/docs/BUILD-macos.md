@@ -55,10 +55,10 @@ agent/tests/run_lua_tests.sh            # all
 agent/tests/run_lua_tests.sh check pixels   # some, by name
 ```
 
-Regenerate the command catalog after updating from upstream:
+Regenerate the generated files (plugin copies, and the command catalog after updating from upstream); `npm test` fails when one is stale:
 
 ```bash
-python3 agent/tools/gen_commands.py
+cd agent/bridge && npm run gen
 ```
 
 Live tests drive the real agents through the chat panel, with Aseprite open. `run_live.mjs` runs them with each provider, makes the scratch folders they need, and prints a summary (`--all` for every skill test, `--restart` to restart Aseprite first):
