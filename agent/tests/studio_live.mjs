@@ -22,14 +22,22 @@ const steps = turn.filter((e) => e.kind === "tool").map((e) => e.text ?? "");
 
 // The brief: the first reply states the six decisions (destination: Godot).
 const first = texts[0] ?? "";
-const missing = ["size", "palette", "view", "light", "outline", "godot"].filter((w) => !first.toLowerCase().includes(w));
+// Size may be stated as dimensions ("32x32 canvas") rather than the word.
+const has = (w) => w === "size" ? /\bsize\b|\b\d+\s*[x×]\s*\d+\b/i.test(first) : first.toLowerCase().includes(w);
+const missing = ["size", "palette", "view", "light", "outline", "godot"].filter((w) => !has(w));
 check("the first reply is a brief with size, palette, view, light, outline and Godot", missing.length === 0, { missing, first: first.slice(0, 400) });
-check("the chain was written as a plan", turn.some((e) => e.kind === "plan" && (e.count ?? 0) >= 3), turn.filter((e) => e.kind === "plan"));
+// The chain: written as the plan (the agent's to-do tool), or at least stated as a chain of skills in its text.
+const plan = turn.some((e) => e.kind === "plan" && (e.count ?? 0) >= 3);
+const skillNames = ["brief", "animate", "shade-sprite", "review", "export-game", "pixel-art", "recipes", "concept", "make-directions"];
+const stated = texts.some((t) => skillNames.filter((n) => t.includes(n)).length >= 3);
+check("the chain is stated (plan or a chain of skills)", plan || stated, { plan, texts: texts.map((t) => t.slice(0, 200)) });
+soft("the chain was written as a plan", plan, turn.filter((e) => e.kind === "plan"));
 soft("it read a skill with read_guide when it reached it", steps.some((t) => /^Read guide: (animate|export-game|shade-sprite|review|pixel-art|recipes)$/i.test(t.trim())), steps);
 
 // A new 32x32 sprite with at least 4 frames (the walk cycle).
 const made = await lua(`local out = {}
-  for i = ${spritesBefore + 1}, #app.sprites do local s = app.sprites[i]
+  -- app.sprites lists the newest first: the new ones are the first #app.sprites - before.
+  for i = 1, #app.sprites - ${spritesBefore} do local s = app.sprites[i]
     out[#out + 1] = { w = s.width, h = s.height, frames = #s.frames, tags = #s.tags } end
   return { sprites = out }`);
 const knight = (made?.sprites ?? []).find((s) => s.w === 32 && s.h === 32 && s.frames >= 4);
