@@ -152,6 +152,7 @@ export class AsepriteLink extends EventEmitter {
           this.pending.delete(id);
         }
         log("Aseprite disconnected");
+        this.emit("disconnected");
       }
     });
   }

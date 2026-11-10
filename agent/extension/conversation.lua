@@ -18,7 +18,7 @@
 --   { kind = "variations", task, items = { { name, image }, ... }, prompt, resolved = nil|"Kept v2"|"Discarded" }
 
 local PROVIDER_NAMES = { claude = "Claude", codex = "Codex" }
-local MODE_NAMES = { ask = "Ask", plan = "Plan" }   -- Agent mode is not labeled
+local MODE_NAMES = { ask = "Ask", plan = "Plan", developer = "Developer" }   -- Agent mode is not labeled
 local MAX_ENTRIES = 400
 
 local Conversation = {}
@@ -60,7 +60,8 @@ end
 local function endTurn(self, text, completed)
   if self.turnStart then
     push(self, { kind = "worked", secs = self.clock() - self.turnStart, check = lastCheck(self),
-                 applyPlan = (completed and self.turnMode == "plan") or nil })
+                 applyPlan = (completed and self.turnMode == "plan") or nil,
+                 devActions = (self.turnMode == "developer") or nil })
   end
   if text then push(self, { kind = "status", text = text }) end
   self.turnStart = nil
@@ -128,6 +129,11 @@ function Conversation:apply(ev)
       if e.kind == "plan" then e.items = items; return { turnEnded = false } end
     end
     push(self, { kind = "plan", items = items })
+  elseif t == "build" then
+    -- Developer mode (#28): the result of Rebuild & Relaunch.
+    push(self, { kind = ev.ok and "status" or "error",
+                 text = ev.ok and "Build succeeded." or ("Build failed:\n" .. (ev.text or "")) })
+    return { turnEnded = false, build = ev }
   elseif t == "permission" then
     -- The panel asks the user; the answer is recorded with recordPermission.
     return { turnEnded = false, permission = ev }
@@ -178,6 +184,45 @@ end
 -- Records the user's answer to a permission request.
 function Conversation:recordPermission(title, answer)
   push(self, { kind = "status", text = string.format("Permission for %s: %s", title or "a tool", answer) })
+end
+
+-- Plain data for saving across an Aseprite restart (Developer mode
+-- relaunch). Images (step captures, variations) are left out.
+local SAVED = { user = true, header = true, text = true, status = true, error = true, thought = true,
+                tool = true, worked = true, plan = true }
+function Conversation:serialize()
+  local list = {}
+  for _, e in ipairs(self.list) do
+    if SAVED[e.kind] then
+      list[#list + 1] = { kind = e.kind, text = e.text, secs = e.secs, id = e.id, name = e.name, toolKind = e.toolKind,
+        detail = e.detail, status = e.status, result = e.result, check = e.check, items = e.items, mode = e.mode }
+    end
+  end
+  local ids = {}
+  for k, v in pairs(self.ids) do ids[k] = v end
+  return { entries = list, ids = ids }
+end
+
+local FIELDS = { "kind", "text", "secs", "id", "name", "toolKind", "detail", "status", "result", "mode" }
+
+-- Accepts plain tables or the JSON objects json.decode returns (copied
+-- into plain tables, so the panel can annotate entries).
+function Conversation:restore(data)
+  self.list, self.ids = {}, {}
+  for _, src in ipairs(data.entries or {}) do
+    local e = {}
+    for _, f in ipairs(FIELDS) do e[f] = src[f] end
+    if src.check then e.check = { errors = src.check.errors, warnings = src.check.warnings } end
+    if src.items then
+      e.items = {}
+      for _, it in ipairs(src.items) do e.items[#e.items + 1] = { content = it.content, status = it.status } end
+    end
+    self.list[#self.list + 1] = e
+  end
+  for _, k in ipairs({ "claude", "codex", "claude:dev", "codex:dev" }) do
+    if data.ids and data.ids[k] then self.ids[k] = data.ids[k] end
+  end
+  self.turnStart = nil
 end
 
 -- Forgets the messages and conversation ids (New chat).

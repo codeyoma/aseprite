@@ -21,7 +21,7 @@ export interface AcpEndpoint {
 }
 
 /** Chat mode: Agent edits; Ask and Plan only read (#24). */
-export type ChatMode = "agent" | "ask" | "plan";
+export type ChatMode = "agent" | "ask" | "plan" | "developer";
 
 /** A permission the agent asks for, and the options it offers. */
 export interface PermissionRequest {
@@ -70,10 +70,12 @@ export class AcpRunner {
     private readonly systemPrompt: string,
     private readonly handlers: AcpHandlers,
     private readonly recordFile?: string,
+    /** Developer mode (#28): the agent keeps its coding tools. */
+    private readonly developer = false,
   ) {}
 
   private mcpServers(mode: ChatMode) {
-    const url = mode === "agent" ? this.endpoint.url : (this.endpoint.askUrl ?? this.endpoint.url);
+    const url = mode === "agent" || mode === "developer" ? this.endpoint.url : (this.endpoint.askUrl ?? this.endpoint.url);
     return [
       {
         type: "http",
@@ -96,7 +98,7 @@ export class AcpRunner {
     const proc = spawn(cmd.command, cmd.args, {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...this.provider.acp!.env(this.systemPrompt) },
+      env: { ...process.env, ...this.provider.acp!.env(this.systemPrompt, this.developer) },
     });
     this.proc = proc;
     let stderr = "";
@@ -145,7 +147,7 @@ export class AcpRunner {
 
   /** Session for a conversation: reuse, load (after a restart) or create. */
   private async session(conversationId: string | undefined, mode: ChatMode): Promise<string> {
-    const params = { cwd: this.cwd, mcpServers: this.mcpServers(mode), _meta: this.provider.acp!.sessionMeta(this.systemPrompt) };
+    const params = { cwd: this.cwd, mcpServers: this.mcpServers(mode), _meta: this.provider.acp!.sessionMeta(this.systemPrompt, this.developer) };
     if (conversationId && this.sessions.has(conversationId)) return conversationId;
     if (conversationId && this.loadSupported) {
       this.loading = true; // the agent replays history as updates; don't show it again
@@ -176,7 +178,7 @@ export class AcpRunner {
     // A session's MCP server is fixed when it is created or loaded. To switch
     // between the full and the read-only server, restart the agent and load
     // the session again: the conversation continues with the other tools.
-    const readOnly = (m?: ChatMode) => m !== "agent";
+    const readOnly = (m?: ChatMode) => m === "ask" || m === "plan";
     if (conversationId && this.sessions.has(conversationId) && readOnly(this.sessionModes.get(conversationId)) !== readOnly(mode)) {
       log(`acp: switching ${conversationId} to ${mode} mode`);
       this.dispose();

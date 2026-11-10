@@ -142,6 +142,32 @@ do
   check("agent header unlabeled", c:entries()[#c:entries()].text == "Claude")
 end
 
+-- Developer mode (#28): labeled header, Apply/Discard on the reply, build
+-- results, and saving the conversation across a relaunch.
+do
+  local c = Conversation.new{ clock = clock }
+  c:send("make the placeholder friendlier", "claude", "developer")
+  check("developer header", c:entries()[#c:entries()].text == "Claude · Developer")
+  c:apply{ type = "session", provider = "claude:dev", sessionId = "dev-1" }
+  c:apply{ type = "tool", id = "e1", tool = "Edit chat_panel.lua", kind = "edit" }
+  c:apply{ type = "tool_result", id = "e1", ok = true, detail = "ok" }
+  c:apply{ type = "text", text = "Changed the placeholder. Only a relaunch is needed." }
+  c:apply{ type = "done" }
+  check("developer reply offers Apply/Discard", c:entries()[#c:entries()].devActions == true)
+  check("developer conversation id is separate", c:conversationId("claude:dev") == "dev-1" and c:conversationId("claude") == nil)
+
+  local r = c:apply{ type = "build", ok = false, text = "x.cpp:1: error: oops" }
+  check("failed build is an error entry", r.build and c:entries()[#c:entries()].kind == "error"
+    and c:entries()[#c:entries()].text:match("oops") ~= nil)
+
+  local saved = c:serialize()
+  local d = Conversation.new{ clock = clock }
+  d:restore(json.decode(json.encode(saved)))
+  check("restore keeps entries and ids", #d:entries() == #saved.entries and d:conversationId("claude:dev") == "dev-1"
+    and d:entries()[3].kind == "tool" and d:entries()[3].status == "ok" and not d:isBusy()
+    and type(d:entries()[3]) == "table")
+end
+
 -- Mentions and links (#20)
 do
   local m = { Body = "aseprite://layer/L2", walk = "aseprite://tag/walk" }

@@ -18,6 +18,9 @@
 --                      the reply text, and "Worked for 1m 49s".
 -- Rows with details (thinking text, tool input/output) expand on click.
 
+-- The input box's hint text.
+local PLACEHOLDER = "Draw, edit or animate..."
+
 return function(deps)
   local Panel = {}
 
@@ -469,6 +472,22 @@ return function(deps)
                 or string.format("%d warning%s", e.check.warnings, e.check.warnings == 1 and "" or "s"))
             gc:fillText(note, bx + icon + u * 2, y)
           end
+          -- Developer mode (#28): apply the agent's changes, or discard them.
+          if e.devActions then
+            local x = w - pad
+            for _, b in ipairs({ { "Discard", "dev_discard", C.rule, C.text }, { "Rebuild & Relaunch", "dev_apply", C.accent, C.bubbleText } }) do
+              local bw = gc:measureText(b[1]).width + u * 4
+              x = x - bw
+              gc.color = b[3]
+              gc:beginPath()
+              gc:roundedRect(Rectangle(x, y - u // 2, bw, lh + u), u * 2, u * 2)
+              gc:fill()
+              gc.color = b[4]
+              gc:fillText(b[1], x + u * 2, y)
+              hitButtons[#hitButtons + 1] = { x0 = x, y0 = y - u // 2, x1 = x + bw, y1 = y + lh + u // 2, action = b[2], entry = e }
+              x = x - u * 2
+            end
+          end
           -- Plan mode (#24): carry out the plan in Agent mode.
           if e.applyPlan then
             local label2 = e.planApplied and "Plan applied" or "Apply plan"
@@ -591,6 +610,7 @@ return function(deps)
       end
     end
     if r.permission then Panel.askPermission(r.permission) end
+    if r.build then Panel.onBuild(r.build) end
     if r.turnEnded and currentTurn then
       deps.TurnHistory.finish(currentTurn, app.sprite)
       lastTurn, currentTurn = currentTurn, nil
@@ -767,6 +787,19 @@ return function(deps)
     if runSlashCommand(prompt) then return end
     local provider = providerOverride or dlg.data.provider or providers[1]
     local mode = modeOverride or (dlg.data.mode or "Agent"):lower()
+    if mode == "developer" and not deps.preferences.developerConfirmed then
+      local yes
+      if Panel.confirmDeveloper then yes = Panel.confirmDeveloper()
+      else
+        yes = app.alert{ title = "Developer mode", text = {
+          "In Developer mode the agent edits this Aseprite fork's source code",
+          "and can run commands in the repository (it asks you first).",
+          "Its changes go on a dev/ branch; Rebuild & Relaunch applies them.",
+        }, buttons = { "Turn on", "Cancel" } } == 1
+      end
+      if not yes then return end
+      deps.preferences.developerConfirmed = true
+    end
     deps.preferences.mode = mode:sub(1, 1):upper() .. mode:sub(2)
     deps.preferences.provider = provider
     -- The document's state goes with every message (#18), after what changed
@@ -810,7 +843,8 @@ return function(deps)
     deps.ensureBridge(function(ok, err)
       if not ok then return fail(err or "Could not reach the bridge") end
       deps.request("chat.send", {
-        prompt = expanded, state = state, provider = provider, sessionId = conv:conversationId(provider) or "",
+        prompt = expanded, state = state, provider = provider,
+        sessionId = conv:conversationId(mode == "developer" and (provider .. ":dev") or provider) or "",
         attachments = #attachments > 0 and attachments or nil,
         mode = mode,
       }, function(_, error)
@@ -838,6 +872,7 @@ return function(deps)
   end
 
   function Panel.isBusy() return conv:isBusy() end
+  function Panel.placeholder() return PLACEHOLDER end
   function Panel.isOpen() return dlg ~= nil end
   function Panel.promptText() return dlg and dlg.data.prompt or nil end
   function Panel.setPrompt(text) if dlg then lastPrompt = text; dlg:modify{ id = "prompt", text = text } end end
@@ -851,6 +886,8 @@ return function(deps)
 
   -- Revert or restore a reply (#22). Reverting over later edits asks first.
   function Panel.turnAction(turn, action, entry, index)
+    if action == "dev_apply" then return Panel.applyDevChanges() end
+    if action == "dev_discard" then return Panel.discardDevChanges() end
     if action == "pick_variation" or action == "discard_variations" then
       if not entry or entry.resolved then return false end
       local V = deps.variations()
@@ -915,6 +952,79 @@ return function(deps)
   function Panel.lastTurn() return lastTurn end
 
   -- Entries as plain records (for tests and other scripts).
+  ---------------------------------------------------------------------------
+  -- Developer mode (#28)
+  ---------------------------------------------------------------------------
+
+  -- Saves the conversation and open sprites, asks the bridge to start the
+  -- fork's build again once Aseprite has quit, then quits.
+  function Panel.relaunch()
+    deps.request("dev.relaunch", {}, function(_, err)
+      if err then app.alert{ title = "Relaunch", text = err.message or tostring(err) }; return end
+      deps.saveForRelaunch(conv:serialize())
+      app.exit()
+    end)
+  end
+
+  -- Shows what changed; rebuilds when C++ changed, then relaunches.
+  -- Tests can set Panel.confirmApply to function(status) -> bool.
+  function Panel.applyDevChanges()
+    deps.request("dev.status", {}, function(st, err)
+      if err then app.tip(err.message or "Developer mode is not available"); return end
+      if #st.files == 0 then app.tip("The agent hasn't changed anything yet"); return end
+      local lines = { "Branch " .. st.branch .. ": " .. #st.files .. " file(s) changed" }
+      for i = 1, math.min(#st.files, 10) do lines[#lines + 1] = "  " .. st.files[i] end
+      if #st.files > 10 then lines[#lines + 1] = "  ..." end
+      lines[#lines + 1] = st.needsBuild and "C++ changed: Aseprite will be rebuilt, then restarted." or "Only scripts changed: Aseprite will restart."
+      local go
+      if Panel.confirmApply then go = Panel.confirmApply(st)
+      else go = app.alert{ title = "Apply the agent's changes", text = lines,
+        buttons = { st.needsBuild and "Rebuild && Relaunch" or "Relaunch", "Cancel" } } == 1 end
+      if not go then return end
+      if st.needsBuild then
+        conv:note("status", "Building Aseprite...")
+        changed()
+        deps.request("dev.build", {}, function(_, e2) if e2 then conv:note("error", e2.message); changed() end end)
+      else
+        Panel.relaunch()
+      end
+    end)
+    return true
+  end
+
+  -- A finished build: relaunch, or send the errors to the agent to fix.
+  function Panel.onBuild(ev)
+    if ev.ok then Panel.relaunch(); return end
+    if not conv:isBusy() then
+      Panel.submit("The build failed. Fix these errors, then tell me to rebuild:\n" .. (ev.text or ""), nil, "developer")
+    end
+  end
+
+  function Panel.discardDevChanges()
+    local yes
+    if Panel.confirmApply then yes = Panel.confirmApply({ discard = true })
+    else
+      yes = app.alert{ title = "Discard the agent's changes", text = {
+        "Uncommitted changes go into a git stash (git stash pop brings them back)",
+        "and the repository returns to the branch it was on. Commits on the dev/ branch stay.",
+      }, buttons = { "Discard", "Cancel" } } == 1
+    end
+    if not yes then return false end
+    deps.request("dev.discard", {}, function(r, err)
+      if err then app.alert{ title = "Discard", text = err.message or tostring(err) }; return end
+      conv:note("status", "Discarded the changes (" .. (r.stash or "nothing uncommitted") .. "); back on " .. r.branch .. ".")
+      changed()
+    end)
+    return true
+  end
+
+  function Panel.restoreConversation(data)
+    conv:restore(data)
+    Panel.open()
+    conv:note("status", "Aseprite restarted with the agent's changes.")
+    changed()
+  end
+
   -- My Commands: run, enable/disable, source, revert to the previous version (#26).
   function Panel.manageCommands()
     local S = deps.savedCommands
@@ -1066,7 +1176,7 @@ return function(deps)
       dlg:textedit{
         id = "prompt",
         text = "",
-        placeholder = "Draw, edit or animate...",
+        placeholder = PLACEHOLDER,
         minlines = 1,
         maxlines = 5,
         focus = true,
@@ -1077,12 +1187,13 @@ return function(deps)
       }
     end)
     if not hasTextEdit then
-      dlg:entry{ id = "prompt", text = "", placeholder = "Draw, edit or animate...", focus = true, hexpand = true }
+      dlg:entry{ id = "prompt", text = "", placeholder = PLACEHOLDER, focus = true, hexpand = true }
     end
     dlg:newrow()
     dlg:combobox{ id = "provider", options = providers, option = deps.preferences.provider or providers[1] }
     -- Agent edits; Ask and Plan only read the document (#24).
-    dlg:combobox{ id = "mode", options = { "Agent", "Ask", "Plan" }, option = deps.preferences.mode or "Agent" }
+    -- Developer (#28) lets the agent change this fork; it asks once before the first use.
+    dlg:combobox{ id = "mode", options = { "Agent", "Ask", "Plan", "Developer" }, option = deps.preferences.mode or "Agent" }
     dlg:button{ id = "attach", text = "+", onclick = openAttachMenu }
     dlg:button{ id = "mention", text = "@", onclick = openPicker }
     dlg:button{ id = "send", text = "&Send", onclick = function() send() end }

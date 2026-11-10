@@ -28,7 +28,7 @@ async function main() {
   const chat = new ChatRunner(link, endpoint);
   cleanAttachments(); // rendered attachments older than a week
 
-  for (const [method, handler] of Object.entries(bridgeMethods(chat, VERSION))) {
+  for (const [method, handler] of Object.entries(bridgeMethods(chat, VERSION, link))) {
     link.onRequest(method, handler);
   }
 

@@ -14,6 +14,7 @@ import { sessionDir } from "./session.js";
 import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
 import { skillContext } from "./guide.js";
 import { SavedCommands } from "./saved_commands.js";
+import { build, devStatus, discard, DEVELOPER_PROMPT, ensureDevBranch, launch, asepriteBinary, repoRoot } from "./developer.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
 import { acpCommand, AcpRunner, type ChatMode, type PermissionOutcome, type PermissionRequest } from "./acp.js";
 import type { AcpEvent, PlanEntry } from "./providers/acp_mapper.js";
@@ -22,7 +23,7 @@ export type { ProviderId as Provider } from "./providers/index.js";
 
 /** What the chat panel receives (method "chat.event"). */
 export interface ChatEvent {
-  type: "status" | "text" | "thinking" | "tool" | "tool_result" | "done" | "error" | "session" | "plan" | "permission";
+  type: "status" | "text" | "thinking" | "tool" | "tool_result" | "done" | "error" | "session" | "plan" | "permission" | "build";
   text?: string;
   /** Step label, e.g. "Add Shadow layer". */
   tool?: string;
@@ -35,7 +36,7 @@ export interface ChatEvent {
   /** Tool input or result, shortened, for the panel's expandable rows. */
   detail?: string;
   ok?: boolean;
-  provider?: ProviderId;
+  provider?: string; // "claude", "codex", or "claude:dev" for Developer mode conversations
   sessionId?: string;
   /** "plan": the agent's plan as a checklist (ACP). */
   entries?: PlanEntry[];
@@ -62,13 +63,19 @@ export const MODE_NOTES: Record<ChatMode, string> = {
   ask:
     "<mode>Ask: answer, explain or advise. You only have tools that read the document; do not change it, " +
     "and say how the user could make a change instead of making it.</mode>",
+  developer: "",
   plan:
     "<mode>Plan: do not change the document; you only have tools that read it. Look at what you need, then reply " +
     "with a short numbered plan of the steps you would take. The user can click Apply plan to have you carry it out.</mode>",
 };
 
 export function chatMode(value: unknown): ChatMode {
-  return value === "ask" || value === "plan" ? value : "agent";
+  return value === "ask" || value === "plan" || value === "developer" ? value : "agent";
+}
+
+/** Conversations in Developer mode are separate from the provider's normal ones. */
+export function conversationKey(provider: ProviderId, mode: ChatMode): string {
+  return mode === "developer" ? `${provider}:dev` : provider;
 }
 
 /** The text sent to the agent: the mode note and state block first, then the user's message. */
@@ -100,13 +107,14 @@ function which(cmd: string): string | undefined {
 export class ChatRunner {
   private proc?: ChildProcess;
   // ACP runtime (preferred): one long-lived agent per provider.
-  private acpRunners = new Map<ProviderId, AcpRunner>();
-  private acpTurn?: { provider: ProviderId; stopped: boolean };
+  // Keyed "claude" or "claude:dev" (Developer mode runs its own agent in the repository).
+  private acpRunners = new Map<string, AcpRunner>();
+  private acpTurn?: { key: string; stopped: boolean };
   private permissions = new Map<string, { resolve: (o: PermissionOutcome) => void; timer: NodeJS.Timeout; options: PermissionRequest["options"] }>();
   private nextPermission = 1;
   // Conversation ids. The panel owns them (they survive bridge restarts) and
   // passes them with each message; new ones are reported with "session".
-  private conversations: Partial<Record<ProviderId, string>> = {};
+  private conversations: Record<string, string | undefined> = {};
   private readonly cwd = join(sessionDir, "workspace");
 
   constructor(
@@ -135,6 +143,11 @@ export class ChatRunner {
     return out;
   }
 
+  /** Sends a chat event to the panel outside a turn (build progress). */
+  notify(event: ChatEvent): void {
+    this.emit(event);
+  }
+
   private emit(event: ChatEvent): void {
     this.link.notify("chat.event", event as unknown as Record<string, unknown>);
   }
@@ -161,7 +174,7 @@ export class ChatRunner {
         p.resolve({ outcome: "cancelled" });
         this.permissions.delete(id);
       }
-      void this.acpRunners.get(this.acpTurn.provider)?.cancel();
+      void this.acpRunners.get(this.acpTurn.key)?.cancel();
       return;
     }
     if (this.proc) {
@@ -172,31 +185,41 @@ export class ChatRunner {
   }
 
   private sendAcp(prompt: string, state: string, provider: AgentProvider, images: ImageBlock[], mode: ChatMode): void {
-    let runner = this.acpRunners.get(provider.id);
+    const developer = mode === "developer";
+    const key = conversationKey(provider.id, mode);
+    let cwd = this.cwd;
+    if (developer) {
+      const root = repoRoot();
+      if (!root) throw new Error("Developer mode needs the bridge to run from a clone of the Aseprite fork");
+      cwd = root;
+      const branch = ensureDevBranch(root, prompt);
+      this.emit({ type: "status", text: `Developer mode on branch ${branch}` });
+    }
+    let runner = this.acpRunners.get(key);
     if (!runner) {
       const record = this.recordDir
-        ? join(this.recordDir, `acp-${provider.id}-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`)
+        ? join(this.recordDir, `acp-${key.replace(":", "-")}-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`)
         : undefined;
-      runner = new AcpRunner(provider, this.endpoint, this.cwd, SYSTEM_PROMPT, {
+      runner = new AcpRunner(provider, this.endpoint, cwd, developer ? DEVELOPER_PROMPT : SYSTEM_PROMPT, {
         onEvent: (ev: AcpEvent) => {
           if (ev.type === "plan") this.emit({ type: "plan", entries: ev.entries });
           else this.emit(toChatEvent(ev, provider.id));
         },
         onPermission: (req) => this.askPermission(req),
-      }, record);
-      this.acpRunners.set(provider.id, runner);
+      }, record, developer);
+      this.acpRunners.set(key, runner);
     }
 
-    const turn = { provider: provider.id, stopped: false };
+    const turn = { key, stopped: false };
     this.acpTurn = turn;
-    log(`chat: starting ${provider.id} (acp)`);
+    log(`chat: starting ${key} (acp)`);
     this.emit({ type: "status", text: `${provider.id} is working...` });
     runner
-      .prompt(composeMessage(prompt, state, mode), this.conversations[provider.id], images, mode)
+      .prompt(composeMessage(prompt, state, mode), this.conversations[key], images, developer ? "agent" : mode)
       .then(({ conversationId, stopReason }) => {
-        if (this.conversations[provider.id] !== conversationId) {
-          this.conversations[provider.id] = conversationId;
-          this.emit({ type: "session", provider: provider.id, sessionId: conversationId });
+        if (this.conversations[key] !== conversationId) {
+          this.conversations[key] = conversationId;
+          this.emit({ type: "session", provider: key, sessionId: conversationId });
         }
         if (stopReason === "cancelled" || turn.stopped) this.emit({ type: "done", text: "Stopped." });
         else if (stopReason === "end_turn") this.emit({ type: "done" });
@@ -205,7 +228,7 @@ export class ChatRunner {
       .catch((err) => this.emit({ type: "error", text: err instanceof Error ? err.message : String(err) }))
       .finally(() => {
         if (this.acpTurn === turn) this.acpTurn = undefined;
-        log(`chat: ${provider.id} (acp) turn ended`);
+        log(`chat: ${key} (acp) turn ended`);
       });
   }
 
@@ -241,8 +264,12 @@ export class ChatRunner {
     prompt = skills.message;
     if (skills.context) state = state ? `${state}\n${skills.context}` : skills.context;
     if (skills.used.length) this.emit({ type: "status", text: `Using skill: ${skills.used.join(", ")}` });
-    if (conversationId) this.conversations[provider.id] = conversationId;
-    else delete this.conversations[provider.id];
+    const key = conversationKey(provider.id, mode);
+    if (conversationId) this.conversations[key] = conversationId;
+    else delete this.conversations[key];
+    if (mode === "developer" && this.runtimeFor(provider) !== "acp") {
+      throw new Error("Developer mode needs the ACP runtime (unset ASEPRITE_AGENT_RUNTIME)");
+    }
     if (this.runtimeFor(provider) === "acp") return this.sendAcp(prompt, state, provider, images, mode);
     // The stream-json runtime sends text only.
     if (images.length) prompt += `\n\n(${images.length} attached image(s) could not be sent: the stream runtime is text only.)`;
@@ -316,8 +343,43 @@ function rejectOutcome(options: PermissionRequest["options"]): PermissionOutcome
 }
 
 /** Every method the extension may call on the bridge (protocol.json bridgeMethods). */
-export function bridgeMethods(chat: ChatRunner, version: string): Record<string, (params: any) => unknown> {
-  return { ...chatMethods(chat, version), ...commandMethods() };
+export function bridgeMethods(chat: ChatRunner, version: string, link?: AsepriteLink): Record<string, (params: any) => unknown> {
+  return { ...chatMethods(chat, version), ...commandMethods(), ...developerMethods(chat, link) };
+}
+
+/** Developer mode (#28): what changed, rebuild, discard, relaunch. */
+export function developerMethods(chat: ChatRunner, link?: AsepriteLink): Record<string, (params: any) => unknown> {
+  const root = () => {
+    const r = repoRoot();
+    if (!r) throw new Error("The bridge is not running from a clone of the Aseprite fork");
+    return r;
+  };
+  return {
+    "dev.status": () => devStatus(root()),
+    // Answers at once; progress and the result arrive as chat events ("status", then "build").
+    "dev.build": () => {
+      const r = root();
+      let last = 0;
+      void build(r, (line) => {
+        const now = Date.now();
+        if (now - last > 400) {
+          last = now;
+          chat.notify({ type: "status", text: `Building: ${line.slice(0, 120)}` });
+        }
+      }).then(({ ok, tail }) => chat.notify({ type: "build", ok, text: tail }));
+      return { started: true };
+    },
+    "dev.discard": () => discard(root()),
+    // Waits for Aseprite to quit, then starts the fork's build again.
+    "dev.relaunch": () => {
+      const bin = asepriteBinary(root());
+      if (!bin) throw new Error("No build of the fork at build/bin/aseprite");
+      const start = () => setTimeout(() => launch(bin), 1500);
+      if (link?.connected) link.once("disconnected", start);
+      else start();
+      return { relaunching: true, bin };
+    },
+  };
 }
 
 /** Saved commands for the panel (#26): versions, revert, enable/disable. */

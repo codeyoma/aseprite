@@ -15,6 +15,42 @@ local function loadProtocol(dir)
   return p
 end
 
+-- Developer mode relaunch (#28): the conversation and open sprites survive
+-- the restart through ~/.aseprite-agent/relaunch.
+local relaunchDir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "relaunch")
+
+local function saveForRelaunch(conversation)
+  app.fs.makeAllDirectories(relaunchDir)
+  local sprites = {}
+  for i, s in ipairs(app.sprites) do
+    local backup = app.fs.joinPath(relaunchDir, string.format("%d-%s.aseprite", i, app.fs.fileTitle(s.filename)))
+    s:saveCopyAs(backup)
+    sprites[#sprites + 1] = { backup = backup, filename = s.filename, modified = s.isModified }
+  end
+  local f = assert(io.open(app.fs.joinPath(relaunchDir, "state.json"), "w"))
+  f:write(json.encode{ conversation = conversation, sprites = sprites })
+  f:close()
+  -- Close without the "save changes?" prompt; the copies above keep the work.
+  for i = #app.sprites, 1, -1 do app.sprites[i]:close() end
+end
+
+local function restoreAfterRelaunch()
+  local path = app.fs.joinPath(relaunchDir, "state.json")
+  local f = io.open(path, "r")
+  if not f then return nil end
+  local ok, data = pcall(json.decode, f:read("a"))
+  f:close()
+  os.remove(path)
+  if not ok or not data then return nil end
+  for _, s in ipairs(data.sprites or {}) do
+    local sprite = app.open(s.backup)
+    -- Saving goes back to the original file; unsaved work came from the copy.
+    if sprite and s.filename and app.fs.isFile(s.filename) then sprite.filename = s.filename end
+    os.remove(s.backup)
+  end
+  return data.conversation
+end
+
 -- File access stays in this (trusted) script: Aseprite asks permission per script file.
 local function readFile(path)
   local f = io.open(path, "r")
@@ -67,6 +103,7 @@ function init(plugin)
     selectUri = handlers.Uri.select,
     TurnHistory = load("turn_history.lua"),
     savedCommands = saved,
+    saveForRelaunch = function(conversation) saveForRelaunch(conversation) end,
     variations = handlers.variations,
     attachments = load("attachments.lua").new{
       dir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "attachments"),
@@ -84,6 +121,11 @@ function init(plugin)
   -- Scripting API for other scripts: AsepriteAgent.chat("make it blue")
   AsepriteAgent = {
     chat = function(prompt, provider, mode) Panel.submit(prompt, provider, mode) end,
+    -- Developer mode (#28) test hooks: answer the confirmations, apply or discard.
+    setDeveloperAnswers = function(fn) Panel.confirmDeveloper = fn and function() return fn("developer") end or nil
+      Panel.confirmApply = fn end,
+    applyDevChanges = function() return Panel.applyDevChanges() end,
+    discardDevChanges = function() return Panel.discardDevChanges() end,
     -- Runs a saved command like the menu does (#26).
     runCommand = function(name, args) return saved:run(name, args) end,
     savedCommands = function() return saved:load() end,
@@ -99,6 +141,7 @@ function init(plugin)
       return false
     end,
     isBusy = function() return Panel.isBusy() end,
+    placeholder = function() return Panel.placeholder() end,
     entries = function() return Panel.entries() end,
     openPanel = function() Panel.open() end,
     closePanel = function() Panel.close() end,
@@ -165,6 +208,10 @@ function init(plugin)
       app.tip("AI Agent disconnected")
     end,
   }
+
+  -- Developer mode (#28): after a relaunch, reopen sprites and the conversation.
+  local restored = restoreAfterRelaunch()
+  if restored then Panel.restoreConversation(restored) end
 
   -- Saved commands (#26): My Commands submenu, filled from the folder.
   saved:reload()

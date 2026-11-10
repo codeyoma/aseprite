@@ -12,9 +12,15 @@ export const claudeProvider: AgentProvider = {
     bin: "claude-agent-acp",
     // Append our instructions to Claude Code's prompt; no built-in tools (no
     // shell, files or web), and the Aseprite tools without asking each time.
-    sessionMeta: (systemPrompt) => ({
+    // Developer mode keeps Claude Code's tools; edits and commands ask the
+    // user through the panel's permission requests.
+    sessionMeta: (systemPrompt, developer) => ({
       systemPrompt: { append: systemPrompt },
-      claudeCode: { options: { tools: [], allowedTools: [`mcp__${MCP_SERVER_NAME}`] } },
+      claudeCode: {
+        options: developer
+          ? { allowedTools: [`mcp__${MCP_SERVER_NAME}`] }
+          : { tools: [], allowedTools: [`mcp__${MCP_SERVER_NAME}`] },
+      },
     }),
     env: () => ({}),
   },

@@ -10,7 +10,12 @@ export const codexProvider: AgentProvider = {
     bin: "codex-acp",
     sessionMeta: () => ({}),
     // CODEX_CONFIG is merged into the session config.
-    env: (systemPrompt) => ({ CODEX_CONFIG: JSON.stringify({ developer_instructions: systemPrompt }) }),
+    // Developer mode lets Codex write in the repository (workspace-write).
+    env: (systemPrompt, developer) => ({
+      CODEX_CONFIG: JSON.stringify(
+        developer ? { developer_instructions: systemPrompt, sandbox_mode: "workspace-write" } : { developer_instructions: systemPrompt },
+      ),
+    }),
   },
 
   command({ message, conversationId, mcpUrl, mcpToken, systemPrompt }) {

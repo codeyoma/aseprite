@@ -31,10 +31,10 @@ export interface AcpSpec {
   /** npm package that provides the ACP agent, and its bin name. */
   package: string;
   bin: string;
-  /** `_meta` for session/new and session/load. */
-  sessionMeta(systemPrompt: string): Record<string, unknown>;
+  /** `_meta` for session/new and session/load. Developer mode keeps the agent's coding tools (#28). */
+  sessionMeta(systemPrompt: string, developer?: boolean): Record<string, unknown>;
   /** Extra environment for the agent process. */
-  env(systemPrompt: string): Record<string, string>;
+  env(systemPrompt: string, developer?: boolean): Record<string, string>;
 }
 
 export interface AgentProvider {
