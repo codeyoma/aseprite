@@ -1082,15 +1082,17 @@ int Sprite_get_undoHistory(lua_State* L)
   int i = 1;
   for (const undo::UndoState* st = history->firstState(); st; st = st->next()) {
     lua_newtable(L);
-    lua_pushinteger(L, lua_Integer(st->id()));
-    lua_setfield(L, -2, "id");
     const auto* cmd = static_cast<const Cmd*>(st->cmd());
+    lua_pushinteger(L, lua_Integer(cmd ? cmd->seqId() : 0));
+    lua_setfield(L, -2, "id");
     lua_pushstring(L, cmd ? cmd->label().c_str() : "");
     lua_setfield(L, -2, "label");
     lua_rawseti(L, -2, i++);
   }
   lua_setfield(L, -2, "states");
-  lua_pushinteger(L, lua_Integer(currentState ? currentState->id() : 0));
+  lua_pushinteger(L, lua_Integer(currentState && currentState->cmd()
+                                   ? static_cast<const Cmd*>(currentState->cmd())->seqId()
+                                   : 0));
   lua_setfield(L, -2, "current");
   return 1;
 }
@@ -1114,7 +1116,8 @@ int Sprite_undoTo(lua_State* L)
   const undo::UndoState* target = nullptr;
   if (id != 0) {
     for (const undo::UndoState* s = undo->firstState(); s; s = s->next()) {
-      if (lua_Integer(s->id()) == id) {
+      const auto* cmd = static_cast<const Cmd*>(s->cmd());
+      if (cmd && lua_Integer(cmd->seqId()) == id) {
         target = s;
         break;
       }

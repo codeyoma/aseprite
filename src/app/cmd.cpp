@@ -18,9 +18,13 @@
 
 namespace app {
 
+static uint64_t g_lastSeqId = 0;
+
 Cmd::Cmd()
+  : m_ctx(nullptr)
+  , m_seqId(++g_lastSeqId)
 #if _DEBUG
-  : m_state(State::NotExecuted)
+  , m_state(State::NotExecuted)
 #endif
 {
 }

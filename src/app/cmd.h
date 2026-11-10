@@ -12,6 +12,7 @@
 #include "base/disable_copying.h"
 #include "undo/undo_command.h"
 
+#include <cstdint>
 #include <string>
 
 namespace app {
@@ -35,6 +36,11 @@ public:
 
   Context* context() const { return m_ctx; }
 
+  // This fork: a sequential id, unique for the process lifetime (never
+  // reused, unlike the command's memory), so scripts can remember a
+  // position in the undo history (sprite.undoHistory, sprite:undoTo).
+  uint64_t seqId() const { return m_seqId; }
+
 protected:
   virtual void onExecute();
   virtual void onUndo();
@@ -47,6 +53,7 @@ private:
   // TODO I think we could just remove this field (but we'll need to
   //      include the Context* in all onEvent() member functions)
   Context* m_ctx;
+  uint64_t m_seqId;
 #if _DEBUG
   enum class State { NotExecuted, Executed, Undone, Redone };
   State m_state;
