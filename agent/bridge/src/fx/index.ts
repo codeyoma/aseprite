@@ -62,6 +62,30 @@ function lightImage(f: Frame): Rgba {
 }
 
 /**
+ * An effect's visual centre on its canvas: the alpha-weighted centroid of its busiest frame (the largest sum of
+ * alpha, the first one on a tie), rounded to a pixel. The peak frame is where an impact reads; a union of all
+ * frames would follow sparks and debris that fly off. undefined when nothing is drawn.
+ */
+export function visualCenter(frames: Rgba[]): { x: number; y: number } | undefined {
+  let best: Rgba | undefined, bestSum = 0;
+  for (const f of frames) {
+    let s = 0;
+    for (let i = 3; i < f.data.length; i += 4) s += f.data[i];
+    if (s > bestSum) { bestSum = s; best = f; }
+  }
+  if (!best) return undefined;
+  let sx = 0, sy = 0;
+  for (let y = 0; y < best.height; y++) {
+    for (let x = 0; x < best.width; x++) {
+      const a = best.data[(y * best.width + x) * 4 + 3];
+      sx += a * x;
+      sy += a * y;
+    }
+  }
+  return { x: Math.round(sx / bestSum), y: Math.round(sy / bestSum) };
+}
+
+/**
  * Render an effect module (pixelfx's effect shape) to frames. options are the effect's own options
  * (palette ramp, flip, angle, light, ...) over its defaults.
  */

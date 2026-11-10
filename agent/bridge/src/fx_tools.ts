@@ -1,11 +1,11 @@
 // Pixel FX tools (#69): list the FX library, preview an effect as a labelled contact sheet, add one to the
 // active sprite on 'AI: fx <id>' layers (glow on an Addition layer) in one undo step, or make it a sprite.
 import * as z from "zod/v4";
-import { parseHex, type RGBA } from "./color.js";
+import { parseHex, quantize, type Counted, type RGBA } from "./color.js";
 import { documentOf, type PutImagesItem, type SpriteInfo } from "./document.js";
-import { renderFx, type RenderedFx } from "./fx/index.js";
-import { FX_CATEGORIES, FX_LIBRARY, findFx, searchFx, type FxEntry } from "./fx/library.js";
-import { bounds, contactSheet, encodePng, type Rect, type Rgba } from "./image.js";
+import { renderFx, visualCenter, type RenderedFx } from "./fx/index.js";
+import { FX_CATEGORIES, FX_LIBRARY, findFx, searchFx, type FxAnchor, type FxEntry } from "./fx/library.js";
+import { bounds, contactSheet, encodePng, snapToPalette, type Rect, type Rgba } from "./image.js";
 import { failure, text, type Tool, type ToolResult } from "./tool.js";
 
 const hexList = z.array(z.string()).min(1);
@@ -85,6 +85,66 @@ function placed(img: Rgba, ox: number, oy: number, spriteW: number, spriteH: num
   return { image: { width: w, height: h, data }, x: ox + x0, y: oy + y0 };
 }
 
+const centers = new Map<string, { x: number; y: number }>();
+
+/**
+ * The point of the effect's canvas that goes at the caller's (x, y): its origin for "ground", its visual centre
+ * for "center" (visualCenter over a render at the effect's own fps, so it depends only on the effect, its options,
+ * seed and canvas, not on the sprite's timing; cached). Shared by every tool that places an effect.
+ */
+export function fxAnchorPoint(e: FxEntry, anchor: FxAnchor, opts: Record<string, unknown>, seed: number,
+  canvas: { width: number; height: number; x: number; y: number }): { x: number; y: number } {
+  if (anchor === "ground") return { x: canvas.x, y: canvas.y };
+  const key = JSON.stringify([e.id, opts, seed, canvas]);
+  let c = centers.get(key);
+  if (!c) {
+    c = visualCenter(renderFx(e.module, opts, { fps: e.fps, seed, canvas }).frames) ?? { x: canvas.x, y: canvas.y };
+    if (centers.size > 200) centers.clear();
+    centers.set(key, c);
+  }
+  return c;
+}
+
+const anchorInput = z.enum(["center", "ground"]).optional()
+  .describe("What x, y means. 'center': the effect's visual centre goes there (the impact point). 'ground': its origin " +
+    "(the ground point under a pillar, fire or explosion) goes there. Default: the effect's own (list_fx).");
+
+/** "#rrggbb" of an opaque RGB triple. */
+const hex6 = (r: number, g: number, b: number) => "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+
+/** The distinct RGB colors (any alpha above 0) of the images, as "#rrggbb", dark to bright then by hex. */
+export function fxColors(images: Rgba[]): string[] {
+  const seen = new Map<string, number>();
+  for (const im of images) {
+    const d = im.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (!d[i + 3]) continue;
+      const h = hex6(d[i], d[i + 1], d[i + 2]);
+      if (!seen.has(h)) seen.set(h, 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+    }
+  }
+  return [...seen].sort((a, b) => a[1] - b[1] || (a[0] < b[0] ? -1 : 1)).map(([h]) => h);
+}
+
+/** The most entries a palette takes before add_fx snaps instead of appending. */
+export const FX_PALETTE_CAP = 256;
+
+/** At most k colors for the images (median cut over 5-bit buckets, so huge color counts stay fast). */
+function reducedPalette(images: Rgba[], k: number): RGBA[] {
+  const buckets = new Map<number, Counted>();
+  for (const im of images) {
+    const d = im.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (!d[i + 3]) continue;
+      const key = ((d[i] >> 3) << 10) | ((d[i + 1] >> 3) << 5) | (d[i + 2] >> 3);
+      const b = buckets.get(key);
+      if (b) b.count++;
+      else buckets.set(key, { r: d[i], g: d[i + 1], b: d[i + 2], a: 255, count: 1 });
+    }
+  }
+  return quantize([...buckets.values()], k, "median-cut").map(({ r, g, b }) => ({ r, g, b, a: 255 }));
+}
+
 /** 'AI: fx <id>', or with a number when that layer exists, so a second effect never overwrites the first. */
 function freeLayerName(info: SpriteInfo, id: string): string {
   const taken = new Set(info.layers.map((l) => l.name));
@@ -96,7 +156,7 @@ function freeLayerName(info: SpriteInfo, id: string): string {
 
 const summary = (e: FxEntry) =>
   `${e.id}: ${e.title} (${e.category}, ${e.loop ? "loop" : "one-shot"} ${e.durationMs / 1000} s, ${e.size.width}x${e.size.height}, ` +
-  `origin ${e.origin.x},${e.origin.y}, ${e.fps} fps)`;
+  `origin ${e.origin.x},${e.origin.y}, anchor ${e.anchor}, ${e.fps} fps)`;
 
 const optionText = (e: FxEntry) => [
   `palette (${e.palette.length} colors, dark to bright: ${e.palette.join(" ")})`,
@@ -132,8 +192,9 @@ export const FX_TOOLS: Tool[] = [
     title: "List effects",
     description:
       "List the Pixel FX library: game effects rendered as pixel art (impacts, melee slashes, explosions, lightning, " +
-      "arcane, holy, fire, poison). Each line gives the id, loop or one-shot, duration, canvas size, origin (the anchor " +
-      "add_fx puts at x, y: a character's feet for melee and casts, the point of impact, a torch's base) and its options. " +
+      "arcane, holy, fire, poison). Each line gives the id, loop or one-shot, duration, canvas size, origin (pixelfx's " +
+      "ground point: a character's feet for melee and casts, a torch's base), its default anchor for add_fx ('center': " +
+      "x, y is the effect's visual centre, the impact point; 'ground': x, y is its origin) and its options. " +
       `Categories: ${FX_CATEGORIES.join(", ")}.`,
     input: z.object({
       query: z.string().optional().describe("Words to match in the id, name, description or tags, e.g. 'slash' or 'fire loop'."),
@@ -187,12 +248,15 @@ export const FX_TOOLS: Tool[] = [
       const columns = Math.max(1, Math.min(shown.length, Math.floor(1200 / (box.w * zoom + 4))));
       const sheet = contactSheet(shown, { labels: picks.map((i) => String(i + 1)), columns, zoom, background: BACKDROP, labelColor: LABEL });
       const ms = (i: number) => Math.round((i * 1000) / fps);
+      const seed = input.seed ?? e.seed;
+      const center = fxAnchorPoint(e, "center", opts, seed, fxCanvas(e, false, 0));
       return {
         content: [
           { type: "image", data: encodePng(sheet).toString("base64"), mimeType: "image/png" },
           text(`${summary(e)}. ${total} frames at ${fps} fps; showing ${shown.length} (frame numbers above each, ` +
             `times ${picks.slice(0, 6).map(ms).join(", ")}${picks.length > 6 ? ", …" : ""} ms), cut to x ${box.x}-${box.x + box.w - 1}, ` +
-            `y ${box.y}-${box.y + box.h - 1} of the canvas; the origin is at ${r.origin.x},${r.origin.y}. ` +
+            `y ${box.y}-${box.y + box.h - 1} of the canvas; the origin (ground) is at ${r.origin.x},${r.origin.y}, the visual ` +
+            `centre at ${center.x},${center.y}; add_fx puts its ${e.anchor === "center" ? "centre" : "origin"} at x, y by default (anchor ${e.anchor}). ` +
             `${e.loop ? "It loops." : "A one-shot: its last frame is empty."} Zoom ${zoom}.`),
         ],
       };
@@ -202,8 +266,11 @@ export const FX_TOOLS: Tool[] = [
     name: "add_fx",
     title: "Add effect",
     description:
-      "Add an effect from the FX library to the active sprite, in one undo step. Its origin (list_fx) goes at x, y " +
-      "(or a slice's center): a character's feet for melee and casts, the point of impact for hits. From start_frame, " +
+      "Add an effect from the FX library to the active sprite, in one undo step. x, y (or a slice's center) is where " +
+      "the effect lands, by its anchor: 'center' puts its visual centre there (the impact point of a hit, slash, burst " +
+      "or bolt), 'ground' puts its origin there (the floor under a pillar, fire, explosion or magic circle). Each effect " +
+      "has a default anchor (list_fx). Unless palette is 'sprite' or a ramp, the effect's colors are appended to the " +
+      "sprite palette (in the same undo step; past 256 entries they are snapped to it instead). From start_frame, " +
       "each sprite frame shows the effect at that frame's start time (using the sprite's frame durations); a one-shot " +
       "ends when its duration is up, a loop wraps and fills every frame to the end. When the effect outlasts the " +
       "sprite, frames are added at the end (copies of the last frame, 1000/fps ms each). The effect goes on a new " +
@@ -211,15 +278,17 @@ export const FX_TOOLS: Tool[] = [
       "Addition blend, 'baked' paints it into the colors, 'none' leaves it out.",
     input: z.object({
       id: z.string().describe("Effect id from list_fx, e.g. 'hit-spark'."),
-      x: z.number().int().optional().describe("Where the effect's origin goes. Default: the slice's center, else the sprite's center."),
+      x: z.number().int().optional().describe("Where the effect's anchor goes (see anchor). Default: the slice's center, else the sprite's center."),
       y: z.number().int().optional(),
-      slice: z.string().optional().describe("Put the origin at this slice's center."),
+      anchor: anchorInput,
+      slice: z.string().optional().describe("Put the anchor at this slice's center."),
       start_frame: z.number().int().min(1).optional().describe("The first frame the effect is on. Default the active frame."),
       flip: z.boolean().optional().describe("Mirror it (directional effects face right)."),
       angle: z.number().optional().describe("Turn it about its origin, in degrees (clockwise on screen)."),
       seed: z.number().int().optional().describe("Another seed gives another variation of sparks and debris."),
       palette: z.union([z.literal("sprite"), hexList]).optional()
-        .describe("'sprite': snap the colors to the sprite palette; or the effect's main color ramp, dark to bright (any length)."),
+        .describe("'sprite': snap the colors to the sprite palette; or the effect's main color ramp, dark to bright (any " +
+          "length), leaving the sprite palette alone. Default: the effect's colors, appended to the sprite palette."),
       light: z.number().min(0).max(4).optional().describe("Glow strength. Default 1."),
       glow: z.enum(["layer", "baked", "none"]).optional().describe("Default 'layer'."),
       fps: z.number().min(1).max(60).optional().describe("Frame rate of frames added past the sprite's end. Default the effect's own."),
@@ -254,10 +323,13 @@ export const FX_TOOLS: Tool[] = [
       const newMs = Math.max(1, Math.round(1000 / fps));
       const plan = fxSchedule(info.durations, start, e.durationMs, e.loop, newMs);
       const canvas = fxCanvas(e, !!input.flip, input.angle ?? 0);
-      const r: RenderedFx = renderFx(e.module, opts, { times: plan.samples.map((s) => s.t / 1000), seed: input.seed ?? e.seed, palette: snap, canvas });
+      const seed = input.seed ?? e.seed;
+      const r: RenderedFx = renderFx(e.module, opts, { times: plan.samples.map((s) => s.t / 1000), seed, palette: snap, canvas });
       const glow = input.glow ?? "layer";
       const main = freeLayerName(info, e.id);
-      const left = ax - canvas.x, top = ay - canvas.y;
+      const anchor: FxAnchor = input.anchor ?? e.anchor;
+      const at = fxAnchorPoint(e, anchor, opts, seed, canvas);
+      const left = ax - at.x, top = ay - at.y;
       const colorItems: PutImagesItem[] = [], glowItems: PutImagesItem[] = [];
       plan.samples.forEach((s, i) => {
         const c = placed(glow === "baked" ? r.frames[i] : r.color[i], left, top, info.width, info.height);
@@ -270,16 +342,35 @@ export const FX_TOOLS: Tool[] = [
       if (!colorItems.length && !glowItems.length) {
         return failure(`${e.id} at ${ax},${ay} lands outside the ${info.width}x${info.height} sprite; nothing was added.`);
       }
+      // The palette: by default the colors on the Normal layer join the sprite palette (the glow layer is light,
+      // not palette pixels); past FX_PALETTE_CAP entries they are snapped to the sprite palette instead.
+      let append: string[] | undefined, paletteNote = "";
+      if (input.palette === undefined && colorItems.length) {
+        const current = await doc.palette();
+        const have = new Set(current.map((c) => (c.a < 255 ? hex6(c.r, c.g, c.b) + c.a.toString(16).padStart(2, "0") : hex6(c.r, c.g, c.b))));
+        const missing = fxColors(colorItems.map((it) => it.image)).filter((h) => !have.has(h));
+        if (current.length + missing.length <= FX_PALETTE_CAP) {
+          append = missing;
+          paletteNote = missing.length
+            ? ` Added its ${missing.length} color${missing.length === 1 ? "" : "s"} to the sprite palette (${current.length + missing.length} entries).`
+            : " Its colors were already in the sprite palette.";
+        } else if (info.palette.length) {
+          for (const it of colorItems) it.image = snapToPalette(it.image, info.palette, 1);
+          paletteNote = ` Its ${missing.length} new colors would take the sprite palette past ${FX_PALETTE_CAP} entries ` +
+            `(it has ${current.length}), so they were snapped to the sprite palette instead.`;
+        }
+      }
       const res = await doc.putImages([...colorItems, ...glowItems], {
-        frames: plan.frames, duration: newMs, label: `Add effect ${e.id}`, prompt: `add_fx ${e.id}`,
+        frames: plan.frames, duration: newMs, label: `Add effect ${e.id}`, prompt: `add_fx ${e.id}`, palette: append,
       });
       const first = plan.samples[0].frame, last = plan.samples.at(-1)!.frame;
       const layerNames = res.layers.map((l) => (l.name.endsWith(" glow") ? `${l.name} (Addition)` : l.name));
+      const where = anchor === "center" ? `its visual centre at ${ax},${ay} (anchor center)` : `its origin at ${ax},${ay} (anchor ground)`;
       return {
         content: [text(
-          `Added ${e.title} (${e.id}) with its origin at ${ax},${ay} on frames ${first}-${last}` +
+          `Added ${e.title} (${e.id}) with ${where} on frames ${first}-${last}` +
           `${res.added ? ` (${res.added} frame${res.added === 1 ? "" : "s"} added, ${newMs} ms each)` : ""}` +
-          `${e.loop ? ", looping" : ""}. Layers: ${layerNames.join(", ")}. One undo step.`,
+          `${e.loop ? ", looping" : ""}. Layers: ${layerNames.join(", ")}.${paletteNote} One undo step.`,
         )],
       };
     },
@@ -289,7 +380,8 @@ export const FX_TOOLS: Tool[] = [
     title: "Effect as a new sprite",
     description:
       "Make an effect from the FX library its own sprite: its canvas, every frame at fps (frame durations 1000/fps " +
-      "ms), glow baked in, and a tag named after the effect. A one-shot ends on an empty frame.",
+      "ms), glow baked in, a tag named after the effect, and the effect's colors as its palette (reduced to 256 and " +
+      "the frames snapped to them when there are more). A one-shot ends on an empty frame.",
     input: z.object({
       id: z.string().describe("Effect id from list_fx."),
       options: optionsInput,
@@ -308,11 +400,21 @@ export const FX_TOOLS: Tool[] = [
       const fps = input.fps ?? e.fps;
       const r = renderFx(e.module, opts, { fps, seed: input.seed ?? e.seed });
       const duration = Math.max(1, Math.round(1000 / fps));
-      const res = await documentOf(ctx).createAnimation(r.width, r.height, r.frames.map((image) => ({ image, duration })), {
-        title: e.id, tags: [{ name: e.id, from: 1, to: r.frames.length }],
+      // The sprite's palette is the effect's colors; past FX_PALETTE_CAP they are reduced and the frames snapped.
+      let frames = r.frames, palette = fxColors(frames), paletteNote = `its ${palette.length} colors as the palette`;
+      if (palette.length > FX_PALETTE_CAP) {
+        const reduced = reducedPalette(frames, FX_PALETTE_CAP);
+        frames = frames.map((f) => snapToPalette(f, reduced, 1));
+        paletteNote = `its ${palette.length} colors reduced to ${reduced.length} and the frames snapped to them (a palette ` +
+          `holds ${FX_PALETTE_CAP})`;
+        palette = fxColors(frames);
+      }
+      const res = await documentOf(ctx).createAnimation(r.width, r.height, frames.map((image) => ({ image, duration })), {
+        title: e.id, tags: [{ name: e.id, from: 1, to: frames.length }], palette,
       });
-      return { content: [text(`Made "${res.title}": ${r.frames.length} frames of ${r.width}x${r.height} at ${fps} fps (${duration} ms each), ` +
-        `tag ${e.id}${e.loop ? ", a seamless loop" : ", a one-shot ending on an empty frame"}; the effect's origin is at ${r.origin.x},${r.origin.y}.`)] };
+      return { content: [text(`Made "${res.title}": ${frames.length} frames of ${r.width}x${r.height} at ${fps} fps (${duration} ms each), ` +
+        `tag ${e.id}${e.loop ? ", a seamless loop" : ", a one-shot ending on an empty frame"}, ${paletteNote}; ` +
+        `the effect's origin is at ${r.origin.x},${r.origin.y}.`)] };
     },
   },
 ];

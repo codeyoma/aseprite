@@ -193,7 +193,8 @@ export const CORE_TOOLS: Tool[] = [
       "Run mechanical pixel-art checks on the active sprite and return findings with coordinates and a concrete fix: " +
       "off-palette colors (RGB sprites), orphan pixels, semi-transparent pixels, empty cels inside a tag, frame " +
       "durations that stand out within a tag, content outside the canvas, repeated frames in a tag, and feet that " +
-      "jitter by 1-3 px within a tag. Run it before saying a drawing or " +
+      "jitter by 1-3 px within a tag. Layers that don't blend Normal (an Addition glow) are light, not pixels: the " +
+      "pixel rules skip them and the result says so. Run it before saying a drawing or " +
       "animation task is done; fix errors, and mention warnings you leave on purpose.",
     input: z.object({
       layer: z.string().optional().describe("Check only this layer (id like 'L12' or name). Default: all visible layers."),
@@ -257,10 +258,16 @@ export function formatDiff(result: any, binary: Buffer | undefined, scale?: numb
 }
 
 /** Readable check report: a summary line, then one line per finding. */
+/** The light layers (not Normal blend: glow, shade) the pixel rules skipped. */
+function lightNote(names: unknown): string {
+  if (!Array.isArray(names) || !names.length) return "";
+  return `; skipped ${names.length} light layer${names.length === 1 ? "" : "s"} (not Normal blend) for the pixel rules: ${names.join(", ")}`;
+}
+
 export function formatCheck(result: any): string {
   const findings: any[] = result?.findings ?? [];
   const head = `Check: ${result?.errors ?? 0} errors, ${result?.warnings ?? 0} warnings` +
-    ` (${result?.checked?.layers ?? "?"} layers, ${result?.checked?.frames ?? "?"} frames)`;
+    ` (${result?.checked?.layers ?? "?"} layers, ${result?.checked?.frames ?? "?"} frames)` + lightNote(result?.checked?.lightLayers);
   if (!findings.length) return `${head}. No problems found.`;
   const lines = findings.map((f) => {
     const where = [f.layerId && f.layer ? `${f.layerId} ${f.layer}` : f.layer, f.frame ? `frame ${f.frame}` : "",

@@ -96,12 +96,13 @@ export function stamp(base: Rgba, top: Rgba, x: number, y: number): Rgba {
 /**
  * A copy of the image with every opaque pixel's RGB replaced by the nearest
  * palette color (OKLab, via color.ts); alpha and transparent pixels stay.
+ * minAlpha: the least alpha that counts as opaque (1 snaps every visible pixel).
  */
-export function snapToPalette(img: Rgba, palette: RGBA[]): Rgba {
+export function snapToPalette(img: Rgba, palette: RGBA[], minAlpha = OPAQUE): Rgba {
   const d = new Uint8Array(img.data);
   const memo = new Map<number, RGBA>();
   for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] < OPAQUE) continue;
+    if (d[i + 3] < minAlpha || !d[i + 3]) continue;
     const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
     let c = memo.get(k);
     if (!c) {

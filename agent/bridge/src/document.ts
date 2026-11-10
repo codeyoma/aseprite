@@ -149,10 +149,11 @@ export interface Document {
   putImage(img: Rgba, o?: PutImage): Promise<{ layer: string; name: string }>;
   /**
    * Several images in one undo step. frames: the sprite first gets at least that many frames, each a copy of
-   * the last frame's cels lasting duration ms (default the last frame's).
+   * the last frame's cels lasting duration ms (default the last frame's). palette: hex colors appended to the
+   * sprite palette first (the ones it lacks), in the same undo step; paletteAdded counts them.
    */
-  putImages(items: PutImagesItem[], o?: { frames?: number; duration?: number; label?: string; prompt?: string }):
-    Promise<{ layers: { layer: string; name: string }[]; frames: number; added: number }>;
+  putImages(items: PutImagesItem[], o?: { frames?: number; duration?: number; label?: string; prompt?: string; palette?: string[] }):
+    Promise<{ layers: { layer: string; name: string }[]; frames: number; added: number; paletteAdded?: number }>;
   createSprite(img: Rgba, o?: NewSprite): Promise<{ title: string }>;
   createAnimation(width: number, height: number, frames: AnimationFrame[], o?: NewSprite & { tags?: { name: string; from: number; to: number }[] }): Promise<{ title: string }>;
   /** Text rendered by Aseprite in a font file or system font (PasteText spec), white, trimmed. */
@@ -292,7 +293,7 @@ export function documentOf(aseprite: AsepriteRequester): Document {
         for (const [k, v] of Object.entries(opt)) if (v !== undefined) im[k] = v;
         return im;
       });
-      return write("put_images", { images, frames: o.frames, duration: o.duration, label: o.label, prompt: o.prompt });
+      return write("put_images", { images, frames: o.frames, duration: o.duration, label: o.label, prompt: o.prompt, palette: o.palette });
     },
     async createSprite(img, o = {}) {
       checkSize(img, "create_sprite");

@@ -302,6 +302,15 @@ export function fakeDocument({
         if (bytes.length !== im.width * im.height * 4) throw new Error(`${what}expected ${im.width * im.height * 4} bytes, got ${bytes.length}`);
         return { bytes, look: layerLook(im, what) };
       });
+      // palette: colors the palette lacks (normalized hex), appended first in the same step.
+      let paletteAdd;
+      if (p.palette !== undefined) {
+        const have = new Set(s.palette);
+        paletteAdd = [];
+        for (const c of p.palette.map(norm)) if (!have.has(c)) { have.add(c); paletteAdd.push(c); }
+        if (paletteAdd.length && s.defaultPalette) throw unsupported("appending to the default palette of a new sprite");
+      }
+      if (paletteAdd) s.palette.push(...paletteAdd);
       let added = 0;
       // Sprite:newFrame: a copy of the last frame's cels (every image layer), with its duration unless one is given.
       while (s.durations.length < count) {
@@ -318,7 +327,7 @@ export function fakeDocument({
         const target = putOne(s, { ...im, prompt: p.prompt }, checked[i].bytes, im.frame, checked[i].look);
         if (!seen.has(target.id)) { seen.add(target.id); layers.push({ layer: `L${target.id}`, name: target.name }); }
       });
-      return { layers, frames: s.durations.length, added };
+      return { layers, frames: s.durations.length, added, ...(paletteAdd ? { paletteAdded: paletteAdd.length } : {}) };
     },
     create_sprite: (p) => {
       const bytes = decode(p.rgba);

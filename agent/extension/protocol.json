@@ -1,6 +1,6 @@
 {
   "description": "Wire protocol between the aseprite-agent bridge and the Aseprite extension (JSON-RPC 2.0 over WebSocket). This file is the single definition: the extension ships it, the bridge copies it, and contract tests check both sides against it. Bump version on any incompatible change.",
-  "version": 27,
+  "version": 28,
   "handshake": {
     "hello": "extension -> bridge, first message: { token, protocol, asepriteVersion }",
     "welcome": "bridge -> extension: the connection is accepted",
@@ -222,7 +222,8 @@
         "frames": "integer?",
         "duration": "integer?",
         "label": "string?",
-        "prompt": "string?"
+        "prompt": "string?",
+        "palette": "array?"
       }
     },
     "mirror_frames": {
@@ -377,7 +378,7 @@
     ]
   },
   "blendModes": "put_image and put_images take blend_mode for the layer they make (new_layer): normal, multiply, screen, overlay, darken, lighten, color_dodge, color_burn, hard_light, soft_light, difference, exclusion, hue, saturation, color, luminosity, addition, subtract or divide; get_state reports each image layer's blendMode by the same names. opacity is 0-255.",
-  "putImages": "put_images writes several images in one undo step: images is a list of put_image params (width, height, rgba, frame (required), new_layer or layer, above (a layer id or name, also one made earlier in the same request), x, y, hide, blend_mode, opacity). frames: the sprite gets at least this many frames first; each new frame copies the cels of the last frame (as Aseprite's New Frame does) and lasts duration ms (default: the last frame's).",
+  "putImages": "put_images writes several images in one undo step: images is a list of put_image params (width, height, rgba, frame (required), new_layer or layer, above (a layer id or name, also one made earlier in the same request), x, y, hide, blend_mode, opacity). frames: the sprite gets at least this many frames first; each new frame copies the cels of the last frame (as Aseprite's New Frame does) and lasts duration ms (default: the last frame's). palette: hex colors appended to the sprite palette before the images are written (the ones it lacks, compared as normalized hex), in the same undo step; the result counts them as paletteAdded.",
   "binaryResults": "A request marked binary answers with a result containing binary: true, followed by exactly one binary WebSocket frame with the data.",
   "bridgeMethods": [
     "chat.info",

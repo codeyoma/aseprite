@@ -62,10 +62,18 @@ return function(handlers, D)
       pixelRules = false
     end
 
+    -- Light layers (#69): a layer that does not blend Normal (an Addition glow, a Multiply shadow) is light
+    -- or shade over the art, not pixels of it, so the per-pixel rules skip it.
+    local lightLayers = {}
     for _, layer in ipairs(layers) do
+      if layer.blendMode ~= BlendMode.NORMAL then lightLayers[#lightLayers + 1] = layer.name end
+    end
+
+    for _, layer in ipairs(layers) do
+      local pixelRulesHere = pixelRules and layer.blendMode == BlendMode.NORMAL
       for _, f in ipairs(frames) do
         local cel = layer:cel(f)
-        if cel and pixelRules then
+        if cel and pixelRulesHere then
           local offPalette = {}   -- hex -> { pixels, count, r, g, b }
           local semi = { pixels = {}, count = 0 }
           local color = {}        -- "x,y" -> hex, for the orphan rule
@@ -235,8 +243,10 @@ return function(handlers, D)
     for _, f in ipairs(findings) do
       if f.severity == "error" then errors = errors + 1 else warnings = warnings + 1 end
     end
+    -- lightLayers: the names of the layers the pixel rules skipped (only when a pixel rule ran).
     return { findings = findings, errors = errors, warnings = warnings,
-             checked = { layers = #layers, frames = #frames, rules = (function()
+             checked = { layers = #layers, frames = #frames,
+                         lightLayers = (pixelRules and #lightLayers > 0) and lightLayers or nil, rules = (function()
                local r = {}
                for _, name in ipairs(CHECK_RULES) do if enabled[name] then r[#r + 1] = name end end
                return r

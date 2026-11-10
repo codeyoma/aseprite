@@ -5,6 +5,7 @@
     "kind": "edit",
     "label": "Add effect",
     "input": [
+      "anchor",
       "angle",
       "flip",
       "fps",

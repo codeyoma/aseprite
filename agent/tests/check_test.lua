@@ -146,4 +146,27 @@ do
   check("ground jitter found", jit and jit.frames[1] == 3 and jit.fix:match("1 px higher"), jit and json.encode(jit))
 end
 
+-- Light layers (#69): a layer that doesn't blend Normal (an Addition glow) is skipped by the pixel rules.
+do
+  local s = newSprite(8, 8, { black, red })
+  paint(s, 1, { { 1, 1, red }, { 2, 1, red } })
+  local glow = s:newLayer()
+  glow.name = "AI: fx hit-spark glow"
+  glow.blendMode = BlendMode.ADDITION
+  paint(s, 1, { { 5, 5, Color(250, 200, 10, 120) } }, glow)
+  local r = H.call("check", { rules = { "off-palette", "orphan", "semi-transparent" } })
+  local onGlow = 0
+  for _, f in ipairs(r.findings) do if f.layer == glow.name then onGlow = onGlow + 1 end end
+  check("light layer: no pixel findings", onGlow == 0, json.encode(r.findings))
+  check("light layer: named as skipped", r.checked.lightLayers and #r.checked.lightLayers == 1
+    and r.checked.lightLayers[1] == glow.name, json.encode(r.checked))
+  glow.blendMode = BlendMode.NORMAL
+  r = H.call("check", { rules = { "off-palette", "semi-transparent" } })
+  check("normal layer: judged again", #findings(r, "off-palette") == 1 and #findings(r, "semi-transparent") == 1
+    and r.checked.lightLayers == nil, json.encode(r))
+  local plain = H.call("check", { rules = { "frame-duration" } })
+  check("no pixel rules: nothing skipped", plain.checked.lightLayers == nil)
+  s:close()
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

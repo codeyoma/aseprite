@@ -81,6 +81,25 @@ export interface FxOption {
   kind: "ramp" | "color" | "number" | "boolean" | "text" | "value";
 }
 
+/**
+ * What add_fx's (x, y) means for an effect: "center" puts the effect's visual centre there (the point of impact
+ * for hits, slashes and bursts in the air); "ground" puts its origin there (pixelfx's ground point: the foot of a
+ * pillar, fire, explosion or circle that stands on the floor).
+ */
+export type FxAnchor = "center" | "ground";
+
+/** Tags that say an effect stands on the ground (pixelfx tags its floor effects, props and ambient loops so). */
+const GROUND_TAGS = new Set(["ground", "prop", "ambient"]);
+/** Effects whose tags say otherwise: a ricochet sparks in the air; an explosion and a meteor sit on the floor. */
+const ANCHOR_OVERRIDES: Record<string, FxAnchor> = { ricochet: "center", "small-explosion": "ground", meteor: "ground" };
+
+/** The default anchor: hand-listed, else melee is centred, else ground when its tags say so, else centred. */
+export function defaultAnchor(category: string, id: string, tags: string[]): FxAnchor {
+  if (ANCHOR_OVERRIDES[id]) return ANCHOR_OVERRIDES[id];
+  if (category === "melee") return "center";
+  return tags.some((t) => GROUND_TAGS.has(t)) ? "ground" : "center";
+}
+
 export interface FxEntry {
   /** The effect's file name, e.g. "hit-spark". */
   id: string;
@@ -94,9 +113,11 @@ export interface FxEntry {
   size: { width: number; height: number };
   /**
    * Where the effect's anchor sits on its canvas: the feet of the character for melee and casts, the point of
-   * impact, the base of a torch or pillar. add_fx puts it at (x, y).
+   * impact, the base of a torch or pillar. add_fx puts it at (x, y) with anchor "ground".
    */
   origin: { x: number; y: number };
+  /** add_fx's default anchor (defaultAnchor). */
+  anchor: FxAnchor;
   /** The frame rate the effect was made for. */
   fps: number;
   /** The default color ramp (palette option), dark to bright. */
@@ -133,6 +154,7 @@ function entry(category: string, id: string, mod: Record<string, unknown>): FxEn
     durationMs: Math.round((meta.duration ?? 1) * 1000),
     size: { width: meta.size[0], height: meta.size[1] },
     origin: { x: meta.origin[0], y: meta.origin[1] },
+    anchor: defaultAnchor(category, id, meta.tags ?? []),
     fps: meta.fps ?? 30,
     palette: (opts.palette as string[] | undefined) ?? [],
     seed: typeof opts.seed === "number" ? opts.seed : 1,

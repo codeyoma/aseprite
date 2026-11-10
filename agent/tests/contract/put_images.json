@@ -73,6 +73,28 @@
           "result": { "frames": 4, "added": 0, "layers": [{ "name": "Body" }] } },
         { "pixels": { "layer": "Body", "frame": 1 }, "rows": ["gg"] }
       ]
+    },
+    {
+      "name": "put_images appends the palette colors it lacks (compared as normalized hex) before writing, in the same request",
+      "notes": "One undo step in Aseprite: the palette change and the images are one transaction. In an indexed sprite the new entries come first, so the image maps onto them exactly. A bad color fails before anything changes.",
+      "fixture": {
+        "width": 2, "height": 1, "colorMode": "indexed", "palette": ["#000000", "#ff0000"],
+        "layers": [{ "name": "Body", "cels": { "1": ["r."] } }]
+      },
+      "steps": [
+        { "request": "put_images", "params": { "palette": ["#FF0000", "#ffff00", "#00ff00", "#ffff00"], "images": [
+          { "new_layer": "fx", "frame": 1, "width": 2, "height": 1, "rgba": { "rows": ["yg"] } }
+        ] }, "result": { "frames": 1, "added": 0, "paletteAdded": 2, "layers": [{ "name": "AI: fx" }] } },
+        { "state": { "colorMode": "indexed", "palette": ["#000000", "#ff0000", "#ffff00", "#00ff00"] } },
+        { "pixels": { "layer": "AI: fx" }, "rows": ["yg"] },
+        { "request": "put_images", "params": { "palette": ["#00ff00"], "images": [
+          { "new_layer": "fx2", "frame": 1, "width": 1, "height": 1, "rgba": { "rows": ["g"] } }
+        ] }, "result": { "paletteAdded": 0 } },
+        { "request": "put_images", "params": { "palette": ["#0000ff", "nope"], "images": [
+          { "new_layer": "z", "frame": 1, "width": 1, "height": 1, "rgba": { "rows": ["b"] } }
+        ] }, "error": "Invalid color: nope" },
+        { "state": { "palette": ["#000000", "#ff0000", "#ffff00", "#00ff00"], "layers": [{ "name": "AI: fx2" }, { "name": "AI: fx" }, { "name": "Body" }] } }
+      ]
     }
   ]
 }

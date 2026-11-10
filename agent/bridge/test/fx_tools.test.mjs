@@ -3,9 +3,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PNG } from "pngjs";
-import { renderFx } from "../dist/fx/index.js";
+import { renderFx, visualCenter } from "../dist/fx/index.js";
 import { FX_CATEGORIES, FX_LIBRARY, findFx, searchFx } from "../dist/fx/library.js";
-import { fxCanvas, fxSchedule } from "../dist/fx_tools.js";
+import { fxAnchorPoint, fxCanvas, fxSchedule } from "../dist/fx_tools.js";
 import { findTool, runTool } from "../dist/tools.js";
 import { fakeDocument, rect } from "./helpers/fake_document.mjs";
 
@@ -104,7 +104,7 @@ test("fxCanvas mirrors the origin when flipped and makes room to turn", () => {
 
 test("add_fx: a hit spark on a 64x64 sprite, glow on an Addition layer, frames added, one request", async () => {
   const fake = heroSprite();
-  const r = await runTool(findTool("add_fx"), { id: "hit-spark", x: 36, y: 40 }, fake);
+  const r = await runTool(findTool("add_fx"), { id: "hit-spark", x: 36, y: 40, anchor: "ground" }, fake);
   assert.ok(!r.isError, textOf(r));
   assert.match(textOf(r), /frames 1-14 \(13 frames added, 33 ms each\).*One undo step/);
   const writes = fake.calls.filter((c) => WRITES.has(c.method));
@@ -169,7 +169,7 @@ test("add_fx: slices, palette snapping, flip and bad input", async () => {
   });
   const r = await runTool(findTool("add_fx"), { id: "hit-spark", slice: "hit", palette: "sprite", flip: true, glow: "baked" }, fake);
   assert.ok(!r.isError, textOf(r));
-  assert.match(textOf(r), /origin at 44,24/);
+  assert.match(textOf(r), /visual centre at 44,24 \(anchor center\)/);
   const colors = new Set();
   for (const im of fake.images("AI: fx hit-spark")) {
     if (!im) continue;
@@ -180,6 +180,96 @@ test("add_fx: slices, palette snapping, flip and bad input", async () => {
   assert.match(textOf(await runTool(findTool("add_fx"), { id: "hit-spark", options: { colour: 1 } }, fake)), /has no option 'colour'/);
   assert.match(textOf(await runTool(findTool("add_fx"), { id: "hit-spark", slice: "x" }, fake)), /No slice named x/);
   assert.match(textOf(await runTool(findTool("add_fx"), { id: "hit-spark", x: 500, y: 500 }, fake)), /lands outside/);
+});
+
+/** The alpha-weighted centroid of the busiest image (largest alpha sum), as visualCenter computes it. */
+function busiestCentroid(images, width) {
+  let best, bestSum = 0;
+  for (const im of images) {
+    if (!im) continue;
+    let s = 0;
+    for (let i = 3; i < im.length; i += 4) s += im[i];
+    if (s > bestSum) { bestSum = s; best = im; }
+  }
+  let sx = 0, sy = 0;
+  for (let i = 3; i < best.length; i += 4) { const p = (i - 3) / 4; sx += best[i] * (p % width); sy += best[i] * Math.floor(p / width); }
+  return { x: sx / bestSum, y: sy / bestSum };
+}
+
+test("add_fx anchors: 'center' puts the visual centre at x, y; 'ground' puts the origin there", async () => {
+  // 33 ms frames sample the effect at its own 30 fps steps, so the sprite shows the frames visualCenter saw.
+  const sprite = () => fakeDocument({ width: 200, height: 200, durations: Array(15).fill(33), layers: [{ name: "Bg", frames: Array(15).fill(undefined) }] });
+  const e = findFx("hit-spark");
+  assert.equal(e.anchor, "center");
+  const c = fxAnchorPoint(e, "center", {}, e.seed, fxCanvas(e, false, 0));
+  assert.deepEqual(c, visualCenter(renderFx(e.module, {}, { fps: e.fps, seed: e.seed }).frames));
+  assert.ok(e.origin.y - c.y > 10, `the flash sits well above the ground point (${c.x},${c.y} vs ${e.origin.x},${e.origin.y})`);
+
+  const centred = sprite();
+  const r = await runTool(findTool("add_fx"), { id: "hit-spark", x: 100, y: 100, glow: "baked" }, centred);
+  assert.match(textOf(r), /visual centre at 100,100 \(anchor center\)/);
+  const at = busiestCentroid(centred.images("AI: fx hit-spark"), 200);
+  assert.ok(Math.abs(at.x - 100) <= 1 && Math.abs(at.y - 100) <= 1, `centroid ${at.x},${at.y}`);
+
+  const grounded = sprite();
+  await runTool(findTool("add_fx"), { id: "hit-spark", x: 100, y: 100, glow: "baked", anchor: "ground" }, grounded);
+  const g = busiestCentroid(grounded.images("AI: fx hit-spark"), 200);
+  assert.ok(Math.abs(g.x - (100 + c.x - e.origin.x)) <= 1 && Math.abs(g.y - (100 + c.y - e.origin.y)) <= 1, `centroid ${g.x},${g.y}`);
+
+  // Defaults: floor effects stand on x, y; hits, slashes and floating effects are centred there.
+  for (const id of ["torch", "campfire", "flame-pillar", "holy-pillar", "ground-slam", "heavy-landing", "small-explosion", "meteor", "lightning-strike"]) {
+    assert.equal(findFx(id).anchor, "ground", id);
+  }
+  for (const id of ["hit-spark", "crit-hit", "ricochet", "sword-slash", "heavy-cleave", "plasma-explosion", "chain-lightning", "arcane-orb"]) {
+    assert.equal(findFx(id).anchor, "center", id);
+  }
+  assert.match(textOf(await runTool(findTool("list_fx"), { query: "torch" }, grounded)), /anchor ground/);
+  assert.match(textOf(await runTool(findTool("preview_fx"), { id: "hit-spark" }, grounded)), new RegExp(`visual centre at ${c.x},${c.y}.*anchor center`));
+});
+
+test("add_fx appends the effect's colors to the sprite palette in the same write, but not the glow's", async () => {
+  const fake = heroSprite();
+  const r = await runTool(findTool("add_fx"), { id: "hit-spark", x: 32, y: 32 }, fake);
+  assert.ok(!r.isError, textOf(r));
+  const writes = fake.calls.filter((c) => WRITES.has(c.method));
+  assert.deepEqual(writes.map((c) => c.method), ["put_images"], "one write: one undo step");
+  const sent = writes[0].params.palette;
+  assert.ok(sent.length > 0 && sent.every((h) => /^#[0-9a-f]{6}$/.test(h)), JSON.stringify(sent));
+  const colors = (img) => {
+    const s = new Set();
+    for (const im of img) if (im) for (let i = 0; i < im.length; i += 4) if (im[i + 3]) s.add("#" + [im[i], im[i + 1], im[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join(""));
+    return s;
+  };
+  const pal = (await fake.request("get_palette")).result.colors;
+  assert.equal(pal.length, 2 + sent.length);
+  const used = colors(fake.images("AI: fx hit-spark"));
+  assert.ok([...used].every((h) => pal.includes(h)), "every color on the effect layer is in the palette");
+  assert.deepEqual(new Set(sent), new Set([...used].filter((h) => h !== "#000000" && h !== "#ffffff")), "only the colors it lacked");
+  assert.match(textOf(r), new RegExp(`Added its ${sent.length} colors to the sprite palette \\(${pal.length} entries\\)`));
+  // A second one adds nothing new.
+  const again = await runTool(findTool("add_fx"), { id: "hit-spark", x: 20, y: 20, glow: "none" }, fake);
+  assert.match(textOf(again), /already in the sprite palette/);
+  assert.equal((await fake.request("get_palette")).result.colors.length, pal.length);
+  // 'sprite' and a ramp leave the palette alone.
+  await runTool(findTool("add_fx"), { id: "hit-spark", palette: ["#220000", "#ff0000"], glow: "none" }, fake);
+  assert.equal(fake.calls.filter((c) => c.method === "put_images").at(-1).params.palette, undefined);
+});
+
+test("add_fx snaps to the sprite palette instead when appending would pass 256 entries", async () => {
+  const greys = Array.from({ length: 254 }, (_, i) => "#" + [i, i, (i + 1) % 256].map((v) => v.toString(16).padStart(2, "0")).join(""));
+  const fake = fakeDocument({ width: 64, height: 64, palette: greys, layers: [{ name: "Hero", frames: [rect(64, 64, [0, 0, 1, 1], [0, 0, 1])] }], layer: "Hero" });
+  const r = await runTool(findTool("add_fx"), { id: "hit-spark", x: 32, y: 32 }, fake);
+  assert.ok(!r.isError, textOf(r));
+  assert.match(textOf(r), /past 256 entries \(it has 254\), so they were snapped to the sprite palette instead/);
+  assert.equal(fake.calls.find((c) => c.method === "put_images").params.palette, undefined);
+  const pal = new Set((await fake.request("get_palette")).result.colors);
+  assert.equal(pal.size, 254);
+  for (const im of fake.images("AI: fx hit-spark")) {
+    if (!im) continue;
+    for (let i = 0; i < im.length; i += 4) {
+      if (im[i + 3]) assert.ok(pal.has("#" + [im[i], im[i + 1], im[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join("")));
+    }
+  }
 });
 
 test("preview_fx: a numbered contact sheet PNG, nothing written", async () => {
@@ -205,6 +295,15 @@ test("new_fx_sprite: the effect as its own tagged sprite at 1000/fps ms a frame"
   const frames = fake.images("Layer 1");
   assert.ok(lit({ data: frames[0] }) > 0);
   assert.equal(lit({ data: frames.at(-1) }), 0, "a one-shot ends on an empty frame");
+  // Its baked glow has thousands of colors: the palette holds 256 and every pixel is one of them.
+  assert.match(textOf(r), /colors reduced to \d+ and the frames snapped/);
+  const pal = new Set((await fake.request("get_palette")).result.colors);
+  assert.ok(pal.size > 16 && pal.size <= 256, `${pal.size} colors`);
+  for (const im of frames) {
+    for (let i = 0; i < im.length; i += 4) {
+      if (im[i + 3]) assert.ok(pal.has("#" + [im[i], im[i + 1], im[i + 2]].map((v) => v.toString(16).padStart(2, "0")).join("")));
+    }
+  }
 });
 
 test("list_fx filters by words, category and loop", async () => {

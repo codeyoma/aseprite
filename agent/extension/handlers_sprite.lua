@@ -138,6 +138,42 @@ return function(handlers, D)
     return mode, opacity
   end
 
+  -- An RGB image as an indexed one through the sprite's own palette: the exact
+  -- entry (other than the transparent index), else the nearest by RGB; alpha 0
+  -- is the transparent index. Image:drawImage maps through Aseprite's current
+  -- palette instead, which misses entries added earlier in the same
+  -- transaction (put_images' palette).
+  local function toIndexed(img, sprite)
+    local pal, pc = sprite.palettes[1], app.pixelColor
+    local mask = sprite.transparentColor
+    local entries = {}
+    for i = 0, #pal - 1 do
+      if i ~= mask then local c = pal:getColor(i); entries[#entries + 1] = { i = i, r = c.red, g = c.green, b = c.blue } end
+    end
+    local out = Image(img.width, img.height, ColorMode.INDEXED)
+    out:clear(mask)
+    local memo = {}
+    for it in img:pixels() do
+      local v = it()
+      if pc.rgbaA(v) > 0 then
+        local key = v & 0xffffff
+        local idx = memo[key]
+        if not idx then
+          local r, g, b, best = pc.rgbaR(v), pc.rgbaG(v), pc.rgbaB(v), math.huge
+          for _, e in ipairs(entries) do
+            local d = (e.r - r) ^ 2 + (e.g - g) ^ 2 + (e.b - b) ^ 2
+            if d < best then best, idx = d, e.i end
+            if d == 0 then break end
+          end
+          idx = idx or mask
+          memo[key] = idx
+        end
+        out:drawPixel(it.x, it.y, idx)
+      end
+    end
+    return out
+  end
+
   -- One image into a frame (inside the caller's transaction): params.layer
   -- (id or name) replaces that layer's cel, or params.new_layer = name puts
   -- it on an "AI: <name>" layer above params.above (created once, reused by
@@ -180,7 +216,9 @@ return function(handlers, D)
     end
     local img = Image(w, h, ColorMode.RGB)
     img.bytes = bytes
-    if sprite.colorMode ~= ColorMode.RGB then
+    if sprite.colorMode == ColorMode.INDEXED then
+      img = toIndexed(img, sprite)
+    elseif sprite.colorMode ~= ColorMode.RGB then
       local conv = Image(w, h, sprite.colorMode)
       conv:drawImage(img)
       img = conv
@@ -211,7 +249,9 @@ return function(handlers, D)
   -- put_image params with a frame each. params.frames: the sprite first gets
   -- at least that many frames, each a copy of the last frame's cels (Aseprite's
   -- New Frame) lasting params.duration ms. Everything is checked before the
-  -- sprite changes. Returns the layers written, in order of first use.
+  -- sprite changes. params.palette: hex colors appended to the sprite palette
+  -- first (the ones it lacks), in the same transaction. Returns the layers
+  -- written, in order of first use, and paletteAdded when palette was given.
   local IMAGE_KEYS = { width = true, height = true, rgba = true, frame = true, new_layer = true, layer = true,
                        above = true, x = true, y = true, hide = true, blend_mode = true, opacity = true }
   handlers.put_images = function(params)
@@ -241,9 +281,28 @@ return function(handlers, D)
       local mode, opacity = layerLook(im, what)
       checked[i] = { bytes = bytes, mode = mode, opacity = opacity }
     end
+    -- palette: colors to append (the ones the palette lacks, as normalized hex), checked first too.
+    local paletteAdd = {}
+    if params.palette ~= nil then
+      local cur = sprite.palettes[1]
+      local have = {}
+      for i = 0, #cur - 1 do local c = cur:getColor(i); have[px.hex(c.red, c.green, c.blue, c.alpha)] = true end
+      for _, h in ipairs(params.palette) do
+        local key = px.hex(px.parseHex(h))
+        if not have[key] then have[key] = true; paletteAdd[#paletteAdd + 1] = key end
+      end
+    end
     local layers, seen, added = {}, {}, 0
     local activeFrame = app.frame and app.frame.frameNumber
     app.transaction(params.label or "AI images", function()
+      -- The palette first, so an indexed sprite maps the new images onto the new entries.
+      if #paletteAdd > 0 then
+        local p = Palette(sprite.palettes[1])
+        local start = #p
+        p:resize(start + #paletteAdd)
+        for i, h in ipairs(paletteAdd) do p:setColor(start + i - 1, Color(px.parseHex(h))) end
+        sprite:setPalette(p)
+      end
       -- New frames at the end, each a copy of the last frame's cels. Aseprite grows a tag that ends on the
       -- last frame over new frames; put them back (as mirror_frames does).
       local ranges = {}
@@ -280,7 +339,8 @@ return function(handlers, D)
     end)
     if activeFrame then app.frame = sprite.frames[activeFrame] end
     app.refresh()
-    return { layers = layers, frames = #sprite.frames, added = added }
+    return { layers = layers, frames = #sprite.frames, added = added,
+             paletteAdded = params.palette ~= nil and #paletteAdd or nil }
   end
 
   -- Copies frames (a tag, or a list) to new frames at the end, flipped

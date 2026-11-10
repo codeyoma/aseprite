@@ -133,6 +133,8 @@ test("check: formats findings with coordinates and fixes", async () => {
   assert.match(out[3], /^- warning frame-duration \[tag idle, frames 3\]/);
   assert.equal(formatCheck({ errors: 0, warnings: 0, findings: [], checked: { layers: 1, frames: 1 } }),
     "Check: 0 errors, 0 warnings (1 layers, 1 frames). No problems found.");
+  assert.equal(formatCheck({ errors: 0, warnings: 0, findings: [], checked: { layers: 2, frames: 1, lightLayers: ["AI: fx hit-spark glow"] } }),
+    "Check: 0 errors, 0 warnings (2 layers, 1 frames); skipped 1 light layer (not Normal blend) for the pixel rules: AI: fx hit-spark glow. No problems found.");
 
   const res = await runTool(findTool("check"), { rules: ["orphan"] }, fakeAseprite({ check: { result } }));
   assert.match(textOf(res), /^Check: 1 errors/);
