@@ -158,6 +158,12 @@ bool TextEdit::onProcessMessage(Message* msg)
       break;
     }
     case kKeyDownMessage: {
+      if (hasFocus() && KeyDown) {
+        m_keyConsumed = false;
+        KeyDown(static_cast<KeyMessage*>(msg));
+        if (m_keyConsumed)
+          return true;
+      }
       if (hasFocus() && onKeyDown(static_cast<KeyMessage*>(msg))) {
         m_drawCaret = true;
         invalidate();

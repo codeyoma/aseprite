@@ -41,7 +41,16 @@ return function(deps)
   -- The / picker (#35): the Skill Catalog from the bridge, and the matches
   -- shown at the bottom of the log while the prompt is "/query".
   local catalogRows = {}
-  local suggest = nil          -- { items = { { kind, name, title, source, description, needs } } }
+  local suggest = nil          -- { items = { { kind, name, title, source, description, needs } }, index }
+  local pickedSkill = nil      -- the skill picked in the / picker, shown as a chip above the prompt
+  local hitChip = nil          -- where the chip is drawn (click removes it)
+
+  -- The text without its last character. Whole UTF-8 characters: cutting a
+  -- byte off "…" or "—" leaves invalid UTF-8, which crashes text shaping.
+  local function dropLastChar(t)
+    local last = utf8.offset(t, -1)
+    return last and t:sub(1, last - 1) or t:sub(1, #t - 1)
+  end
   local hitSuggest = {}
   local refreshCatalog       -- defined with the picker below
   local providers = { "claude" }
@@ -59,6 +68,7 @@ return function(deps)
     ok = Color(88, 200, 120),
     failed = Color(235, 100, 100),
     rule = Color(60, 60, 66),
+    highlight = Color(82, 82, 94),   -- the picker's selected row
   }
 
   local function formatSeconds(s)
@@ -568,21 +578,28 @@ return function(deps)
 
     -- Skill and command matches over the bottom of the log, just above the input.
     hitSuggest = {}
+    hitChip = nil
     if suggest and #suggest.items > 0 then
       local lh = gc:measureText("Ag").height
       local u = math.max(2, lh // 3)
       local rowH = lh * 2 + u * 2
       local n = math.min(#suggest.items, 6)
+      -- Up/Down move the highlight; the list scrolls to keep it in view.
+      local first = math.max(1, math.min(suggest.index - n + 1, #suggest.items - n + 1))
+      if suggest.index < first then first = suggest.index end
       local boxH = n * rowH + u * 2
       local top = h - boxH
       gc.color = C.bubble
       gc:fillRect(Rectangle(0, top, w, boxH))
       for i = 1, n do
-        local it = suggest.items[i]
+        local k = first + i - 1
+        local it = suggest.items[k]
         local ry = top + u + (i - 1) * rowH
-        if i == 1 then   -- Enter picks the first match
-          gc.color = C.rule
+        if k == suggest.index then   -- Enter picks the highlighted match
+          gc.color = C.highlight
           gc:fillRect(Rectangle(0, ry, w, rowH))
+          gc.color = C.accent
+          gc:fillRect(Rectangle(0, ry, math.max(2, u), rowH))
         end
         local x = u * 3
         gc.color = C.text
@@ -595,12 +612,30 @@ return function(deps)
         local desc = it.description or ""
         local maxW = w - x * 2
         if gc:measureText(desc).width > maxW then
-          while #desc > 1 and gc:measureText(desc .. "…").width > maxW do desc = desc:sub(1, #desc - 1) end
+          while #desc > 1 and gc:measureText(desc .. "…").width > maxW do desc = dropLastChar(desc) end
           desc = desc .. "…"
         end
         gc:fillText(desc, x, ry + u + lh)
         hitSuggest[#hitSuggest + 1] = { y0 = ry, y1 = ry + rowH, item = it }
       end
+      if #suggest.items > n then
+        gc.color = C.faint
+        local more = string.format("%d/%d", suggest.index, #suggest.items)
+        gc:fillText(more, w - gc:measureText(more).width - u * 3, top + u)
+      end
+    elseif pickedSkill then
+      -- The picked skill as a chip just above the prompt; ✕ (or Backspace
+      -- in an empty prompt) removes it.
+      local lh = gc:measureText("Ag").height
+      local u = math.max(2, lh // 3)
+      local label = "/ " .. pickedSkill.title .. "   ✕"
+      local cw, ch = gc:measureText(label).width + u * 4, lh + u * 2
+      local cx, cy = u * 2, h - ch - u
+      gc.color = C.accent
+      gc:fillRect(Rectangle(cx, cy, cw, ch))
+      gc.color = C.bg
+      gc:fillText(label, cx + u * 2, cy + u)
+      hitChip = { x0 = cx, y0 = cy, x1 = cx + cw, y1 = cy + ch }
     end
   end
 
@@ -821,7 +856,7 @@ return function(deps)
   end
 
   local function setSuggest(items)
-    suggest = items and { items = items } or nil
+    suggest = items and { items = items, index = 1 } or nil
     if dlg then dlg:repaint() end
   end
 
@@ -829,7 +864,13 @@ return function(deps)
   -- with that skill), a saved command "/name ".
   function Panel.pickSuggestion(it)
     if not dlg or not it then return end
-    lastPrompt = it.kind == "command" and ("/" .. it.name .. " ") or ("/skill:" .. it.name .. " ")
+    if it.kind == "command" then
+      lastPrompt = "/" .. it.name .. " "
+    else
+      -- A skill becomes a chip; the prompt keeps only the request.
+      pickedSkill = it
+      lastPrompt = ""
+    end
     dlg:modify{ id = "prompt", text = lastPrompt }
     setSuggest(nil)
     for _, n in ipairs(it.needs or {}) do
@@ -841,6 +882,35 @@ return function(deps)
   end
 
   function Panel.suggestions() return suggest and suggest.items or {} end
+  function Panel.suggestionIndex() return suggest and suggest.index or 0 end
+  function Panel.pickedSkill() return pickedSkill and pickedSkill.name or nil end
+  function Panel.clearPickedSkill()
+    pickedSkill = nil
+    if dlg then dlg:repaint() end
+  end
+
+  -- Keys in the prompt (the textedit's onkeydown, and tests). Returns true
+  -- when the key was used here, so the box doesn't handle it too.
+  -- With the / picker open: Up and Down move the highlight, Enter or Tab
+  -- picks it, Escape closes the list. Backspace in an empty prompt removes
+  -- the skill chip.
+  function Panel.onPromptKey(code)
+    if suggest and #suggest.items > 0 then
+      local n = #suggest.items
+      if code == "ArrowDown" then suggest.index = suggest.index % n + 1
+      elseif code == "ArrowUp" then suggest.index = (suggest.index - 2) % n + 1
+      elseif code == "Enter" or code == "NumpadEnter" or code == "Tab" then Panel.pickSuggestion(suggest.items[suggest.index])
+      elseif code == "Escape" then setSuggest(nil)
+      else return false end
+      if dlg then dlg:repaint() end
+      return true
+    end
+    if code == "Backspace" and pickedSkill and (dlg and (dlg.data.prompt or "") == "") then
+      Panel.clearPickedSkill()
+      return true
+    end
+    return false
+  end
 
   local function skillByName(name)
     for _, s in ipairs(catalogRows) do if s.name == name then return s end end
@@ -891,7 +961,10 @@ return function(deps)
   local function send(providerOverride, modeOverride)
     if conv:isBusy() or not dlg then return end
     local prompt = dlg.data.prompt or ""
-    if prompt:match("^%s*$") then return end
+    if prompt:match("^%s*$") then
+      if pickedSkill then app.tip("Write what you want " .. pickedSkill.title .. " to do") end
+      return
+    end
     -- A saved command's exact name runs it, even while the picker shows it.
     if runSlashCommand(prompt) then
       setSuggest(nil)
@@ -899,10 +972,12 @@ return function(deps)
     end
     -- Enter on any other bare "/query" picks the best match instead of sending.
     if suggest and #suggest.items > 0 and prompt:match("^/[^%s]*$") then
-      Panel.pickSuggestion(suggest.items[1])
+      Panel.pickSuggestion(suggest.items[suggest.index])
       return
     end
     setSuggest(nil)
+    -- The skill chip goes with the message as /skill:name.
+    if pickedSkill and not prompt:match("^%s*/skill:") then prompt = "/skill:" .. pickedSkill.name .. " " .. prompt end
     -- A skill that needs an image waits for an attachment (#35).
     local skillName = prompt:match("^%s*/skill:([%w%-_]+)")
     local skill = skillName and skillByName(skillName)
@@ -961,6 +1036,7 @@ return function(deps)
     conv:send(shown, provider, mode, skill and skill.title or skillName)
     -- Record where this reply starts in the undo history (#22).
     local header = conv:entries()[#conv:entries()]
+    pickedSkill = nil   -- the chip went with this message
     currentTurn = deps.TurnHistory.begin(app.sprite)
     currentTurn.captureSeq = deps.capture and deps.capture:seq() or 0
     turns[header] = currentTurn
@@ -1300,6 +1376,10 @@ return function(deps)
         dlg:repaint()
       end,
       onmousedown = function(ev)
+        if hitChip and ev.x >= hitChip.x0 and ev.x <= hitChip.x1 and ev.y >= hitChip.y0 and ev.y <= hitChip.y1 then
+          Panel.clearPickedSkill()
+          return
+        end
         for _, s in ipairs(hitSuggest) do
           if ev.y >= s.y0 and ev.y <= s.y1 then Panel.pickSuggestion(s.item); return end
         end
@@ -1346,6 +1426,8 @@ return function(deps)
         fontsize = 7.5,
         onchange = onPromptChange,          -- "@" opens the mention picker
         onsubmit = function() send() end,   -- Enter sends, Shift+Enter adds a line
+        -- Arrows, Enter and Escape drive the / picker; Backspace removes the skill chip.
+        onkeydown = function(ev) if Panel.onPromptKey(ev.code) then ev.stopPropagation() end end,
       }
     end)
     if not hasTextEdit then

@@ -36,6 +36,14 @@ void Canvas::stopKeyEventPropagation()
   s_stopKeyEventPropagation = true;
 }
 
+// static
+bool Canvas::takeStopKeyEventPropagation()
+{
+  const bool stop = s_stopKeyEventPropagation;
+  s_stopKeyEventPropagation = false;
+  return stop;
+}
+
 Canvas::Canvas() : ui::Widget(Type())
 {
 }

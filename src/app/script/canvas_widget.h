@@ -47,6 +47,9 @@ public:
   obs::signal<void(ui::TouchMessage*)> TouchMagnify;
 
   static void stopKeyEventPropagation();
+  // Clears the flag and returns whether a Lua key handler set it (for
+  // other widgets that let Lua consume keys, like dlg:textedit).
+  static bool takeStopKeyEventPropagation();
 
 private:
   static bool s_stopKeyEventPropagation;

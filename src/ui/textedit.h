@@ -50,6 +50,10 @@ public:
 
   obs::signal<void()> Change;
   obs::signal<void()> Submit;
+  // A key was pressed while the box has focus, before the box handles it.
+  // A slot calls consumeKey() to keep the box from handling it.
+  obs::signal<void(KeyMessage*)> KeyDown;
+  void consumeKey() { m_keyConsumed = true; }
   // The number of visual rows changed without a text change (re-wrap on resize).
   obs::signal<void()> RowsChange;
 
@@ -227,6 +231,7 @@ private:
   std::vector<Line> m_lines;
   std::string m_placeholder;
   bool m_wordWrap = false;
+  bool m_keyConsumed = false;
   bool m_submitOnEnter = false;
   int m_wrapWidth = 0;
 

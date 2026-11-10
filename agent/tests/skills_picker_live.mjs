@@ -25,13 +25,29 @@ const headers = async () => (await lua("return AsepriteAgent.entries()")).filter
 const before = await headers();
 await chat("/skill:select-test go", { wait: false });
 check("a skill that needs a selection waits for one", (await headers()) === before && !(await lua("return AsepriteAgent.isBusy()")));
+// Arrow keys move the highlight (wrapping), Enter picks it.
+await lua(`AsepriteAgent.typePrompt("/") return true`);
+const idx = async () => lua("return AsepriteAgent.suggestionIndex()");
+await lua(`AsepriteAgent.pressKey("ArrowDown") AsepriteAgent.pressKey("ArrowDown") return true`);
+const down2 = await idx();
+await lua(`AsepriteAgent.pressKey("ArrowUp") AsepriteAgent.pressKey("ArrowUp") AsepriteAgent.pressKey("ArrowUp") return true`);
+check("Up and Down move the highlight and wrap", down2 === 3 && (await idx()) === names(all).length, { down2, last: await idx(), n: names(all).length });
 await lua(`AsepriteAgent.typePrompt("/ret") return true`);
 const ret = await lua("return AsepriteAgent.suggestions()");
 check("typing filters", names(ret)[0] === "retime-animation" && !names(ret).includes("make-variations"), names(ret));
-await lua(`AsepriteAgent.pickSuggestion(1) return true`);
-check("picking fills /skill:name", (await lua("return AsepriteAgent.promptText()")) === "/skill:retime-animation ");
+await lua(`AsepriteAgent.pressKey("Enter") return true`);
+check("Enter picks the skill as a chip; the prompt is left for the request",
+  (await lua("return AsepriteAgent.pickedSkill()")) === "retime-animation" && (await lua("return AsepriteAgent.promptText()")) === "");
+await lua(`AsepriteAgent.pressKey("Backspace") return true`);
+check("Backspace in the empty prompt removes the chip", (await lua("return AsepriteAgent.pickedSkill()")) === undefined);
+await lua(`AsepriteAgent.typePrompt("/ret") AsepriteAgent.pressKey("Escape") return true`);
+check("Escape closes the list", (await lua("return #AsepriteAgent.suggestions()")) === 0);
+await lua(`AsepriteAgent.typePrompt("/ret") AsepriteAgent.pickSuggestion(1) return true`);
+check("clicking a row picks it too", (await lua("return AsepriteAgent.pickedSkill()")) === "retime-animation");
 
-await chat("/skill:retime-animation make it play at 5 fps");
+// The chip goes with the message.
+await chat("make it play at 5 fps");
+check("the chip is used up by the message", (await lua("return AsepriteAgent.pickedSkill()")) === undefined);
 const entries = await lua("return AsepriteAgent.entries()");
 const header = entries.filter((e) => e.kind === "header").at(-1)?.text;
 check("the header names the skill", header?.endsWith("Retime an animation"), header);

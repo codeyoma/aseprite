@@ -1031,8 +1031,10 @@ int Dialog_entry(lua_State* L)
   return Dialog_add_widget(L, widget);
 }
 
+static void fill_keymessage_values(lua_State* L, const ui::KeyMessage* msg);
+
 // Multi-line text box: dlg:textedit{ id, text, placeholder, wordwrap=true,
-// minlines=1, maxlines=5, onchange, onsubmit }. It grows with its content
+// minlines=1, maxlines=5, onchange, onsubmit, onkeydown }. It grows with its content
 // up to maxlines rows, then scrolls. With onsubmit, Enter submits and
 // Shift+Enter inserts a newline.
 int Dialog_textedit(lua_State* L)
@@ -1079,6 +1081,19 @@ int Dialog_textedit(lua_State* L)
     type = lua_getfield(L, 2, "onchange");
     if (type == LUA_TFUNCTION) {
       Dialog_connect_signal(L, 1, edit->Change, [](lua_State*) {});
+    }
+    lua_pop(L, 1);
+
+    // onkeydown(ev) runs before the box handles a key; ev:stopPropagation()
+    // keeps the box from handling it (e.g. arrows that move a picker).
+    type = lua_getfield(L, 2, "onkeydown");
+    if (type == LUA_TFUNCTION) {
+      edit->KeyDown.connect([](ui::KeyMessage*) { Canvas::takeStopKeyEventPropagation(); });
+      Dialog_connect_signal(L, 1, edit->KeyDown, fill_keymessage_values);
+      edit->KeyDown.connect([edit](ui::KeyMessage*) {
+        if (Canvas::takeStopKeyEventPropagation())
+          edit->consumeKey();
+      });
     }
     lua_pop(L, 1);
 
