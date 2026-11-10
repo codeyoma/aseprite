@@ -38,7 +38,7 @@ const ARGS = {
   export: ["@tmp", "godot"], masks_cutout: ["@tmp"], model: ["@tmp"], normals: ["@tmp"], recreate: ["@tmp"],
   sheet: ["@tmp"], tileset: ["@tmp"], voxels: ["@tmp"], fx_export: ["@tmp"], color_skills: ["@ref"],
 };
-const NO_PROVIDER = new Set(["permission", "daemon", "eval", "fx_export", "fx_recipe"]);
+const NO_PROVIDER = new Set(["permission", "daemon", "eval", "fx_export", "fx_recipe", "check_expect", "lospec"]);
 // Environment some tests need; "@tmp" is a fresh scratch folder.
 const ENV = { commands: { ASEPRITE_AGENT_COMMANDS: "@tmp" } };
 const NOT_IN_ALL = new Set(["developer", "developer_build", "daemon", "chat", "pixel_snap", "eval"]);
