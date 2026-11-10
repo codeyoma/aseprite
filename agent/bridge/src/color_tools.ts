@@ -2,7 +2,6 @@
 // to a palette and adjust tone. The math is in color.ts; the extension
 // gathers colors (collect_colors) and applies color maps (apply_color_map).
 import { readFileSync, writeFileSync } from "node:fs";
-import { PNG } from "pngjs";
 import { basename } from "node:path";
 import * as z from "zod/v4";
 import {
@@ -11,7 +10,7 @@ import {
 } from "./color.js";
 import { documentOf } from "./document.js";
 import { findPalette, knownPalettes, parsePaletteFile } from "./palettes.js";
-import type { Rgba } from "./pixel_grid.js";
+import { decodePng as decodeImage, readPng, type Rgba } from "./image.js";
 import { findOutline } from "./style.js";
 import { failure, text, type AsepriteRequester, type Tool, type ToolResult } from "./tool.js";
 
@@ -28,7 +27,7 @@ export const sourceSchema = z.object({
 type Source = z.infer<typeof sourceSchema>;
 
 export function decodePng(buf: Buffer): Counted[] {
-  const png = PNG.sync.read(buf);
+  const png = decodeImage(buf);
   const counts = new Map<number, number>();
   for (let i = 0; i < png.data.length; i += 4) {
     const v = png.data.readUInt32BE(i) >>> 0;
@@ -54,8 +53,8 @@ export async function gatherColors(src: Source, aseprite: AsepriteRequester): Pr
 async function sourceImage(src: Source, aseprite: AsepriteRequester): Promise<Rgba | undefined> {
   if (src.source === "file") {
     if (!src.path) return undefined;
-    const png = PNG.sync.read(readFileSync(src.path));
-    return { width: png.width, height: png.height, data: new Uint8Array(png.data) };
+    const img = readPng(src.path);
+    return { ...img, data: new Uint8Array(img.data) };
   }
   if (src.source === "selection") return undefined;
   const doc = documentOf(aseprite);

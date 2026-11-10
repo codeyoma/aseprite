@@ -1,11 +1,11 @@
 // 3D model to pixel sprites as a tool (#44).
 import * as z from "zod/v4";
-import { hex, nearest, type RGBA } from "./color.js";
+import { hex, type RGBA } from "./color.js";
 import { DIRECTIONS_4, DIRECTIONS_8 } from "./directions.js";
 import { documentOf, type AnimationFrame } from "./document.js";
 import { ELEVATIONS, fitFrame, loadModel, renderView, type View } from "./model3d.js";
 import { findPalette } from "./palettes.js";
-import type { Rgba } from "./pixel_grid.js";
+import { snapToPalette, type Rgba } from "./image.js";
 import { encodeSnapshot } from "./png.js";
 import { outline } from "./shading.js";
 import { failure, text, type Tool, type ToolResult } from "./tool.js";
@@ -17,22 +17,6 @@ export function directionNames(n: number): string[] {
   if (n === 4) return [...DIRECTIONS_4];
   if (n === 1) return ["S"];
   return Array.from({ length: n }, (_, i) => `d${Math.round((i * 360) / n)}`);
-}
-
-function snap(img: Rgba, palette: RGBA[]): Rgba {
-  const memo = new Map<number, RGBA>();
-  const d = new Uint8Array(img.data);
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] < 128) continue;
-    const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
-    let c = memo.get(k);
-    if (!c) {
-      c = nearest({ r: d[i], g: d[i + 1], b: d[i + 2], a: 255 }, palette).color;
-      memo.set(k, c);
-    }
-    d.set([c.r, c.g, c.b], i);
-  }
-  return { width: img.width, height: img.height, data: d };
 }
 
 export const MODEL_TOOLS: Tool[] = [
@@ -87,7 +71,7 @@ export const MODEL_TOOLS: Tool[] = [
       }
       const finish = (data: Uint8Array): Rgba => {
         let img: Rgba = { width: size, height: size, data };
-        if (palette) img = snap(img, palette);
+        if (palette) img = snapToPalette(img, palette);
         if ((input.outline ?? "darkest") !== "none") img = outline(img, { color: input.outline ?? "darkest", palette });
         return img;
       };

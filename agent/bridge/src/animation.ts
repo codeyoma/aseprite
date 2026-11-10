@@ -2,7 +2,9 @@
 // rigid transforms of a part along an arc, squash and stretch, and smears,
 // all without blending (no new colors).
 import { nearest, type RGBA } from "./color.js";
-import type { Rgba } from "./pixel_grid.js";
+import { bounds, OPAQUE, type Rgba } from "./image.js";
+
+export { bounds } from "./image.js";
 
 /** RGBA packed as one unsigned number (0 outside the image). */
 const get = (img: Rgba, x: number, y: number): number => {
@@ -19,7 +21,7 @@ function put(out: Uint8Array, w: number, x: number, y: number, v: number) {
   out[i + 3] = v & 255;
 }
 
-const opaqueV = (v: number) => (v & 255) >= 128;
+const opaqueV = (v: number) => (v & 255) >= OPAQUE;
 
 /** Scale2x (EPX): doubles the image, sharpening diagonals without new colors. */
 export function scale2x(img: Rgba): Rgba {
@@ -121,22 +123,6 @@ export function along(to: Transform, t: number, arc = 0, easing: Easing = "ease-
   };
 }
 
-/** Bounding box of the opaque pixels. */
-export function bounds(img: Rgba): { x: number; y: number; w: number; h: number } | undefined {
-  let x0 = img.width, y0 = img.height, x1 = -1, y1 = -1;
-  for (let y = 0; y < img.height; y++) {
-    for (let x = 0; x < img.width; x++) {
-      if (img.data[(y * img.width + x) * 4 + 3] >= 128) {
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
-      }
-    }
-  }
-  return x1 < 0 ? undefined : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
-}
-
 /**
  * Squash (amount < 0) or stretch (> 0) keeping the area, anchored at the
  * bottom center of the shape (it stays on the ground).
@@ -163,7 +149,7 @@ export function smear(from: Rgba, to: Rgba, steps = 6): Rgba {
     const t = i / steps;
     // The trailing copies come from the end pose, shifted back along the path.
     const moved = transform(to, { dx: -dx * (1 - t), dy: -dy * (1 - t) });
-    for (let p = 0; p < w * h * 4; p += 4) if (moved.data[p + 3] >= 128) out.set(moved.data.subarray(p, p + 4), p);
+    for (let p = 0; p < w * h * 4; p += 4) if (moved.data[p + 3] >= OPAQUE) out.set(moved.data.subarray(p, p + 4), p);
   }
   return { width: w, height: h, data: out };
 }
@@ -211,7 +197,7 @@ export function subpixelShift(img: Rgba, fx: number, fy: number, colors: RGBA[])
 export function imageColors(img: Rgba): RGBA[] {
   const seen = new Map<number, RGBA>();
   for (let i = 0; i < img.data.length; i += 4) {
-    if (img.data[i + 3] < 128) continue;
+    if (img.data[i + 3] < OPAQUE) continue;
     const k = (img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2];
     if (!seen.has(k)) seen.set(k, { r: img.data[i], g: img.data[i + 1], b: img.data[i + 2], a: 255 });
   }

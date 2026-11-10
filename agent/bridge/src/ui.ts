@@ -2,11 +2,10 @@
 // (data/fonts/aseprite_font.png and aseprite_mini.png, CC BY 4.0), read
 // the way Aseprite reads sprite-sheet fonts: glyph cells separated by the
 // key color at (0, 0), in codepoint order from ' '.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { PNG } from "pngjs";
 import { repoRoot } from "./developer.js";
-import type { Rgba } from "./pixel_grid.js";
+import { OPAQUE, readPng, scale, type Rgba } from "./image.js";
 
 export interface BitmapFont {
   sheet: Rgba;
@@ -60,8 +59,7 @@ export function loadFont(name: "aseprite" | "mini" = "aseprite"): BitmapFont {
   const file = name === "mini" ? "aseprite_mini.png" : "aseprite_font.png";
   const dir = fontDirs().find((d) => existsSync(join(d, file)));
   if (!dir) throw new Error(`Aseprite's ${file} wasn't found (set ASEPRITE_DATA to Aseprite's data folder)`);
-  const png = PNG.sync.read(readFileSync(join(dir, file)));
-  const font = parseFont({ width: png.width, height: png.height, data: png.data });
+  const font = parseFont(readPng(join(dir, file)));
   cache.set(name, font);
   return font;
 }
@@ -115,7 +113,7 @@ export function bitmapInk(text: string, font: BitmapFont): Ink {
 /** The ink of an image: its opaque pixels (text Aseprite rendered from a TTF). */
 export function imageInk(img: Rgba): Ink {
   const ink = new Uint8Array(img.width * img.height);
-  for (let i = 0; i < ink.length; i++) ink[i] = img.data[i * 4 + 3] >= 128 ? 1 : 0;
+  for (let i = 0; i < ink.length; i++) ink[i] = img.data[i * 4 + 3] >= OPAQUE ? 1 : 0;
   return { width: img.width, height: img.height, ink };
 }
 
@@ -178,7 +176,7 @@ export function bmfontInk(text: string, font: BMFont): Ink {
     for (let yy = 0; yy < g.h; yy++) for (let xx = 0; xx < g.w; xx++) {
       const tx = x + xx, ty = y + yy;
       if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
-      if (page.data[((g.y + yy) * page.width + g.x + xx) * 4 + 3] >= 128) ink[ty * W + tx] = 1;
+      if (page.data[((g.y + yy) * page.width + g.x + xx) * 4 + 3] >= OPAQUE) ink[ty * W + tx] = 1;
     }
   }
   return { width: Math.max(1, W), height: H, ink };
@@ -211,16 +209,6 @@ export function styleInk(src: Ink, style: TextStyle): Rgba {
 
 function trimTo(data: Uint8Array, W: number, H: number): Rgba {
   return { width: W, height: H, data };
-}
-
-export function scale(img: Rgba, s: number): Rgba {
-  if (s <= 1) return img;
-  const w = img.width * s, h = img.height * s, out = new Uint8Array(w * h * 4);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = (Math.floor(y / s) * img.width + Math.floor(x / s)) * 4;
-    out.set(img.data.subarray(i, i + 4), (y * w + x) * 4);
-  }
-  return { width: w, height: h, data: out };
 }
 
 export interface PanelStyle {
@@ -258,16 +246,4 @@ export function panel(w: number, h: number, s: PanelStyle): { image: Rgba; cente
   }
   const inset = 2 + Math.max(0, r - 1);
   return { image: { width: w, height: h, data: out }, center: { x: inset, y: inset, w: Math.max(1, w - inset * 2), h: Math.max(1, h - inset * 2) } };
-}
-
-/** Composites `top` onto `base` at (x, y) (opaque pixels only). */
-export function stamp(base: Rgba, top: Rgba, x: number, y: number): Rgba {
-  const out = new Uint8Array(base.data);
-  for (let yy = 0; yy < top.height; yy++) for (let xx = 0; xx < top.width; xx++) {
-    const i = (yy * top.width + xx) * 4;
-    const X = x + xx, Y = y + yy;
-    if (top.data[i + 3] < 128 || X < 0 || Y < 0 || X >= base.width || Y >= base.height) continue;
-    out.set(top.data.subarray(i, i + 4), (Y * base.width + X) * 4);
-  }
-  return { width: base.width, height: base.height, data: out };
 }

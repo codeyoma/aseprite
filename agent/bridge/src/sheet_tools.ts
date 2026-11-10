@@ -1,27 +1,16 @@
 // Sprite sheet import (#41): slice a sheet image into frames and tags.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { PNG } from "pngjs";
+import { existsSync, readFileSync } from "node:fs";
 import * as z from "zod/v4";
 import { documentOf } from "./document.js";
-import type { Rgba } from "./pixel_grid.js";
+import { readPng } from "./image.js";
 import {
   describeBackground, detectBackground, detectCells, findSprites, frameImages, gridFrames, parseAtlasText, removeBackground, tagsFromRows,
   type Align, type Frame, type Tag,
 } from "./sheet.js";
 import { failure, text, type Tool } from "./tool.js";
 
-
-export function readPng(path: string): Rgba {
-  if (!/\.png$/i.test(path)) throw new Error("Only PNG sheets can be read");
-  const png = PNG.sync.read(readFileSync(path));
-  return { width: png.width, height: png.height, data: png.data };
-}
-
-export function writePng(path: string, img: Rgba): void {
-  const png = new PNG({ width: img.width, height: img.height });
-  png.data.set(img.data);
-  writeFileSync(path, PNG.sync.write(png));
-}
+/** What import_sheet (and tools reading sheets, templates or font pages) say about a non-PNG path. */
+export const NOT_PNG_SHEET = "Only PNG sheets can be read";
 
 export const SHEET_TOOLS: Tool[] = [
   {
@@ -52,7 +41,7 @@ export const SHEET_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Import sprite sheet",
     async run(input, aseprite) {
-      let img = readPng(input.path);
+      let img = readPng(input.path, NOT_PNG_SHEET);
       // An atlas next to the image: .json, .xml or .tres with the same name.
       const atlasPath = input.atlas ?? [".json", ".xml", ".tres"].map((e) => input.path.replace(/\.png$/i, e)).find((p: string) => existsSync(p) && p !== input.path) ?? input.path.replace(/\.png$/i, ".json");
       const mode = input.mode ?? (existsSync(atlasPath) ? "atlas" : "auto");

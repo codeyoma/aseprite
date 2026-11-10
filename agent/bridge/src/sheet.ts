@@ -2,7 +2,7 @@
 // sheet into frames by a grid (given, or found from empty gutters), by
 // the sprites on it (connected regions on a background), or by an atlas
 // (Aseprite / TexturePacker JSON or XML, Godot SpriteFrames).
-import type { Rgba } from "./pixel_grid.js";
+import { blank, OPAQUE, type Rgba } from "./image.js";
 
 export interface Rect {
   x: number;
@@ -66,7 +66,7 @@ export function checkerColorAt(c: Checker, x: number, y: number): RGB {
 function findChecker(img: Rgba, a: number, b: number, border: [number, number, number][]): Checker | undefined {
   const key = (x: number, y: number) => {
     const i = (y * img.width + x) * 4;
-    return img.data[i + 3] < 128 ? -1 : (img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2];
+    return img.data[i + 3] < OPAQUE ? -1 : (img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2];
   };
   const runs = new Map<number, number>();
   const scan = (n: number, at: (i: number) => number) => {
@@ -117,7 +117,7 @@ export function detectBackground(img: Rgba): Background {
   let transparent = 0;
   const see = (x: number, y: number) => {
     const i = (y * w + x) * 4;
-    if (data[i + 3] < 128) {
+    if (data[i + 3] < OPAQUE) {
       transparent++;
       border.push([x, y, -1]);
       return;
@@ -170,7 +170,7 @@ export function removeBackground(img: Rgba, tolerance = 8, bg: Background = dete
   return { ...img, data: d };
 }
 
-const opaque = (img: Rgba, x: number, y: number) => img.data[(y * img.width + x) * 4 + 3] >= 128;
+const opaque = (img: Rgba, x: number, y: number) => img.data[(y * img.width + x) * 4 + 3] >= OPAQUE;
 
 // ---------------------------------------------------------------------------
 // Grid
@@ -280,7 +280,7 @@ export function findSprites(img: Rgba, mergeDistance = 2, minPixels = 4): Frame[
   const boxes: (Rect & { n: number })[] = [];
   const stack: number[] = [];
   for (let start = 0; start < w * h; start++) {
-    if (label[start] >= 0 || img.data[start * 4 + 3] < 128) continue;
+    if (label[start] >= 0 || img.data[start * 4 + 3] < OPAQUE) continue;
     const id = boxes.length;
     const b = { x: w, y: h, w: 0, h: 0, n: 0, x1: -1, y1: -1 };
     label[start] = id;
@@ -298,7 +298,7 @@ export function findSprites(img: Rgba, mergeDistance = 2, minPixels = 4): Frame[
           const nx = x + dx, ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
           const q = ny * w + nx;
-          if (label[q] < 0 && img.data[q * 4 + 3] >= 128) {
+          if (label[q] < 0 && img.data[q * 4 + 3] >= OPAQUE) {
             label[q] = id;
             stack.push(q);
           }
@@ -465,7 +465,7 @@ export function frameImages(img: Rgba, frames: Frame[], align: Align = "bottom-c
   const W = size?.w ?? Math.max(...frames.map((f) => f.rect.w + (f.offsetX ?? 0)));
   const H = size?.h ?? Math.max(...frames.map((f) => f.rect.h + (f.offsetY ?? 0)));
   const images = frames.map((f) => {
-    const out = new Uint8Array(W * H * 4);
+    const out = blank(W, H).data;
     let ox = f.offsetX ?? 0, oy = f.offsetY ?? 0;
     if (f.offsetX === undefined && f.offsetY === undefined) {
       if (align === "bottom-center") {

@@ -3,25 +3,23 @@
 // Godot 4, Tiled and as JSON; check how well a tile wraps.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { documentOf, type Document } from "./document.js";
-import type { Rgba } from "./pixel_grid.js";
-import { readPng } from "./sheet_tools.js";
+import { readPng, writePng as writePngFile, type Rgba } from "./image.js";
+import { NOT_PNG_SHEET } from "./sheet_tools.js";
 import { buildTileset, godotTileset, jsonTileset, makeSeamless, mapIndices, renderMap, seamScore, templateFrom2x3, tiledTileset } from "./tiles.js";
 import { failure, text, type Tool } from "./tool.js";
 
 
 async function pixels(doc: Document, input: { path?: string; layer?: string; frame?: number }): Promise<Rgba> {
-  if (input.path) return readPng(input.path);
+  if (input.path) return readPng(input.path, NOT_PNG_SHEET);
   return doc.pixels(input.layer, input.frame);
 }
 
+/** Writes a PNG, making its folder first. */
 function writePng(path: string, img: Rgba) {
   mkdirSync(dirname(path), { recursive: true });
-  const png = new PNG({ width: img.width, height: img.height });
-  png.data.set(img.data);
-  writeFileSync(path, PNG.sync.write(png));
+  writePngFile(path, img);
 }
 
 /** A sample terrain map with every kind of edge, corner and hole. */

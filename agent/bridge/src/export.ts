@@ -2,7 +2,7 @@
 // extrusion, scale, power-of-two) and describe it for Godot, Unity,
 // Phaser/PixiJS, Tiled or as plain JSON.
 import { createHash } from "node:crypto";
-import type { Rgba } from "./pixel_grid.js";
+import { bounds, scale, type Rgba } from "./image.js";
 
 export interface PackOptions {
   columns?: number;
@@ -29,28 +29,12 @@ export interface Placed {
   sh: number;
 }
 
-function scaleImg(img: Rgba, s: number): Rgba {
-  if (s === 1) return img;
-  const w = img.width * s, h = img.height * s, out = new Uint8Array(w * h * 4);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = (Math.floor(y / s) * img.width + Math.floor(x / s)) * 4;
-    out.set(img.data.subarray(i, i + 4), (y * w + x) * 4);
-  }
-  return { width: w, height: h, data: out };
-}
-
-function trimRect(img: Rgba): { x: number; y: number; w: number; h: number } {
-  let x0 = img.width, y0 = img.height, x1 = -1, y1 = -1;
-  for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
-    if (img.data[(y * img.width + x) * 4 + 3]) {
-      if (x < x0) x0 = x;
-      if (x > x1) x1 = x;
-      if (y < y0) y0 = y;
-      if (y > y1) y1 = y;
-    }
-  }
-  return x1 < 0 ? { x: 0, y: 0, w: 1, h: 1 } : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
-}
+/**
+ * The rect a frame keeps when trimmed. Sheets keep every pixel with any
+ * alpha (a threshold of 1, not image.ts's OPAQUE), so faint pixels aren't
+ * cut off; an empty frame keeps its top-left pixel.
+ */
+const trimRect = (img: Rgba) => bounds(img, 1) ?? { x: 0, y: 0, w: 1, h: 1 };
 
 const nextPow2 = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
 
@@ -60,7 +44,7 @@ const nextPow2 = (n: number) => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
  */
 export function pack(frames: Rgba[], o: PackOptions = {}): { sheet: Rgba; placed: Placed[] } {
   const s = o.scale ?? 1;
-  const scaled = frames.map((f) => scaleImg(f, s));
+  const scaled = frames.map((f) => scale(f, s));
   const ext = o.extrude ?? 0;
   const pad = o.padding ?? (ext ? 1 : 0);
   const rects = scaled.map((f) => (o.trim ? trimRect(f) : { x: 0, y: 0, w: f.width, h: f.height }));
@@ -95,7 +79,7 @@ export function pack(frames: Rgba[], o: PackOptions = {}): { sheet: Rgba; placed
 export function placeLike(frames: Rgba[], placed: Placed[], width: number, height: number, o: PackOptions = {}): Rgba {
   const s = o.scale ?? 1, ext = o.extrude ?? 0;
   const out = new Uint8Array(width * height * 4);
-  frames.map((f) => scaleImg(f, s)).forEach((f, i) => {
+  frames.map((f) => scale(f, s)).forEach((f, i) => {
     const p = placed[i];
     for (let yy = -ext; yy < p.h + ext; yy++) for (let xx = -ext; xx < p.w + ext; xx++) {
       const sx = p.ox + Math.max(0, Math.min(p.w - 1, xx)), sy = p.oy + Math.max(0, Math.min(p.h - 1, yy));

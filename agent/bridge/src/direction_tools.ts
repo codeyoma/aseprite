@@ -4,7 +4,7 @@
 import * as z from "zod/v4";
 import { directionPlan, isoGrid, isoProject, mirroredTagName, MIRROR, tagDirection } from "./directions.js";
 import { documentOf } from "./document.js";
-import { trim, type Rgba } from "./pixel_grid.js";
+import { trim, type Rgba } from "./image.js";
 import { failure, text, type Tool } from "./tool.js";
 
 export const DIRECTION_TOOLS: Tool[] = [

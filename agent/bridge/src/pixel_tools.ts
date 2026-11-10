@@ -1,11 +1,10 @@
 // Pixel snap tools (#37): detect the pixel grid of upscaled or AI-made
 // pixel art and rebuild it as a native-size sprite.
-import { readFileSync } from "node:fs";
-import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { hex, kMeans, mergeNear, tally, type Counted } from "./color.js";
 import { documentOf, type Document } from "./document.js";
-import { detectGrid, resample, trim, type Grid, type Rgba } from "./pixel_grid.js";
+import { readPng, trim, type Rgba } from "./image.js";
+import { detectGrid, resample, type Grid } from "./pixel_grid.js";
 import { encodeSnapshot } from "./png.js";
 import { failure, text, type Tool } from "./tool.js";
 
@@ -21,9 +20,7 @@ export type Source = z.infer<typeof sourceSchema>;
 
 export async function readPixels(src: Source, doc: Document): Promise<Rgba> {
   if (src.path && src.source !== "sprite" && src.source !== "layer") {
-    if (!/\.png$/i.test(src.path)) throw new Error("Only PNG files can be read; attach the image as PNG");
-    const png = PNG.sync.read(readFileSync(src.path));
-    return { width: png.width, height: png.height, data: png.data };
+    return readPng(src.path, "Only PNG files can be read; attach the image as PNG");
   }
   return doc.pixels(src.source === "layer" ? src.layer : undefined, src.frame);
 }

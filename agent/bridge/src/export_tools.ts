@@ -2,19 +2,12 @@
 import { tiledTileset } from "./export.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { documentOf } from "./document.js";
 import { godotNinePatch, godotSpriteFrames, jsonHash, pack, phaserAnims, placeLike, unityMeta, type Anim, type SheetInfo } from "./export.js";
-import type { Rgba } from "./pixel_grid.js";
+import { writePng, type Rgba } from "./image.js";
 import { text, type Tool } from "./tool.js";
 
-
-function writePng(path: string, img: Rgba) {
-  const png = new PNG({ width: img.width, height: img.height });
-  png.data.set(img.data);
-  writeFileSync(path, PNG.sync.write(png));
-}
 
 const HOWTO: Record<string, (n: string) => string> = {
   godot: (n) => `Godot 4

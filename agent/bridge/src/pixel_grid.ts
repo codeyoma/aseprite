@@ -3,11 +3,12 @@
 // at its native size. Detect the grid from where colors change, then take
 // one color per cell.
 
-export interface Rgba {
-  width: number;
-  height: number;
-  data: Uint8Array | Buffer; // RGBA, row-major
-}
+import { OPAQUE, type Rgba } from "./image.js";
+
+// Rgba, trim and the whole-factor upscale live in image.ts; re-exported here
+// for the modules and tests that import them from pixel_grid.
+export type { Rgba } from "./image.js";
+export { trim, scale as upscale } from "./image.js";
 
 export interface Grid {
   /** Cell size in source pixels along x and y (1 = already native; may be fractional). */
@@ -30,8 +31,8 @@ export const NOISE_FLOOR = 40;
 /** Color change between neighboring pixels (RGB distance above the noise floor). */
 function diff(d: Uint8Array | Buffer, i: number, j: number): number {
   const aa = d[i + 3], ab = d[j + 3];
-  if (aa < 128 && ab < 128) return 0;
-  if ((aa < 128) !== (ab < 128)) return 255;
+  if (aa < OPAQUE && ab < OPAQUE) return 0;
+  if ((aa < OPAQUE) !== (ab < OPAQUE)) return 255;
   const v = Math.abs(d[i] - d[j]) + Math.abs(d[i + 1] - d[j + 1]) + Math.abs(d[i + 2] - d[j + 2]);
   return v < NOISE_FLOOR ? 0 : v;
 }
@@ -147,7 +148,7 @@ export function resample(img: Rgba, g: Grid): Rgba {
       for (let y = y0; y < y1; y++) {
         for (let x = x0; x < x1; x++) {
           const i = (y * w + x) * 4;
-          const a = data[i + 3] >= 128 ? 255 : 0;
+          const a = data[i + 3] >= OPAQUE ? 255 : 0;
           // Pool colors that differ only by noise.
           const key = a ? ((data[i] >> 4) << 8) | ((data[i + 1] >> 4) << 4) | (data[i + 2] >> 4) : -1;
           const e = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0, a };
@@ -185,38 +186,3 @@ export function scaleBy(img: Rgba, f: number, padX = 0, padY = 0): Rgba {
   return { width: w, height: h, data: out };
 }
 
-/** Removes fully transparent rows and columns around the content. */
-export function trim(img: Rgba): Rgba & { x: number; y: number } {
-  const { width: w, height: h, data } = img;
-  let x0 = w, y0 = h, x1 = -1, y1 = -1;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (data[(y * w + x) * 4 + 3] >= 128) {
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
-      }
-    }
-  }
-  if (x1 < 0) return { ...img, x: 0, y: 0 };
-  const ow = x1 - x0 + 1, oh = y1 - y0 + 1;
-  const out = new Uint8Array(ow * oh * 4);
-  for (let y = 0; y < oh; y++) {
-    out.set(data.subarray(((y + y0) * w + x0) * 4, ((y + y0) * w + x1 + 1) * 4), y * ow * 4);
-  }
-  return { width: ow, height: oh, data: out, x: x0, y: y0 };
-}
-
-/** Nearest-neighbor upscale (tests and previews). */
-export function upscale(img: Rgba, s: number, padX = 0, padY = 0): Rgba {
-  const w = img.width * s + padX, h = img.height * s + padY;
-  const out = new Uint8Array(w * h * 4);
-  for (let y = padY; y < h; y++) {
-    for (let x = padX; x < w; x++) {
-      const sx = Math.floor((x - padX) / s), sy = Math.floor((y - padY) / s);
-      out.set(img.data.subarray((sy * img.width + sx) * 4, (sy * img.width + sx) * 4 + 4), (y * w + x) * 4);
-    }
-  }
-  return { width: w, height: h, data: out };
-}

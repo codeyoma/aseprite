@@ -3,7 +3,7 @@
 import * as z from "zod/v4";
 import { hex, parseHex, toOklch } from "./color.js";
 import { documentOf } from "./document.js";
-import type { Rgba } from "./pixel_grid.js";
+import type { Rgba } from "./image.js";
 import { heightField } from "./normals.js";
 import { ambientOcclusion, antiAlias, applyOcclusion, makeRamp, outline, shadeFlat, type LightDir } from "./shading.js";
 import { findOutline } from "./style.js";

@@ -1,13 +1,12 @@
 // Dithering and palette swaps as tools (#48).
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { hex, parseHex, type RGBA } from "./color.js";
 import { applyLut, applyMap, ditherGradient, ditherToPalette, paletteLut, rampMap, type Pattern } from "./dither.js";
 import { documentOf } from "./document.js";
 import { findPalette } from "./palettes.js";
-import type { Rgba } from "./pixel_grid.js";
+import { writePng, type Rgba } from "./image.js";
 import { failure, text, type Tool } from "./tool.js";
 
 const colorsOf = (list: string[]) => list.map((h) => parseHex(h)).filter((c): c is RGBA => !!c);
@@ -27,12 +26,6 @@ function variantMap(v: Variant): Map<string, RGBA> {
     if (from && to) m.set(hex(from), to);
   }
   return m;
-}
-
-function writePng(path: string, img: Rgba) {
-  const png = new PNG({ width: img.width, height: img.height });
-  png.data.set(img.data);
-  writeFileSync(path, PNG.sync.write(png));
 }
 
 export const DITHER_TOOLS: Tool[] = [

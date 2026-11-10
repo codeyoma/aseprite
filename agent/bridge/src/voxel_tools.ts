@@ -2,7 +2,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import * as z from "zod/v4";
 import { documentOf, type Document } from "./document.js";
-import type { Rgba } from "./pixel_grid.js";
+import type { Rgba } from "./image.js";
 import { failure, text, type Tool } from "./tool.js";
 import { layersToModel, parseVox, renderIso, rotateModel, writeVox, type VoxelModel } from "./voxels.js";
 

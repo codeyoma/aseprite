@@ -2,11 +2,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as z from "zod/v4";
-import { adjust, nearest, parseHex, type RGBA } from "./color.js";
+import { adjust, parseHex, type RGBA } from "./color.js";
 import { documentOf, type AnimationFrame } from "./document.js";
-import type { Rgba } from "./pixel_grid.js";
-import { readPng } from "./sheet_tools.js";
-import { bitmapInk, bmfontInk, imageInk, loadFont, measureText, panel, parseBMFont, renderText, stamp, styleInk, type Ink, type PanelStyle } from "./ui.js";
+import { blank, readPng, snapToPalette, stamp, type Rgba } from "./image.js";
+import { NOT_PNG_SHEET } from "./sheet_tools.js";
+import { bitmapInk, bmfontInk, imageInk, loadFont, measureText, panel, parseBMFont, renderText, styleInk, type Ink, type PanelStyle } from "./ui.js";
 import { failure, text, type Tool } from "./tool.js";
 
 const rgb = (h: string | undefined): [number, number, number] | undefined => {
@@ -14,25 +14,6 @@ const rgb = (h: string | undefined): [number, number, number] | undefined => {
   return c ? [c.r, c.g, c.b] : undefined;
 };
 const asRgb = (c: RGBA): [number, number, number] => [c.r, c.g, c.b];
-
-/** A copy of the image with every opaque pixel snapped to the nearest palette color. */
-function snapAll(img: Rgba, palette: RGBA[]): Rgba {
-  const d = new Uint8Array(img.data);
-  const memo = new Map<number, RGBA>();
-  for (let i = 0; i < d.length; i += 4) {
-    if (d[i + 3] < 128) continue;
-    const k = (d[i] << 16) | (d[i + 1] << 8) | d[i + 2];
-    let c = memo.get(k);
-    if (!c) {
-      c = nearest({ r: d[i], g: d[i + 1], b: d[i + 2], a: 255 }, palette).color;
-      memo.set(k, c);
-    }
-    d[i] = c.r;
-    d[i + 1] = c.g;
-    d[i + 2] = c.b;
-  }
-  return { width: img.width, height: img.height, data: d };
-}
 
 export const UI_TOOLS: Tool[] = [
   {
@@ -67,7 +48,7 @@ export const UI_TOOLS: Tool[] = [
       if (font === "aseprite" || font === "mini") ink = bitmapInk(input.text, loadFont(font));
       else if (/\.fnt$/i.test(font)) {
         if (!existsSync(font)) return failure(`No font file at ${font}`);
-        ink = bmfontInk(input.text, parseBMFont(readFileSync(font, "utf8"), (file) => readPng(join(dirname(font), file))));
+        ink = bmfontInk(input.text, parseBMFont(readFileSync(font, "utf8"), (file) => readPng(join(dirname(font), file), NOT_PNG_SHEET)));
       } else if (/\.(ttf|otf|ttc)$/i.test(font)) {
         if (!existsSync(font)) return failure(`No font file at ${font}`);
         ink = imageInk(await doc.renderFontText(input.text, `file=${font}`, input.size ?? 8));
@@ -76,7 +57,7 @@ export const UI_TOOLS: Tool[] = [
       const info = await doc.info();
       const W = info.width, H = info.height;
       const x = (input.x ?? 0) - (input.align === "center" ? Math.floor(img.width / 2) : 0), y = input.y ?? 0;
-      const canvas = stamp({ width: W, height: H, data: new Uint8Array(W * H * 4) }, img, x, y);
+      const canvas = stamp(blank(W, H), img, x, y);
       await doc.putImage(canvas, { newLayer: "text", frame: input.frame ?? info.frame });
       const clipped = x < 0 || y < 0 || x + img.width > W || y + img.height > H;
       return { content: [text(`Drew "${input.text}" (${img.width}x${img.height} px) at ${x},${y} on 'AI: text'.${clipped ? " Part of it is outside the canvas." : ""}`)] };
@@ -149,7 +130,7 @@ export const UI_TOOLS: Tool[] = [
       const doc = documentOf(aseprite);
       if (input.snap_to_palette !== false) {
         const pal = (await doc.info().catch(() => ({ palette: [] as RGBA[] }))).palette;
-        if (pal.length >= 2) frames = frames.map((f) => ({ ...f, image: snapAll(f.image, pal) }));
+        if (pal.length >= 2) frames = frames.map((f) => ({ ...f, image: snapToPalette(f.image, pal) }));
       }
       const made = await doc.createAnimation(input.width, input.height, frames, { title: name, tags });
       await aseprite.request("set_slice", { name, x: 0, y: 0, w: input.width, h: input.height, center });

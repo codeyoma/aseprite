@@ -4,12 +4,13 @@
 import * as z from "zod/v4";
 import { hex, mergeNear, tally } from "./color.js";
 import { documentOf, type Document } from "./document.js";
-import { detectGrid, resample, trim, type Rgba } from "./pixel_grid.js";
+import { readPng, trim, writePng, type Rgba } from "./image.js";
+import { detectGrid, resample } from "./pixel_grid.js";
 import { readPixels, sourceSchema, type Source } from "./pixel_tools.js";
 import {
   describeBackground, detectBackground, findSprites, frameImages, removeBackground, similarSized, tagsFromRows, type Frame, type Tag,
 } from "./sheet.js";
-import { readPng, writePng } from "./sheet_tools.js";
+import { NOT_PNG_SHEET } from "./sheet_tools.js";
 import { analyzeStyle, colorGroups, countColors, type Style } from "./style.js";
 import { failure, text, type Tool } from "./tool.js";
 
@@ -85,7 +86,7 @@ export const RECREATE_TOOLS: Tool[] = [
     kind: "edit",
     label: () => "Recreate from reference",
     async run(input, aseprite) {
-      let img = readPng(input.path);
+      let img = readPng(input.path, NOT_PNG_SHEET);
       const bg = detectBackground(img);
       img = removeBackground(img, undefined, bg);
       const g = input.cell
@@ -146,7 +147,7 @@ export const RECREATE_TOOLS: Tool[] = [
     async run(input, aseprite) {
       let img: Rgba;
       if (input.path) {
-        img = removeBackground(readPng(input.path));
+        img = removeBackground(readPng(input.path, NOT_PNG_SHEET));
         const g = detectGrid(img);
         if (g.cellX > 1) img = resample(img, g);
       } else img = await documentOf(aseprite).pixels(input.layer, input.frame);

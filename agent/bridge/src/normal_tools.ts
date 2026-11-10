@@ -1,12 +1,11 @@
 // Normal maps and 2D lighting as tools (#47).
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { documentOf } from "./document.js";
 import { emissionMask, specularMask } from "./masks.js";
 import { light, normalMap } from "./normals.js";
-import type { Rgba } from "./pixel_grid.js";
+import { blank, writePng, type Rgba } from "./image.js";
 import { encodeSnapshot } from "./png.js";
 import { text, type Tool } from "./tool.js";
 
@@ -33,11 +32,11 @@ async function maskLayers(doc: ReturnType<typeof documentOf>, layer: string) {
 
 function writeStrip(path: string, frames: Rgba[]) {
   const w = frames[0].width, h = frames[0].height;
-  const png = new PNG({ width: w * frames.length, height: h });
+  const strip = blank(w * frames.length, h);
   frames.forEach((f, i) => {
-    for (let y = 0; y < h; y++) png.data.set(f.data.subarray(y * w * 4, (y + 1) * w * 4), (y * w * frames.length + i * w) * 4);
+    for (let y = 0; y < h; y++) strip.data.set(f.data.subarray(y * w * 4, (y + 1) * w * 4), (y * w * frames.length + i * w) * 4);
   });
-  writeFileSync(path, PNG.sync.write(png));
+  writePng(path, strip);
 }
 
 export const NORMAL_TOOLS: Tool[] = [
