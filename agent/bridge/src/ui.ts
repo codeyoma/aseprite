@@ -84,16 +84,20 @@ export interface TextStyle {
   scale?: number;
 }
 
-/** Text as a pixel-exact image (only the given colors, no anti-aliasing). */
-export function renderText(text: string, font: BitmapFont, style: TextStyle): Rgba {
+/** Where text's pixels are: 1 = ink, at its size (no padding). */
+export interface Ink {
+  width: number;
+  height: number;
+  ink: Uint8Array;
+}
+
+/** The ink of text in one of Aseprite's sprite-sheet fonts. */
+export function bitmapInk(text: string, font: BitmapFont): Ink {
   const m = measureText(text, font);
-  const pad = style.outline ? 1 : 0;
-  const sh = style.shadow ? 1 : 0;
-  const W = m.width + pad * 2 + sh, H = m.height + pad * 2 + sh;
-  const ink = new Uint8Array(W * H);
-  let y0 = pad;
+  const W = m.width, H = m.height, ink = new Uint8Array(W * H);
+  let y0 = 0;
   for (const line of text.split("\n")) {
-    let x0 = pad;
+    let x0 = 0;
     for (const ch of line) {
       const g = glyphFor(font, ch);
       if (!g) continue;
@@ -105,6 +109,93 @@ export function renderText(text: string, font: BitmapFont, style: TextStyle): Rg
     }
     y0 += font.height;
   }
+  return { width: W, height: H, ink };
+}
+
+/** The ink of an image: its opaque pixels (text Aseprite rendered from a TTF). */
+export function imageInk(img: Rgba): Ink {
+  const ink = new Uint8Array(img.width * img.height);
+  for (let i = 0; i < ink.length; i++) ink[i] = img.data[i * 4 + 3] >= 128 ? 1 : 0;
+  return { width: img.width, height: img.height, ink };
+}
+
+// ---------------------------------------------------------------------------
+// BMFont (AngelCode .fnt, text or XML) with its page images
+// ---------------------------------------------------------------------------
+
+export interface BMFont {
+  lineHeight: number;
+  pages: Rgba[];
+  chars: Map<number, { x: number; y: number; w: number; h: number; xo: number; yo: number; xa: number; page: number }>;
+  kerning: Map<string, number>;
+}
+
+const kv = (line: string) => Object.fromEntries([...line.matchAll(/(\w+)=("([^"]*)"|\S+)/g)].map((m) => [m[1], m[3] ?? m[2]]));
+
+/** Parses a .fnt (text or XML); page(file) loads a page image. */
+export function parseBMFont(fnt: string, page: (file: string) => Rgba): BMFont {
+  const xml = fnt.trimStart().startsWith("<");
+  const entries = xml
+    ? [...fnt.matchAll(/<(common|page|char|kerning)\b([^>]*)\/?>/g)].map((m) => [m[1], kv(m[2])] as const)
+    : fnt.split(/\r?\n/).map((l) => /^(\w+)\s+(.*)$/.exec(l.trim())).filter(Boolean).map((m) => [m![1], kv(m![2])] as const);
+  let lineHeight = 0;
+  const files: string[] = [];
+  const chars: BMFont["chars"] = new Map(), kerning = new Map<string, number>();
+  for (const [kind, a] of entries) {
+    if (kind === "common") lineHeight = Number(a.lineHeight);
+    else if (kind === "page") files[Number(a.id)] = a.file;
+    else if (kind === "char") {
+      chars.set(Number(a.id), { x: +a.x, y: +a.y, w: +a.width, h: +a.height, xo: +a.xoffset, yo: +a.yoffset, xa: +a.xadvance, page: +(a.page ?? 0) });
+    } else if (kind === "kerning") kerning.set(`${a.first},${a.second}`, Number(a.amount));
+  }
+  if (!chars.size || !lineHeight) throw new Error("Not a BMFont .fnt: no common line or no chars");
+  return { lineHeight, pages: files.map((f) => page(f)), chars, kerning };
+}
+
+/** The ink of text in a BMFont: glyph pixels with alpha at least 128. */
+export function bmfontInk(text: string, font: BMFont): Ink {
+  const lines = text.split("\n");
+  const missing = font.chars.get(63) ?? font.chars.get(32); // "?" stands in for a missing glyph
+  type Placed = { g: NonNullable<typeof missing>; x: number; y: number };
+  const placed: Placed[] = [];
+  let W = 0;
+  lines.forEach((line, row) => {
+    let x = 0, prev = -1;
+    for (const ch of line) {
+      const cp = ch.codePointAt(0)!;
+      const g = font.chars.get(cp) ?? missing;
+      if (!g) continue;
+      x += prev >= 0 ? font.kerning.get(`${prev},${cp}`) ?? 0 : 0;
+      placed.push({ g, x: x + g.xo, y: row * font.lineHeight + g.yo });
+      W = Math.max(W, x + g.xo + g.w, x + g.xa);
+      x += g.xa;
+      prev = cp;
+    }
+  });
+  const H = lines.length * font.lineHeight, ink = new Uint8Array(Math.max(1, W) * H);
+  for (const { g, x, y } of placed) {
+    const page = font.pages[g.page];
+    for (let yy = 0; yy < g.h; yy++) for (let xx = 0; xx < g.w; xx++) {
+      const tx = x + xx, ty = y + yy;
+      if (tx < 0 || ty < 0 || tx >= W || ty >= H) continue;
+      if (page.data[((g.y + yy) * page.width + g.x + xx) * 4 + 3] >= 128) ink[ty * W + tx] = 1;
+    }
+  }
+  return { width: Math.max(1, W), height: H, ink };
+}
+
+/** Text as a pixel-exact image (only the given colors, no anti-aliasing). */
+export function renderText(text: string, font: BitmapFont, style: TextStyle): Rgba {
+  return styleInk(bitmapInk(text, font), style);
+}
+
+/** Colors ink with an optional 1 px outline and drop shadow, at an integer scale. */
+export function styleInk(src: Ink, style: TextStyle): Rgba {
+  const pad = style.outline ? 1 : 0;
+  const sh = style.shadow ? 1 : 0;
+  const W = src.width + pad * 2 + sh, H = src.height + pad * 2 + sh;
+  const ink = new Uint8Array(W * H);
+  for (let y = 0; y < src.height; y++) for (let x = 0; x < src.width; x++) ink[(y + pad) * W + x + pad] = src.ink[y * src.width + x];
   const out = new Uint8Array(W * H * 4);
   const set = (x: number, y: number, c: [number, number, number]) => out.set([...c, 255], (y * W + x) * 4);
   const has = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H && ink[y * W + x] === 1;

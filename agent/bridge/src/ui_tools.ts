@@ -1,9 +1,12 @@
 // Pixel text and UI elements as tools (#50).
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import * as z from "zod/v4";
 import { adjust, nearest, parseHex, type RGBA } from "./color.js";
 import { documentOf, type AnimationFrame } from "./document.js";
 import type { Rgba } from "./pixel_grid.js";
-import { loadFont, measureText, panel, renderText, stamp, type PanelStyle } from "./ui.js";
+import { readPng } from "./sheet_tools.js";
+import { bitmapInk, bmfontInk, imageInk, loadFont, measureText, panel, parseBMFont, renderText, stamp, styleInk, type Ink, type PanelStyle } from "./ui.js";
 import { failure, text, type Tool } from "./tool.js";
 
 const rgb = (h: string | undefined): [number, number, number] | undefined => {
@@ -36,9 +39,10 @@ export const UI_TOOLS: Tool[] = [
     name: "draw_text",
     title: "Draw pixel text",
     description:
-      "Draw text with Aseprite's pixel fonts ('aseprite' 7 px tall, or 'mini' 5 px), pixel-exact with no " +
-      "anti-aliasing, optionally with a 1 px outline and a drop shadow, at an integer scale. Lines split on \\n. " +
-      "Drawn on an 'AI: text' layer at x, y.",
+      "Draw text pixel-exact with no anti-aliasing, optionally with a 1 px outline and a drop shadow, at an integer " +
+      "scale. Fonts: Aseprite's pixel fonts ('aseprite' 7 px tall, 'mini' 5 px), a BMFont (.fnt path, with its page " +
+      "PNGs next to it), a TrueType/OpenType file (.ttf/.otf path, at `size` px; pixel fonts look best at their design " +
+      "size), or an installed font by name ('system:Arial'). Lines split on \\n. Drawn on an 'AI: text' layer at x, y.",
     input: z.object({
       text: z.string().min(1),
       x: z.number().int().optional(),
@@ -46,7 +50,8 @@ export const UI_TOOLS: Tool[] = [
       color: z.string().describe("e.g. '#fff1e8'"),
       outline: z.string().optional(),
       shadow: z.string().optional(),
-      font: z.enum(["aseprite", "mini"]).optional(),
+      font: z.string().optional().describe("'aseprite' (default), 'mini', a .fnt or .ttf/.otf path, or 'system:<name>'."),
+      size: z.number().min(4).max(128).optional().describe("Font size in px for TTF/OTF and system fonts. Default 8."),
       scale: z.number().int().min(1).max(8).optional(),
       align: z.enum(["left", "center"]).optional().describe("'center' centers on x."),
       frame: z.number().int().min(1).optional(),
@@ -56,9 +61,18 @@ export const UI_TOOLS: Tool[] = [
     async run(input, aseprite) {
       const color = rgb(input.color);
       if (!color) return failure(`Not a color: ${input.color}`);
-      const font = loadFont(input.font ?? "aseprite");
-      const img = renderText(input.text, font, { color, outline: rgb(input.outline), shadow: rgb(input.shadow), scale: input.scale });
       const doc = documentOf(aseprite);
+      const font = input.font ?? "aseprite";
+      let ink: Ink;
+      if (font === "aseprite" || font === "mini") ink = bitmapInk(input.text, loadFont(font));
+      else if (/\.fnt$/i.test(font)) {
+        if (!existsSync(font)) return failure(`No font file at ${font}`);
+        ink = bmfontInk(input.text, parseBMFont(readFileSync(font, "utf8"), (file) => readPng(join(dirname(font), file))));
+      } else if (/\.(ttf|otf|ttc)$/i.test(font)) {
+        if (!existsSync(font)) return failure(`No font file at ${font}`);
+        ink = imageInk(await doc.renderFontText(input.text, `file=${font}`, input.size ?? 8));
+      } else ink = imageInk(await doc.renderFontText(input.text, `system=${font.replace(/^system:/, "")}`, input.size ?? 8));
+      const img = styleInk(ink, { color, outline: rgb(input.outline), shadow: rgb(input.shadow), scale: input.scale });
       const info = await doc.info();
       const W = info.width, H = info.height;
       const x = (input.x ?? 0) - (input.align === "center" ? Math.floor(img.width / 2) : 0), y = input.y ?? 0;

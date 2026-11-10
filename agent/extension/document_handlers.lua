@@ -160,6 +160,18 @@ local function describeSprite(sprite, full)
   end
   info.palette = { size = #pal, colors = colors }
 
+  -- Slices with their 9-patch centers (#61).
+  local slices = {}
+  for _, sl in ipairs(sprite.slices) do
+    local b, c = sl.bounds, sl.center
+    slices[#slices + 1] = {
+      name = sl.name,
+      bounds = b and { x = b.x, y = b.y, width = b.width, height = b.height } or nil,
+      center = c and { x = c.x, y = c.y, width = c.width, height = c.height } or nil,
+    }
+  end
+  if #slices > 0 then info.slices = slices end
+
   local sel = sprite.selection
   if sel and not sel.isEmpty then
     local b = sel.bounds
@@ -1718,6 +1730,36 @@ handlers.create_tilemap = function(params)
   if params.title then sprite.filename = params.title end
   app.refresh()
   return { title = params.title or "Terrain", tiles = count, layer = "L" .. layer.id }
+end
+
+-- Text in a font file (TTF/OTF) or a system font, rendered by Aseprite
+-- without anti-aliasing (#61): white on transparent, trimmed. font is a
+-- PasteText font spec ("file=/path/font.ttf", "system=Arial"). The active
+-- sprite, frame and layer are kept.
+handlers.render_text = function(params)
+  local prev, prevFrame, prevLayer = app.sprite, app.frame, app.layer
+  local size = params.size or 8
+  local lines = select(2, params.text:gsub("\n", "")) + 1
+  local w = math.max(16, math.floor(#params.text * size * 1.5) + 16)
+  local h = (math.floor(size * 2.5) + 8) * lines
+  local tmp = Sprite(w, h, ColorMode.RGB)
+  local ok, err = pcall(function()
+    app.command.PasteText{ ui = false, text = params.text, fontName = params.font, fontSize = size,
+      color = Color(255, 255, 255), x = 0, y = 0 }
+  end)
+  local img = Image(w, h, ColorMode.RGB)
+  img:drawSprite(tmp, 1)
+  tmp:close()
+  if prev then
+    app.sprite = prev
+    if prevFrame then app.frame = prevFrame end
+    if prevLayer then app.layer = prevLayer end
+  end
+  if not ok then error(err) end
+  local b = img:shrinkBounds()
+  if b.isEmpty then error("The font drew nothing: check the font file or name") end
+  local out = Image(img, b)
+  return { width = out.width, height = out.height }, out.bytes
 end
 
 handlers.state_block = function() return { text = stateBlock() } end

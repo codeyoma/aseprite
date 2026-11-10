@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { PNG } from "pngjs";
 import * as z from "zod/v4";
 import { documentOf } from "./document.js";
-import { godotSpriteFrames, jsonHash, pack, phaserAnims, placeLike, unityMeta, type Anim, type SheetInfo } from "./export.js";
+import { godotNinePatch, godotSpriteFrames, jsonHash, pack, phaserAnims, placeLike, unityMeta, type Anim, type SheetInfo } from "./export.js";
 import type { Rgba } from "./pixel_grid.js";
 import { text, type Tool } from "./tool.js";
 
@@ -22,6 +22,7 @@ const HOWTO: Record<string, (n: string) => string> = {
 - Pixel art: Project Settings > Rendering > Textures > Default Texture Filter = Nearest.
 - Add an AnimatedSprite2D and set Sprite Frames to ${n}.tres; the animations are the sprite's tags.
 - Normal map (if ${n}_n.png exists): use a CanvasTexture with ${n}.png as diffuse and ${n}_n.png as normal, then rebuild the SpriteFrames on it, or apply it in a shader.
+- 9-patch (if ${n}_ninepatch.tscn exists): instance it for a stretchable panel or button; its NinePatchRect keeps the slice's border.
 `,
   unity: (n) => `Unity
 - Copy ${n}.png and ${n}.png.meta into Assets/ together (the meta holds the slices: Sprite Mode Multiple, Point filter, no compression).
@@ -29,6 +30,7 @@ const HOWTO: Record<string, (n: string) => string> = {
 - Pixels Per Unit is set in the meta; change it in the import settings if your game uses another.
 - ${n}.json has the tags and durations for reference.
 - Normal map (if ${n}_n.png exists): add it as a Secondary Texture named _NormalMap on ${n}.png.
+- 9-patch: a slice with a center sets each sprite's Border, so Image components with Image Type Sliced stretch only the middle.
 `,
   phaser: (n) => `Phaser 3
 - this.load.atlas("${n}", "${n}.png", "${n}.json");
@@ -39,7 +41,7 @@ const HOWTO: Record<string, (n: string) => string> = {
   tiled: (n) => `Tiled
 - ${n}.tsx is a tileset of the frames; add it with Map > Add External Tileset.
 `,
-  json: (n) => `${n}.json is Aseprite's JSON hash format (frames, durations, frameTags); most engines and libraries can read it.
+  json: (n) => `${n}.json is Aseprite's JSON hash format (frames, durations, frameTags, slices with 9-patch centers); most engines and libraries can read it.
 `,
 };
 
@@ -82,7 +84,7 @@ export const EXPORT_TOOLS: Tool[] = [
       // Anim frames are 0-based; the document's tags are 1-based.
       const anims: Anim[] = info.tags.map((t) => ({ name: t.name, from: t.from - 1, to: t.to - 1, direction: dirs[t.direction] ?? "forward", loop: t.repeat === 0 }));
       const pivots: Record<string, [number, number]> = { "bottom-center": [0.5, 1], center: [0.5, 0.5], "top-left": [0, 0] };
-      const s: SheetInfo = { name, image: `${name}.png`, placed, durations, anims, width: sheet.width, height: sheet.height, pivot: pivots[input.pivot ?? "bottom-center"] };
+      const s: SheetInfo = { name, image: `${name}.png`, placed, durations, anims, width: sheet.width, height: sheet.height, pivot: pivots[input.pivot ?? "bottom-center"], slices: info.slices };
       mkdirSync(input.dir, { recursive: true });
       const files = [`${name}.png`];
       writePng(join(input.dir, `${name}.png`), sheet);
@@ -97,7 +99,11 @@ export const EXPORT_TOOLS: Tool[] = [
         files.push(file);
       };
       write(`${name}.json`, jsonHash(s));
-      if (input.engine === "godot") write(`${name}.tres`, godotSpriteFrames(s, `res://${name}.png`));
+      if (input.engine === "godot") {
+        write(`${name}.tres`, godotSpriteFrames(s, `res://${name}.png`));
+        const nine = godotNinePatch(s, `res://${name}.png`);
+        if (nine) write(`${name}_ninepatch.tscn`, nine);
+      }
       if (input.engine === "unity") write(`${name}.png.meta`, unityMeta(s, input.pixels_per_unit ?? frames[0].height));
       if (input.engine === "phaser") write(`${name}_anims.json`, phaserAnims(s, name));
       if (input.engine === "tiled") {

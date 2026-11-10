@@ -54,3 +54,30 @@ test("make_ui button: 4 tagged frames and a 9-patch slice", async () => {
   }
   assert.match(r.content[0].text, /48x16 button with normal, hover, pressed and disabled frames/);
 });
+
+test("BMFont text and XML: glyphs placed by offsets, advance and kerning", async () => {
+  const { parseBMFont, bmfontInk, styleInk } = await import("../dist/ui.js");
+  // A page with two 2x3 glyphs: "A" at (0,0) and "B" at (2,0), fully opaque.
+  const page = { width: 4, height: 3, data: new Uint8Array(4 * 3 * 4).fill(255) };
+  const txt = `info face="t" size=4
+common lineHeight=5 base=4 scaleW=4 scaleH=3 pages=1
+page id=0 file="t_0.png"
+chars count=2
+char id=65 x=0 y=0 width=2 height=3 xoffset=0 yoffset=1 xadvance=3 page=0
+char id=66 x=2 y=0 width=2 height=3 xoffset=0 yoffset=1 xadvance=3 page=0
+kerning first=65 second=66 amount=-1
+`;
+  const loaded = [];
+  const font = parseBMFont(txt, (f) => { loaded.push(f); return page; });
+  assert.deepEqual(loaded, ["t_0.png"]);
+  const ink = bmfontInk("AB", font);
+  assert.deepEqual([ink.width, ink.height], [5, 5]);
+  const row = (y) => [...ink.ink.slice(y * ink.width, (y + 1) * ink.width)].join("");
+  assert.equal(row(0), "00000");
+  assert.equal(row(1), "11110", "B is kerned 1 px left, touching A");
+  const xml = `<font><common lineHeight="5"/><pages><page id="0" file="t_0.png"/></pages><chars><char id="65" x="0" y="0" width="2" height="3" xoffset="0" yoffset="1" xadvance="3" page="0"/></chars></font>`;
+  assert.equal(parseBMFont(xml, () => page).chars.get(65).xa, 3);
+  const img = styleInk(ink, { color: [255, 0, 0], outline: [0, 0, 0] });
+  assert.deepEqual([img.width, img.height], [7, 7]);
+  assert.throws(() => parseBMFont("info x=1", () => page), /Not a BMFont/);
+});

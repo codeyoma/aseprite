@@ -93,3 +93,20 @@ test("Tiled tileset matches pack's grid with trim, padding and extrusion", () =>
     assert.equal(mg + Math.floor(i / cols) * (th + sp), p.y);
   }
 });
+
+test("9-patch slices: JSON slices, Unity border, Godot NinePatchRect", async () => {
+  const { godotNinePatch, nineMargins } = await import("../dist/export.js");
+  const placed = [{ x: 10, y: 20, w: 30, h: 16, ox: 1, oy: 2, sw: 32, sh: 20 }];
+  const slices = [{ name: "button", bounds: { x: 0, y: 0, w: 32, h: 20 }, center: { x: 4, y: 5, w: 24, h: 10 } }];
+  const s = { name: "ui", image: "ui.png", placed, durations: [100], anims: [], width: 64, height: 64, pivot: [0.5, 1], slices };
+  assert.deepEqual(nineMargins(slices[0]), { left: 4, top: 5, right: 4, bottom: 5 });
+  const meta = JSON.parse(jsonHash(s)).meta;
+  assert.deepEqual(meta.slices[0].keys[0], { frame: 0, bounds: slices[0].bounds, center: slices[0].center });
+  // Trimmed by (1, 2): the center leaves 3 px on each side of the 30x16 rect.
+  assert.match(unityMeta(s), /border: \{x: 3, y: 3, z: 3, w: 3\}/);
+  const scene = godotNinePatch(s, "res://ui.png");
+  assert.match(scene, /type="NinePatchRect"/);
+  assert.match(scene, /region_rect = Rect2\(9, 18, 32, 20\)/);
+  assert.match(scene, /patch_margin_left = 4\npatch_margin_top = 5\npatch_margin_right = 4\npatch_margin_bottom = 5/);
+  assert.equal(godotNinePatch({ ...s, slices: [] }, "x"), undefined);
+});

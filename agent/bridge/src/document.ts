@@ -43,6 +43,14 @@ export interface SpriteInfo {
   /** The sprite palette (first 256 colors), transparent entries skipped. */
   palette: RGBA[];
   selection?: { x: number; y: number; w: number; h: number };
+  /** Slices; center is the 9-patch's stretchable part, relative to the slice. */
+  slices: SliceInfo[];
+}
+
+export interface SliceInfo {
+  name: string;
+  bounds: { x: number; y: number; w: number; h: number };
+  center?: { x: number; y: number; w: number; h: number };
 }
 
 export interface PutImage {
@@ -83,6 +91,8 @@ export interface Document {
   putImage(img: Rgba, o?: PutImage): Promise<{ layer: string; name: string }>;
   createSprite(img: Rgba, o?: NewSprite): Promise<{ title: string }>;
   createAnimation(width: number, height: number, frames: AnimationFrame[], o?: NewSprite & { tags?: { name: string; from: number; to: number }[] }): Promise<{ title: string }>;
+  /** Text rendered by Aseprite in a font file or system font (PasteText spec), white, trimmed. */
+  renderFontText(text: string, font: string, size: number): Promise<Rgba>;
   /** A new sprite with a tilemap layer: `set` cut into `count` tiles of `tile` px, placed by `map` (0-based indices, -1 empty). */
   createTilemap(set: Rgba, tile: number, columns: number, count: number, map: number[][], o?: { title?: string }): Promise<{ title: string; layer: string }>;
 }
@@ -141,6 +151,11 @@ export function parseState(state: any): SpriteInfo {
     tags: (s.tags ?? []).map((t: any) => ({ name: t.name, from: t.from, to: t.to, direction: t.direction, repeat: t["repeat"] ?? 0 })),
     palette: (s.palette?.colors ?? []).map((h: string) => parseHex(h)!).filter((c: RGBA | undefined) => c && c.a > 0),
     selection: s.selection ? { x: s.selection.x, y: s.selection.y, w: s.selection.width, h: s.selection.height } : undefined,
+    slices: (s.slices ?? []).filter((sl: any) => sl.bounds).map((sl: any) => ({
+      name: sl.name,
+      bounds: { x: sl.bounds.x, y: sl.bounds.y, w: sl.bounds.width, h: sl.bounds.height },
+      center: sl.center ? { x: sl.center.x, y: sl.center.y, w: sl.center.width, h: sl.center.height } : undefined,
+    })),
   };
 }
 
@@ -187,6 +202,13 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       }, 120_000);
       wrote();
       return result;
+    },
+    async renderFontText(text, font, size) {
+      const { result, binary } = await aseprite.request("render_text", { text, font, size });
+      if (!binary) throw new Error("Aseprite sent no pixel data");
+      const img = { width: result.width, height: result.height, data: new Uint8Array(binary) };
+      checkSize(img, "render_text");
+      return img;
     },
     async createTilemap(set, tile, columns, count, map, o = {}) {
       checkSize(set, "create_tilemap");

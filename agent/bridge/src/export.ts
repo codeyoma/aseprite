@@ -124,6 +124,21 @@ export interface SheetInfo {
   height: number;
   /** Pivot as a fraction of the frame (0.5, 1 = bottom center). */
   pivot: [number, number];
+  /** Slices in frame coordinates; center (relative to the slice) makes it a 9-patch. */
+  slices?: Slice[];
+}
+
+export interface Slice {
+  name: string;
+  bounds: { x: number; y: number; w: number; h: number };
+  center?: { x: number; y: number; w: number; h: number };
+}
+
+/** A slice's 9-patch margins (px kept unstretched on each side), or undefined without a center. */
+export function nineMargins(sl: Slice): { left: number; top: number; right: number; bottom: number } | undefined {
+  const c = sl.center;
+  if (!c) return undefined;
+  return { left: c.x, top: c.y, right: sl.bounds.w - c.x - c.w, bottom: sl.bounds.h - c.y - c.h };
 }
 
 /** Frames of an animation in play order (reverse and ping-pong expanded). */
@@ -153,6 +168,11 @@ export function jsonHash(s: SheetInfo): string {
     meta: {
       app: "aseprite-agent", image: s.image, format: "RGBA8888", size: { w: s.width, h: s.height }, scale: "1",
       frameTags: s.anims.map((a) => ({ name: a.name, from: a.from, to: a.to, direction: a.direction === "pingpong" ? "pingpong" : a.direction })),
+      // Aseprite's slice format: one key from frame 0.
+      slices: (s.slices ?? []).map((sl) => ({
+        name: sl.name, color: "#0000ffff",
+        keys: [{ frame: 0, bounds: sl.bounds, ...(sl.center ? { center: sl.center } : {}) }],
+      })),
     },
   }, null, 2);
 }
@@ -209,9 +229,18 @@ export function guid(seed: string): string {
  * one slice per frame with the pivot. Unity's rects count y from the bottom.
  */
 export function unityMeta(s: SheetInfo, ppu = 16): string {
+  const nine = (s.slices ?? []).find((sl) => sl.center);
   const sprites = s.placed.map((p, i) => {
     // The pivot is in the original frame; adjust for trimming.
     const px = (s.pivot[0] * p.sw - p.ox) / p.w, py = 1 - (s.pivot[1] * p.sh - p.oy) / p.h;
+    // A 9-patch slice gives the border: left, bottom, right, top of the sprite's rect kept unstretched.
+    let border = "{x: 0, y: 0, z: 0, w: 0}";
+    if (nine?.center) {
+      const cx0 = nine.bounds.x + nine.center.x - p.ox, cy0 = nine.bounds.y + nine.center.y - p.oy;
+      const cx1 = cx0 + nine.center.w, cy1 = cy0 + nine.center.h;
+      const k = (v: number) => Math.max(0, Math.round(v));
+      border = `{x: ${k(cx0)}, y: ${k(p.h - cy1)}, z: ${k(p.w - cx1)}, w: ${k(cy0)}}`;
+    }
     return `    - serializedVersion: 2
       name: ${s.name}_${i}
       rect:
@@ -222,7 +251,7 @@ export function unityMeta(s: SheetInfo, ppu = 16): string {
         height: ${p.h}
       alignment: 9
       pivot: {x: ${px.toFixed(4)}, y: ${py.toFixed(4)}}
-      border: {x: 0, y: 0, z: 0, w: 0}
+      border: ${border}
       outline: []
       physicsShape: []
       tessellationDetail: 0
@@ -293,4 +322,30 @@ export function tiledTileset(name: string, placed: Placed[], width: number, heig
   const tw = Math.max(...placed.map((p) => p.w)), th = Math.max(...placed.map((p) => p.h));
   const columns = placed.filter((p) => p.y === placed[0].y).length;
   return `<?xml version="1.0" encoding="UTF-8"?>\n<tileset version="1.10" name="${name}" tilewidth="${tw}" tileheight="${th}" spacing="${pad + 2 * ext}" margin="${ext}" tilecount="${placed.length}" columns="${columns}">\n <image source="${name}.png" width="${width}" height="${height}"/>\n</tileset>\n`;
+}
+
+/**
+ * A Godot 4 scene with a NinePatchRect per 9-patch slice: the slice's region
+ * of the sheet (in frame 0) and its patch margins.
+ */
+export function godotNinePatch(s: SheetInfo, texturePath: string): string | undefined {
+  const nine = (s.slices ?? []).filter((sl) => sl.center);
+  if (!nine.length) return undefined;
+  const p = s.placed[0];
+  const nodes = nine.map((sl, i) => {
+    const m = nineMargins(sl)!;
+    return [
+      i === 0 ? `[node name="${sl.name}" type="NinePatchRect"]` : `[node name="${sl.name}" type="NinePatchRect" parent="."]`,
+      `texture = ExtResource("1")`,
+      `region_rect = Rect2(${p.x + sl.bounds.x - p.ox}, ${p.y + sl.bounds.y - p.oy}, ${sl.bounds.w}, ${sl.bounds.h})`,
+      `patch_margin_left = ${m.left}`,
+      `patch_margin_top = ${m.top}`,
+      `patch_margin_right = ${m.right}`,
+      `patch_margin_bottom = ${m.bottom}`,
+      `offset_right = ${sl.bounds.w}`,
+      `offset_bottom = ${sl.bounds.h}`,
+      "",
+    ].join("\n");
+  });
+  return [`[gd_scene load_steps=2 format=3]`, "", `[ext_resource type="Texture2D" path="${texturePath}" id="1"]`, "", ...nodes].join("\n");
 }

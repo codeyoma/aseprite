@@ -26,6 +26,7 @@
 #include "app/ui/editor/editor.h"
 #include "app/ui/timeline/timeline.h"
 #include "app/util/render_text.h"
+#include "base/convert_to.h"
 #include "doc/image.h"
 #include "doc/image_ref.h"
 #include "render/dithering.h"
@@ -112,8 +113,18 @@ void PasteTextCommand::onExecute(Context* ctx)
     text = params().text();
     color = params().color.isSet() ? params().color() : pref.colorBar.fgColor();
 
-    FontInfo info(FontInfo::Type::Unknown, params().fontName(), params().fontSize());
-    fontInfo = info;
+    // A font spec like "file=/path/font.ttf" or "system=Arial" (optionally
+    // with ",antialias" and other flags) picks a font file or a system font;
+    // a plain name is one of Aseprite's fonts.
+    const std::string& fontName = params().fontName();
+    if (fontName.find('=') != std::string::npos) {
+      FontInfo parsed = base::convert_to<FontInfo>(fontName);
+      fontInfo = FontInfo(parsed, params().fontSize(), parsed.style(), parsed.flags(), parsed.hinting());
+    }
+    else {
+      FontInfo info(FontInfo::Type::Unknown, fontName, params().fontSize());
+      fontInfo = info;
+    }
   }
 
   try {
