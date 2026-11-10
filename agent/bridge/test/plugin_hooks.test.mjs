@@ -6,7 +6,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { after } from "node:test";
+
+// Temp folders made by these tests, removed at the end.
+const temps = [];
+const tempDir = (prefix) => { const d = mkdtempSync(join(tmpdir(), prefix)); temps.push(d); return d; };
+after(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,7 +55,7 @@ test("the PostToolUse matcher covers exactly the edit tools of the Tool table", 
 });
 
 test("look-nudge reminds once per session, only after edit tools", async () => {
-  const env = { CLAUDE_PLUGIN_DATA: mkdtempSync(join(tmpdir(), "look-nudge-")) };
+  const env = { CLAUDE_PLUGIN_DATA: tempDir("look-nudge-") };
   const call = (session_id, tool) =>
     runHook("look-nudge.mjs", JSON.stringify({ session_id, hook_event_name: "PostToolUse", tool_name: PREFIX + tool }), env);
 
@@ -77,7 +83,7 @@ test("look-nudge reminds once per session, only after edit tools", async () => {
 
 /** A HOME whose ~/.aseprite-agent/session.json points at port (or none). */
 function home(port) {
-  const dir = mkdtempSync(join(tmpdir(), "session-status-"));
+  const dir = tempDir("session-status-");
   if (port !== undefined) {
     mkdirSync(join(dir, ".aseprite-agent"));
     writeFileSync(join(dir, ".aseprite-agent", "session.json"), JSON.stringify({ port, token: "t", pid: 1 }));
