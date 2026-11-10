@@ -421,6 +421,22 @@ return function(deps)
                 or string.format("%d warning%s", e.check.warnings, e.check.warnings == 1 and "" or "s"))
             gc:fillText(note, bx + icon + u * 2, y)
           end
+          -- Plan mode (#24): carry out the plan in Agent mode.
+          if e.applyPlan then
+            local label2 = e.planApplied and "Plan applied" or "Apply plan"
+            local bw = gc:measureText(label2).width + u * 4
+            local x = w - pad - bw
+            if not e.planApplied then
+              gc.color = C.accent
+              gc:beginPath()
+              gc:roundedRect(Rectangle(x, y - u // 2, bw, lh + u), u * 2, u * 2)
+              gc:fill()
+              hitButtons[#hitButtons + 1] = { x0 = x, y0 = y - u // 2, x1 = x + bw, y1 = y + lh + u // 2,
+                action = "apply_plan", entry = e }
+            end
+            gc.color = e.planApplied and C.dim or C.bubbleText
+            gc:fillText(label2, x + u * 2, y)
+          end
           gc.color = C.rule
           gc:fillRect(Rectangle(pad, y + lh + u, w - pad * 2, math.max(1, u // 3)))
         end, nil, u * 4)
@@ -651,6 +667,8 @@ return function(deps)
     local prompt = dlg.data.prompt or ""
     if prompt:match("^%s*$") then return end
     local provider = dlg.data.provider or providers[1]
+    local mode = (dlg.data.mode or "Agent"):lower()
+    deps.preferences.mode = dlg.data.mode
     deps.preferences.provider = provider
     -- The document's state goes with every message (#18), after what changed
     -- since the agent's last reply (#19), if anything.
@@ -671,7 +689,7 @@ return function(deps)
     end
     pending = {}
     updateAttachments()
-    conv:send(shown, provider)
+    conv:send(shown, provider, mode)
     -- Record where this reply starts in the undo history (#22).
     local header = conv:entries()[#conv:entries()]
     currentTurn = deps.TurnHistory.begin(app.sprite)
@@ -695,6 +713,7 @@ return function(deps)
       deps.request("chat.send", {
         prompt = expanded, state = state, provider = provider, sessionId = conv:conversationId(provider) or "",
         attachments = #attachments > 0 and attachments or nil,
+        mode = mode,
       }, function(_, error)
         if error then
           fail(error.message or tostring(error))
@@ -710,10 +729,12 @@ return function(deps)
   ---------------------------------------------------------------------------
 
   -- Lets other scripts (and tests) send a prompt without typing it.
-  function Panel.submit(prompt, provider)
+  -- mode: "agent" | "ask" | "plan" (nil keeps the selected mode).
+  function Panel.submit(prompt, provider, mode)
     Panel.open()
     dlg:modify{ id = "prompt", text = prompt }
     if provider then dlg:modify{ id = "provider", option = provider } end
+    if mode then dlg:modify{ id = "mode", option = mode:sub(1, 1):upper() .. mode:sub(2) } end
     send()
   end
 
@@ -730,7 +751,13 @@ return function(deps)
   end
 
   -- Revert or restore a reply (#22). Reverting over later edits asks first.
-  function Panel.turnAction(turn, action)
+  function Panel.turnAction(turn, action, entry)
+    if action == "apply_plan" then
+      if conv:isBusy() or (entry and entry.planApplied) then return false end
+      if entry then entry.planApplied = true end
+      Panel.submit("Carry out the plan above.", nil, "agent")
+      return true
+    end
     local TH = deps.TurnHistory
     local ok, why
     if action == "restore" then
@@ -773,11 +800,19 @@ return function(deps)
   function Panel.lastTurn() return lastTurn end
 
   -- Entries as plain records (for tests and other scripts).
+  function Panel.applyLastPlan()
+    local list = conv:entries()
+    for i = #list, 1, -1 do
+      if list[i].kind == "worked" and list[i].applyPlan then return Panel.turnAction(nil, "apply_plan", list[i]) end
+    end
+    return false
+  end
+
   function Panel.entries()
     local out = {}
     for _, e in ipairs(conv:entries()) do
       out[#out + 1] = { kind = e.kind, text = e.text, status = e.status, secs = e.secs,
-        changed = e.capture and e.capture.changed or nil }
+        changed = e.capture and e.capture.changed or nil, applyPlan = e.applyPlan, planApplied = e.planApplied }
     end
     return out
   end
@@ -821,7 +856,7 @@ return function(deps)
       onmousedown = function(ev)
         for _, b in ipairs(hitButtons) do
           if ev.x >= b.x0 and ev.x <= b.x1 and ev.y >= b.y0 and ev.y <= b.y1 then
-            Panel.turnAction(b.turn, b.action)
+            Panel.turnAction(b.turn, b.action, b.entry)
             return
           end
         end
@@ -869,6 +904,8 @@ return function(deps)
     end
     dlg:newrow()
     dlg:combobox{ id = "provider", options = providers, option = deps.preferences.provider or providers[1] }
+    -- Agent edits; Ask and Plan only read the document (#24).
+    dlg:combobox{ id = "mode", options = { "Agent", "Ask", "Plan" }, option = deps.preferences.mode or "Agent" }
     dlg:button{ id = "attach", text = "+", onclick = openAttachMenu }
     dlg:button{ id = "mention", text = "@", onclick = openPicker }
     dlg:button{ id = "send", text = "&Send", onclick = send }

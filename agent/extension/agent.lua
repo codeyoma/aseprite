@@ -70,7 +70,15 @@ function init(plugin)
 
   -- Scripting API for other scripts: AsepriteAgent.chat("make it blue")
   AsepriteAgent = {
-    chat = function(prompt, provider) Panel.submit(prompt, provider) end,
+    chat = function(prompt, provider, mode) Panel.submit(prompt, provider, mode) end,
+    -- Carries out the last Plan-mode reply (#24).
+    applyPlan = function()
+      local list = Panel.entries()
+      for i = #list, 1, -1 do
+        if list[i].applyPlan then return Panel.applyLastPlan() end
+      end
+      return false
+    end,
     isBusy = function() return Panel.isBusy() end,
     entries = function() return Panel.entries() end,
     openPanel = function() Panel.open() end,

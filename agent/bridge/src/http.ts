@@ -13,6 +13,8 @@ import { createMcpServer } from "./server.js";
 
 export interface HttpEndpoint {
   url: string;
+  /** Read-only endpoint for Ask and Plan modes. */
+  askUrl: string;
   token: string;
   server: Server;
 }
@@ -23,7 +25,9 @@ export async function startHttpEndpoint(link: AsepriteLink, token: string): Prom
 
   const server = createServer(async (req, res) => {
     if (!validateHost(req, res) || !validateOrigin(req, res)) return;
-    if (!req.url?.startsWith("/mcp")) {
+    // /mcp serves every tool; /mcp/ask only the read tools (Ask and Plan modes).
+    const path = (req.url ?? "").split("?")[0];
+    if (path !== "/mcp" && path !== "/mcp/ask") {
       res.writeHead(404).end();
       return;
     }
@@ -32,7 +36,7 @@ export async function startHttpEndpoint(link: AsepriteLink, token: string): Prom
       return;
     }
     // Stateless: one MCP server and transport per request.
-    const mcp = createMcpServer(link);
+    const mcp = createMcpServer(link, { readOnly: path === "/mcp/ask" });
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {
       void transport.close();
@@ -52,5 +56,5 @@ export async function startHttpEndpoint(link: AsepriteLink, token: string): Prom
     server.listen(0, "127.0.0.1", resolve);
   });
   const port = (server.address() as AddressInfo).port;
-  return { url: `http://127.0.0.1:${port}/mcp`, token, server };
+  return { url: `http://127.0.0.1:${port}/mcp`, askUrl: `http://127.0.0.1:${port}/mcp/ask`, token, server };
 }

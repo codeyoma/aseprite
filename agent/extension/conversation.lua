@@ -12,10 +12,12 @@
 --   { kind = "user" | "header" | "text" | "status" | "error", text }
 --   { kind = "thought", text, secs }
 --   { kind = "tool", text, id, toolKind = "edit"|"read", detail, status = nil|"ok"|"failed", result }
---   { kind = "worked", secs, check = nil|{ errors, warnings } }   -- the turn's last check, if any
+--   { kind = "worked", secs, check = nil|{ errors, warnings }, applyPlan = nil|true, planApplied = nil|true }
+--     (check: the turn's last check, if any; applyPlan: a Plan-mode reply that can be carried out)
 --   { kind = "plan", items = { { content, status = "pending"|"in_progress"|"completed" }, ... } }
 
 local PROVIDER_NAMES = { claude = "Claude", codex = "Codex" }
+local MODE_NAMES = { ask = "Ask", plan = "Plan" }   -- Agent mode is not labeled
 local MAX_ENTRIES = 400
 
 local Conversation = {}
@@ -54,8 +56,11 @@ local function lastCheck(self)
   end
 end
 
-local function endTurn(self, text)
-  if self.turnStart then push(self, { kind = "worked", secs = self.clock() - self.turnStart, check = lastCheck(self) }) end
+local function endTurn(self, text, completed)
+  if self.turnStart then
+    push(self, { kind = "worked", secs = self.clock() - self.turnStart, check = lastCheck(self),
+                 applyPlan = (completed and self.turnMode == "plan") or nil })
+  end
   if text then push(self, { kind = "status", text = text }) end
   self.turnStart = nil
 end
@@ -69,10 +74,13 @@ function Conversation:elapsed()
   return self.turnStart and (self.clock() - self.turnStart) or nil
 end
 
--- Starts a turn: the user's bubble and the provider's header.
-function Conversation:send(text, provider)
+-- Starts a turn: the user's bubble and the provider's header, with the
+-- mode when it is not Agent (#24).
+function Conversation:send(text, provider, mode)
   push(self, { kind = "user", text = text })
-  push(self, { kind = "header", text = PROVIDER_NAMES[provider] or provider })
+  local name = PROVIDER_NAMES[provider] or provider
+  push(self, { kind = "header", text = MODE_NAMES[mode] and (name .. " · " .. MODE_NAMES[mode]) or name, mode = mode })
+  self.turnMode = mode
   self.turnStart = self.clock()
   self.lastEvent = self.turnStart
 end
@@ -143,7 +151,8 @@ function Conversation:apply(ev)
     endTurn(self)
     return { turnEnded = true }
   elseif t == "done" then
-    endTurn(self, ev.text)
+    -- A turn that ends with a note (Stopped., stopped early) did not finish.
+    endTurn(self, ev.text, ev.text == nil)
     return { turnEnded = true }
   end
   return { turnEnded = false }

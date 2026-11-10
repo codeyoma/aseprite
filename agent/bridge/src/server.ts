@@ -33,9 +33,16 @@ Aseprite Lua essentials:
 - Pass ui=false to commands so no modal dialog blocks the agent.
 `.trim();
 
-export function createMcpServer(aseprite: AsepriteRequester): McpServer {
-  const server = new McpServer({ name: "aseprite-agent", version: VERSION }, { instructions: INSTRUCTIONS });
+export const READ_ONLY_NOTE =
+  "This connection is read-only (Ask or Plan mode): only tools that read the document are available. " +
+  "Do not try to change the document; describe or plan changes instead.";
+
+/** The MCP server. readOnly lists (and so allows) only the read tools (Ask and Plan modes). */
+export function createMcpServer(aseprite: AsepriteRequester, opts: { readOnly?: boolean } = {}): McpServer {
+  const instructions = opts.readOnly ? `${INSTRUCTIONS}\n\n${READ_ONLY_NOTE}` : INSTRUCTIONS;
+  const server = new McpServer({ name: "aseprite-agent", version: VERSION }, { instructions });
   for (const tool of TOOLS) {
+    if (opts.readOnly && tool.kind !== "read") continue;
     server.registerTool(
       tool.name,
       { title: tool.title, description: tool.description, inputSchema: tool.input },

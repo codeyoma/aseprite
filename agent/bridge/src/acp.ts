@@ -15,8 +15,13 @@ import type { ImageBlock } from "./attachments.js";
 
 export interface AcpEndpoint {
   url: string;
+  /** Read-only MCP endpoint, for Ask and Plan modes. */
+  askUrl?: string;
   token: string;
 }
+
+/** Chat mode: Agent edits; Ask and Plan only read (#24). */
+export type ChatMode = "agent" | "ask" | "plan";
 
 /** A permission the agent asks for, and the options it offers. */
 export interface PermissionRequest {
@@ -52,6 +57,7 @@ export class AcpRunner {
   private proc?: ChildProcess;
   private agent?: any; // ClientContext
   private sessions = new Set<string>(); // sessions this process created or loaded
+  private sessionModes = new Map<string, ChatMode>(); // the mode each session's MCP server was set up for
   private loadSupported = false;
   private loading = false;
   private mapper = new AcpMapper();
@@ -66,12 +72,13 @@ export class AcpRunner {
     private readonly recordFile?: string,
   ) {}
 
-  private mcpServers() {
+  private mcpServers(mode: ChatMode) {
+    const url = mode === "agent" ? this.endpoint.url : (this.endpoint.askUrl ?? this.endpoint.url);
     return [
       {
         type: "http",
         name: MCP_SERVER_NAME,
-        url: this.endpoint.url,
+        url,
         headers: [{ name: "Authorization", value: `Bearer ${this.endpoint.token}` }],
       },
     ];
@@ -137,14 +144,15 @@ export class AcpRunner {
   }
 
   /** Session for a conversation: reuse, load (after a restart) or create. */
-  private async session(conversationId?: string): Promise<string> {
-    const params = { cwd: this.cwd, mcpServers: this.mcpServers(), _meta: this.provider.acp!.sessionMeta(this.systemPrompt) };
+  private async session(conversationId: string | undefined, mode: ChatMode): Promise<string> {
+    const params = { cwd: this.cwd, mcpServers: this.mcpServers(mode), _meta: this.provider.acp!.sessionMeta(this.systemPrompt) };
     if (conversationId && this.sessions.has(conversationId)) return conversationId;
     if (conversationId && this.loadSupported) {
       this.loading = true; // the agent replays history as updates; don't show it again
       try {
         await this.agent.request("session/load", { ...params, sessionId: conversationId });
         this.sessions.add(conversationId);
+        this.sessionModes.set(conversationId, mode);
         return conversationId;
       } catch (err) {
         log(`acp: session/load failed (${String(err)}); starting a new session`);
@@ -154,13 +162,27 @@ export class AcpRunner {
     }
     const { sessionId } = await this.agent.request("session/new", params);
     this.sessions.add(sessionId);
+    this.sessionModes.set(sessionId, mode);
     return sessionId;
   }
 
   /** Runs one message. Resolves when the turn ends. */
-  async prompt(message: string, conversationId?: string, images: ImageBlock[] = []): Promise<{ conversationId: string; stopReason: string }> {
+  async prompt(
+    message: string,
+    conversationId?: string,
+    images: ImageBlock[] = [],
+    mode: ChatMode = "agent",
+  ): Promise<{ conversationId: string; stopReason: string }> {
+    // A session's MCP server is fixed when it is created or loaded. To switch
+    // between the full and the read-only server, restart the agent and load
+    // the session again: the conversation continues with the other tools.
+    const readOnly = (m?: ChatMode) => m !== "agent";
+    if (conversationId && this.sessions.has(conversationId) && readOnly(this.sessionModes.get(conversationId)) !== readOnly(mode)) {
+      log(`acp: switching ${conversationId} to ${mode} mode`);
+      this.dispose();
+    }
     await this.start();
-    const sessionId = await this.session(conversationId);
+    const sessionId = await this.session(conversationId, mode);
     this.mapper = new AcpMapper();
     this.current = sessionId;
     try {
@@ -186,5 +208,6 @@ export class AcpRunner {
     this.proc = undefined;
     this.agent = undefined;
     this.sessions.clear();
+    this.sessionModes.clear();
   }
 }

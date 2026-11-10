@@ -13,7 +13,7 @@ import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type Pr
 import { sessionDir } from "./session.js";
 import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
-import { acpCommand, AcpRunner, type PermissionOutcome, type PermissionRequest } from "./acp.js";
+import { acpCommand, AcpRunner, type ChatMode, type PermissionOutcome, type PermissionRequest } from "./acp.js";
 import type { AcpEvent, PlanEntry } from "./providers/acp_mapper.js";
 
 export type { ProviderId as Provider } from "./providers/index.js";
@@ -52,9 +52,25 @@ If the user changed the document after your last reply, the message also starts 
 The user may mention objects as "Body (aseprite://layer/L12)"; URIs are aseprite://layer/L<id>, frame/<n>, tag/<name>, cel/L<id>:<frame>, palette/<index>, slice/<name> and selection. When you refer to an object in a reply, cite it as a markdown link like [Body](aseprite://layer/L12) so the user can click it.
 After visual changes, look at your work with snapshot, then run check before you say you are done: fix its errors, and mention any warning you leave on purpose. Keep replies short: say what you changed in one or two sentences.`;
 
-/** The text sent to the agent: the state block first, then the user's message. */
-export function composeMessage(prompt: string, state?: string): string {
-  return state?.trim() ? `${state.trim()}\n\n${prompt}` : prompt;
+/** What each chat mode tells the agent with the message (#24). */
+export const MODE_NOTES: Record<ChatMode, string> = {
+  agent: "",
+  ask:
+    "<mode>Ask: answer, explain or advise. You only have tools that read the document; do not change it, " +
+    "and say how the user could make a change instead of making it.</mode>",
+  plan:
+    "<mode>Plan: do not change the document; you only have tools that read it. Look at what you need, then reply " +
+    "with a short numbered plan of the steps you would take. The user can click Apply plan to have you carry it out.</mode>",
+};
+
+export function chatMode(value: unknown): ChatMode {
+  return value === "ask" || value === "plan" ? value : "agent";
+}
+
+/** The text sent to the agent: the mode note and state block first, then the user's message. */
+export function composeMessage(prompt: string, state?: string, mode: ChatMode = "agent"): string {
+  const head = [MODE_NOTES[mode], state?.trim()].filter(Boolean).join("\n");
+  return head ? `${head}\n\n${prompt}` : prompt;
 }
 
 /** Maps a provider event to the event the panel shows. */
@@ -151,7 +167,7 @@ export class ChatRunner {
     }
   }
 
-  private sendAcp(prompt: string, state: string, provider: AgentProvider, images: ImageBlock[]): void {
+  private sendAcp(prompt: string, state: string, provider: AgentProvider, images: ImageBlock[], mode: ChatMode): void {
     let runner = this.acpRunners.get(provider.id);
     if (!runner) {
       const record = this.recordDir
@@ -172,7 +188,7 @@ export class ChatRunner {
     log(`chat: starting ${provider.id} (acp)`);
     this.emit({ type: "status", text: `${provider.id} is working...` });
     runner
-      .prompt(composeMessage(prompt, state), this.conversations[provider.id], images)
+      .prompt(composeMessage(prompt, state, mode), this.conversations[provider.id], images, mode)
       .then(({ conversationId, stopReason }) => {
         if (this.conversations[provider.id] !== conversationId) {
           this.conversations[provider.id] = conversationId;
@@ -213,20 +229,20 @@ export class ChatRunner {
     return true;
   }
 
-  send(prompt: string, state: string, provider: AgentProvider, conversationId?: string, images: ImageBlock[] = []): void {
+  send(prompt: string, state: string, provider: AgentProvider, conversationId?: string, images: ImageBlock[] = [], mode: ChatMode = "agent"): void {
     if (this.busy) throw new Error("The agent is still working. Stop it first.");
     if (conversationId) this.conversations[provider.id] = conversationId;
     else delete this.conversations[provider.id];
-    if (this.runtimeFor(provider) === "acp") return this.sendAcp(prompt, state, provider, images);
+    if (this.runtimeFor(provider) === "acp") return this.sendAcp(prompt, state, provider, images, mode);
     // The stream-json runtime sends text only.
     if (images.length) prompt += `\n\n(${images.length} attached image(s) could not be sent: the stream runtime is text only.)`;
     const bin = which(provider.executable);
     if (!bin) throw new Error(`${provider.executable} CLI not found on PATH`);
 
     const args = provider.command({
-      message: composeMessage(prompt, state),
+      message: composeMessage(prompt, state, mode),
       conversationId: this.conversations[provider.id],
-      mcpUrl: this.endpoint.url,
+      mcpUrl: mode === "agent" ? this.endpoint.url : this.endpoint.askUrl,
       mcpToken: this.endpoint.token,
       systemPrompt: SYSTEM_PROMPT,
     });
@@ -295,10 +311,11 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
     // `state` is the extension's <aseprite-state> block; `context` is the
     // one-line summary older extensions send.
     // `attachments` are image files to show the agent (#21).
-    "chat.send": (p: { prompt: string; state?: string; context?: string; provider?: string; sessionId?: string; attachments?: Attachment[] }) => {
+    // `mode`: "agent" (default), "ask" or "plan" (#24).
+    "chat.send": (p: { prompt: string; state?: string; context?: string; provider?: string; sessionId?: string; attachments?: Attachment[]; mode?: string }) => {
       if (!p.prompt?.trim()) throw new Error("Empty prompt");
       const state = p.state ?? (p.context ? `[Context] ${p.context}` : "");
-      chat.send(p.prompt, state, providerFor(p.provider), p.sessionId || undefined, loadAttachments(p.attachments));
+      chat.send(p.prompt, state, providerFor(p.provider), p.sessionId || undefined, loadAttachments(p.attachments), chatMode(p.mode));
       return { started: true };
     },
     "chat.permission": (p: { requestId: string; optionId?: string | null }) => ({

@@ -122,6 +122,26 @@ do
   check("next turn gets its own plan", plans == 2)
 end
 
+-- Modes (#24): the header shows Ask/Plan; a finished Plan turn offers Apply plan.
+do
+  local c = Conversation.new{ clock = clock }
+  c:send("why", "claude", "ask")
+  check("ask header", c:entries()[#c:entries()].text == "Claude · Ask")
+  c:apply{ type = "done" }
+  check("ask turn has no apply", not c:entries()[#c:entries()].applyPlan)
+  c:send("plan it", "codex", "plan")
+  check("plan header", c:entries()[#c:entries()].text == "Codex · Plan")
+  c:apply{ type = "text", text = "1. Add layer" }
+  c:apply{ type = "done" }
+  check("finished plan offers apply", c:entries()[#c:entries()].applyPlan == true)
+  c:send("plan again", "codex", "plan")
+  c:apply{ type = "done", text = "Stopped." }
+  local w = c:entries()[#c:entries() - 1]
+  check("stopped plan has no apply", w.kind == "worked" and not w.applyPlan)
+  c:send("go", "claude", "agent")
+  check("agent header unlabeled", c:entries()[#c:entries()].text == "Claude")
+end
+
 -- Mentions and links (#20)
 do
   local m = { Body = "aseprite://layer/L2", walk = "aseprite://tag/walk" }

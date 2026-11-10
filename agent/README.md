@@ -48,6 +48,8 @@ Your messages appear as bubbles on the right. Each agent turn shows its steps th
 
 Choose `claude` or `codex`; the bridge runs that agent with your own login over the [Agent Client Protocol](https://agentclientprotocol.com) (`claude-agent-acp`, `codex-acp`, installed with the bridge) and keeps the conversation going until you click **New chat**. **Stop** cancels the turn and the next message continues the same conversation. When the agent makes a plan, the panel shows it as a checklist; when it asks permission for a tool, the panel asks you. Set `ASEPRITE_AGENT_RUNTIME=stream` to use the older `claude -p` / `codex exec` runtime. Every message includes what you have selected (layer, frame, timeline range, pixel selection), so "this layer" and "the selected frames" work.
 
+Pick a mode next to the agent: **Agent** (default) makes changes; **Ask** only answers and advises; **Plan** replies with a numbered plan and an **Apply plan** button that carries it out in Agent mode. Ask and Plan runs connect to a read-only tool endpoint, so the agent cannot change the document. The panel remembers the mode.
+
 To show the agent something, click **+** and attach the selection, the active layer, the active frame or an image file (for example a reference whose palette or style you want). **File > Scripts > AI Agent** and the timeline's cel, layer and frame context menus have **Attach to AI Chat** too. Attachments are listed above the input and go with your next message as images; rendered ones are saved in `~/.aseprite-agent/attachments` and deleted after a week.
 
 ![chat panel](demos/output/7-chat-panel.png)
