@@ -116,7 +116,7 @@ Ordered by value per effort. Each item becomes a GitHub issue.
 
 ### Tracking
 
-Milestone **M7 - AI-native** on codeyoma/aseprite: A1 #18 · A2 #19 · A3 #20 · A4 #21 · B5 #22 · B6 #23 · B7 #24 · B8 #25 · C9 saved commands #26 · C10 skills #27 · C11 developer mode #28 · C12 check gate #29 · C13 CLI + plugin #30 · D14 ACP #31 · D15 animation as text #32 · D16 parallel agents #33.
+Milestone **M7 - AI-native** on codeyoma/aseprite, tracked in #34 (suggested order and dependency graph): A1 #18 · A2 #19 · A3 #20 · A4 #21 · B5 #22 · B6 #23 · B7 #24 · B8 #25 · C9 saved commands #26 · C10 skills #27 · C11 developer mode #28 · C12 check gate #29 · C13 CLI + plugin #30 · D14 ACP #31 · D15 animation as text #32 · D16 parallel agents #33.
 
 ## 6. Decisions
 
