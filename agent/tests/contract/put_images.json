@@ -95,6 +95,65 @@
         ] }, "error": "Invalid color: nope" },
         { "state": { "palette": ["#000000", "#ff0000", "#ffff00", "#00ff00"], "layers": [{ "name": "AI: fx2" }, { "name": "AI: fx" }, { "name": "Body" }] } }
       ]
+    },
+    {
+      "name": "put_images inserts frames with linked cels (or moved copies), grows tags, sets durations and records a hit",
+      "notes": "One undo step in Aseprite. Inserts are numbered as before any insert; durations, hit and image frames after them. A tag covering `after` grows, a later one moves, and so do recorded hits. Writing into one frame of linked cels replaces only that frame's cel.",
+      "fixture": {
+        "width": 3, "height": 1, "durations": [100, 100, 100],
+        "tags": [{ "name": "a", "from": 1, "to": 2 }, { "name": "b", "from": 3, "to": 3 }],
+        "layers": [
+          { "name": "Shadow", "cels": { "1": ["k.."] } },
+          { "name": "Body", "cels": { "1": ["r.."], "2": [".r."], "3": ["..r"] } }
+        ],
+        "activeLayer": "Body"
+      },
+      "steps": [
+        { "request": "put_images", "params": {
+          "insert": [
+            { "after": 2, "durations": [30, 40], "shift": { "layers": ["Body"], "offsets": [{ "x": 1, "y": 0 }, { "x": 0, "y": 0 }] } },
+            { "after": 1, "durations": [50] }
+          ],
+          "durations": [{ "frame": 1, "ms": 60 }],
+          "hit": { "frame": 4, "freeze_ms": 120, "shake_ms": 70, "amp": 1 },
+          "images": [{ "new_layer": "fx", "frame": 2, "width": 1, "height": 1, "x": 1, "y": 0, "rgba": { "rows": ["y"] } }]
+        }, "result": { "frames": 6, "added": 0, "inserted": 3, "layers": [{ "name": "AI: fx" }] } },
+        { "state": {
+          "durations": [60, 50, 100, 30, 40, 100], "activeFrame": 1,
+          "tags": [{ "name": "a", "from": 1, "to": 5 }, { "name": "b", "from": 6, "to": 6 }],
+          "hits": [{ "frame": 4, "freezeMs": 120, "shakeMs": 70, "amp": 1 }],
+          "layers": [
+            { "name": "Shadow", "cels": [1, 2], "links": [[1, 2]] },
+            { "name": "AI: fx", "cels": [2], "links": [] },
+            { "name": "Body", "cels": [1, 2, 3, 4, 5, 6], "links": [[1, 2]] }
+          ]
+        } },
+        { "pixels": { "layer": "Body", "frame": 2 }, "rows": ["r.."] },
+        { "pixels": { "layer": "Body", "frame": 4 }, "rows": ["..r"] },
+        { "pixels": { "layer": "Body", "frame": 5 }, "rows": [".r."] },
+        { "pixels": { "layer": "Body", "frame": 6 }, "rows": ["..r"] },
+        { "pixels": { "layer": "Shadow", "frame": 2 }, "rows": ["k.."] },
+        { "request": "put_images", "params": { "insert": [{ "after": 3, "durations": [10] }], "images": [] },
+          "result": { "frames": 7, "inserted": 1, "layers": [] } },
+        { "state": {
+          "durations": [60, 50, 100, 10, 30, 40, 100],
+          "tags": [{ "name": "a", "from": 1, "to": 6 }, { "name": "b", "from": 7, "to": 7 }],
+          "hits": [{ "frame": 5, "freezeMs": 120, "shakeMs": 70, "amp": 1 }],
+          "layers": [{ "name": "Shadow", "links": [[1, 2]] }, { "name": "AI: fx" }, { "name": "Body", "links": [[1, 2], [3, 4]] }]
+        } },
+        { "request": "put_images", "params": { "images": [{ "layer": "Body", "frame": 2, "width": 3, "height": 1, "rgba": { "rows": ["w.."] } }] },
+          "result": { "frames": 7 } },
+        { "pixels": { "layer": "Body", "frame": 1 }, "rows": ["r.."] },
+        { "pixels": { "layer": "Body", "frame": 2 }, "rows": ["w.."] },
+        { "state": { "layers": [{ "name": "Shadow" }, { "name": "AI: fx" }, { "name": "Body", "links": [[3, 4]] }] } },
+        { "request": "put_images", "params": { "insert": [{ "after": 9, "durations": [10] }], "images": [] }, "error": "after must be a frame from 1 to 7" },
+        { "request": "put_images", "params": { "insert": [{ "after": 1, "durations": [10] }, { "after": 1, "durations": [20] }], "images": [] }, "error": "frame 1 is listed twice" },
+        { "request": "put_images", "params": { "insert": [{ "after": 1, "durations": [10, 10], "shift": { "layers": ["Body"], "offsets": [{ "x": 1, "y": 0 }] } }], "images": [] }, "error": "shift needs one offset per new frame" },
+        { "request": "put_images", "params": { "insert": [{ "after": 1, "durations": [0] }], "images": [] }, "error": "durations must be whole ms of at least 1" },
+        { "request": "put_images", "params": { "durations": [{ "frame": 8, "ms": 10 }], "images": [] }, "error": "Durations 1: frame 8 is out of range (1-7)" },
+        { "request": "put_images", "params": { "hit": { "frame": 2, "freeze_ms": -1 }, "images": [] }, "error": "hit: freeze_ms must be whole ms, 0 or more" },
+        { "state": { "durations": [60, 50, 100, 10, 30, 40, 100], "hits": [{ "frame": 5 }] } }
+      ]
     }
   ]
 }

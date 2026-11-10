@@ -18,6 +18,18 @@ export interface LayerInfo {
   /** Image layers: 0-255 and the blend mode's wire name (protocol.json blendModes). */
   opacity?: number;
   blendMode?: string;
+  /** Image layers: groups of 2+ frames whose cels are linked (share one image), e.g. [[2, 3, 4]]. */
+  links?: number[][];
+}
+
+/** A hit hit_stop recorded (sprite property aseprite-agent "fx.hits"), for exporters (#71). */
+export interface HitInfo {
+  /** The contact frame (1-based). */
+  frame: number;
+  /** How much longer the contact pose holds, shake included (ms). */
+  freezeMs: number;
+  shakeMs?: number;
+  amp?: number;
 }
 
 export interface TagInfo {
@@ -49,6 +61,8 @@ export interface SpriteInfo {
   selection?: { x: number; y: number; w: number; h: number };
   /** Slices; center is the 9-patch's stretchable part, relative to the slice. */
   slices: SliceInfo[];
+  /** Hits recorded by hit_stop, in frame order of recording. */
+  hits: HitInfo[];
 }
 
 export interface SliceInfo {
@@ -75,6 +89,33 @@ export interface PutImage {
   blendMode?: string;
   /** The new layer's opacity, 0-255; with newLayer only. */
   opacity?: number;
+}
+
+/**
+ * Frames put right after frame `after` (numbered as before any insert), one per duration (ms). Every image
+ * layer's cel there is linked to its cel in `after`, except shift.layers, which get copies moved by offsets[i].
+ */
+export interface FrameInsert {
+  after: number;
+  durations: number[];
+  shift?: { layers: string[]; offsets: { x: number; y: number }[] };
+}
+
+/** putImages' options. */
+export interface PutImagesOptions {
+  /** The sprite gets at least this many frames (after the inserts), copies of the last one lasting duration ms. */
+  frames?: number;
+  duration?: number;
+  label?: string;
+  prompt?: string;
+  /** Hex colors appended to the sprite palette (the ones it lacks). */
+  palette?: string[];
+  /** Frames inserted first (tags covering `after` grow, later tags and hits move). */
+  insert?: FrameInsert[];
+  /** Frame durations to set, numbered after the inserts. */
+  durations?: { frame: number; ms: number }[];
+  /** A hit to record (numbered after the inserts). */
+  hit?: { frame: number; freezeMs: number; shakeMs?: number; amp?: number };
 }
 
 /** One image of putImages: put at (x, y) in a frame, onto a new 'AI: ' layer or into a layer. */
@@ -148,12 +189,12 @@ export interface Document {
   pixels(layer: string | undefined, frame?: number): Promise<Rgba>;
   putImage(img: Rgba, o?: PutImage): Promise<{ layer: string; name: string }>;
   /**
-   * Several images in one undo step. frames: the sprite first gets at least that many frames, each a copy of
-   * the last frame's cels lasting duration ms (default the last frame's). palette: hex colors appended to the
-   * sprite palette first (the ones it lacks), in the same undo step; paletteAdded counts them.
+   * Several images and timeline edits in one undo step (PutImagesOptions): palette, inserts, frames at the
+   * end, durations, a hit, then the images (frames numbered after the inserts). paletteAdded counts the
+   * colors appended, inserted the frames inserted, added the frames added at the end.
    */
-  putImages(items: PutImagesItem[], o?: { frames?: number; duration?: number; label?: string; prompt?: string; palette?: string[] }):
-    Promise<{ layers: { layer: string; name: string }[]; frames: number; added: number; paletteAdded?: number }>;
+  putImages(items: PutImagesItem[], o?: PutImagesOptions):
+    Promise<{ layers: { layer: string; name: string }[]; frames: number; added: number; inserted?: number; paletteAdded?: number }>;
   createSprite(img: Rgba, o?: NewSprite): Promise<{ title: string }>;
   createAnimation(width: number, height: number, frames: AnimationFrame[], o?: NewSprite & { tags?: { name: string; from: number; to: number }[] }): Promise<{ title: string }>;
   /** Text rendered by Aseprite in a font file or system font (PasteText spec), white, trimmed. */
@@ -213,7 +254,7 @@ function flatten(tree: any[], path: string[] = []): LayerInfo[] {
   for (const l of tree ?? []) {
     out.push({
       id: String(l.id ?? ""), name: l.name, visible: l.visible !== false, group: !!l.group, path,
-      ...(l.group ? {} : { opacity: l.opacity, blendMode: l.blendMode }),
+      ...(l.group ? {} : { opacity: l.opacity, blendMode: l.blendMode, ...(l.celLinks ? { links: l.celLinks } : {}) }),
     });
     if (l.group) out.push(...flatten(l.layers, [...path, l.name]));
   }
@@ -243,6 +284,9 @@ export function parseState(state: any): SpriteInfo {
       name: sl.name,
       bounds: { x: sl.bounds.x, y: sl.bounds.y, w: sl.bounds.width, h: sl.bounds.height },
       center: sl.center ? { x: sl.center.x, y: sl.center.y, w: sl.center.width, h: sl.center.height } : undefined,
+    })),
+    hits: (s.fxHits ?? []).map((h: any) => ({
+      frame: h.frame, freezeMs: h.freezeMs, ...(h.shakeMs !== undefined ? { shakeMs: h.shakeMs } : {}), ...(h.amp !== undefined ? { amp: h.amp } : {}),
     })),
   };
 }
@@ -293,7 +337,12 @@ export function documentOf(aseprite: AsepriteRequester): Document {
         for (const [k, v] of Object.entries(opt)) if (v !== undefined) im[k] = v;
         return im;
       });
-      return write("put_images", { images, frames: o.frames, duration: o.duration, label: o.label, prompt: o.prompt, palette: o.palette });
+      const insert = o.insert?.map((x) => ({ after: x.after, durations: x.durations, ...(x.shift ? { shift: x.shift } : {}) }));
+      const hit = o.hit && { frame: o.hit.frame, freeze_ms: o.hit.freezeMs, shake_ms: o.hit.shakeMs, amp: o.hit.amp };
+      return write("put_images", {
+        images, frames: o.frames, duration: o.duration, label: o.label, prompt: o.prompt, palette: o.palette,
+        insert, durations: o.durations, hit,
+      });
     },
     async createSprite(img, o = {}) {
       checkSize(img, "create_sprite");

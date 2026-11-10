@@ -2,27 +2,27 @@
 // active sprite on 'AI: fx <id>' layers (glow on an Addition layer) in one undo step, or make it a sprite.
 import * as z from "zod/v4";
 import { parseHex, quantize, type Counted, type RGBA } from "./color.js";
-import { documentOf, type PutImagesItem, type SpriteInfo } from "./document.js";
+import { documentOf, type Document, type PutImagesItem, type SpriteInfo } from "./document.js";
 import { renderFx, visualCenter, type RenderedFx } from "./fx/index.js";
 import { FX_CATEGORIES, FX_LIBRARY, findFx, searchFx, type FxAnchor, type FxEntry } from "./fx/library.js";
 import { bounds, contactSheet, encodePng, snapToPalette, type Rect, type Rgba } from "./image.js";
 import { failure, text, type Tool, type ToolResult } from "./tool.js";
 
-const hexList = z.array(z.string()).min(1);
-const optionsInput = z.record(z.string(), z.unknown()).optional()
+export const hexList = z.array(z.string()).min(1);
+export const optionsInput = z.record(z.string(), z.unknown()).optional()
   .describe("The effect's own options over its defaults (list_fx shows them), e.g. { height: 30 } or a color ramp like { sparks: ['#..'] }.");
 
 /** An effect by id, or a failure that names the close ones. */
-function lookup(id: string): FxEntry | ToolResult {
+export function lookup(id: string): FxEntry | ToolResult {
   const e = findFx(id);
   if (e) return e;
   const near = searchFx({ query: id.split(/[-_\s]+/)[0] }).slice(0, 8).map((x) => x.id);
   return failure(`No effect named '${id}'.${near.length ? ` Close: ${near.join(", ")}.` : ""} list_fx lists them all.`);
 }
-const isFailure = (x: FxEntry | ToolResult): x is ToolResult => "content" in x;
+export const isFailure = (x: FxEntry | ToolResult): x is ToolResult => "content" in x;
 
 /** The effect's options from a tool's input: its own options (checked by name), a ramp, light, flip and angle. */
-function effectOptions(e: FxEntry, input: { options?: Record<string, unknown>; palette?: unknown; light?: number; flip?: boolean; angle?: number }): Record<string, unknown> {
+export function effectOptions(e: FxEntry, input: { options?: Record<string, unknown>; palette?: unknown; light?: number; flip?: boolean; angle?: number }): Record<string, unknown> {
   const known = new Set(e.options.map((o) => o.name));
   const opts: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(input.options ?? {})) {
@@ -74,7 +74,7 @@ export function fxSchedule(durations: number[], start: number, effectMs: number,
 }
 
 /** The pixels of img (alpha > 0) inside the sprite once its top-left sits at (ox, oy), cut out; undefined when none. */
-function placed(img: Rgba, ox: number, oy: number, spriteW: number, spriteH: number): { image: Rgba; x: number; y: number } | undefined {
+export function placed(img: Rgba, ox: number, oy: number, spriteW: number, spriteH: number): { image: Rgba; x: number; y: number } | undefined {
   const b = bounds(img, 1);
   if (!b) return undefined;
   const x0 = Math.max(b.x, -ox), y0 = Math.max(b.y, -oy);
@@ -105,7 +105,7 @@ export function fxAnchorPoint(e: FxEntry, anchor: FxAnchor, opts: Record<string,
   return c;
 }
 
-const anchorInput = z.enum(["center", "ground"]).optional()
+export const anchorInput = z.enum(["center", "ground"]).optional()
   .describe("What x, y means. 'center': the effect's visual centre goes there (the impact point). 'ground': its origin " +
     "(the ground point under a pillar, fire or explosion) goes there. Default: the effect's own (list_fx).");
 
@@ -129,6 +129,33 @@ export function fxColors(images: Rgba[]): string[] {
 /** The most entries a palette takes before add_fx snaps instead of appending. */
 export const FX_PALETTE_CAP = 256;
 
+/**
+ * The palette for an effect's color items, shared by the placing tools. By default (palette undefined) the colors
+ * on the Normal effect layer join the sprite palette (returned as `append`, for put_images' palette, so it is the
+ * same undo step; the glow layer is light, not palette pixels); past FX_PALETTE_CAP entries the items are snapped
+ * to the sprite palette instead (in place). A ramp or 'sprite' leaves the sprite palette alone.
+ */
+export async function fxPalette(doc: Document, info: SpriteInfo, colorItems: PutImagesItem[], palette: unknown): Promise<{ append?: string[]; note: string }> {
+  if (palette !== undefined || !colorItems.length) return { note: "" };
+  const current = await doc.palette();
+  const have = new Set(current.map((c) => (c.a < 255 ? hex6(c.r, c.g, c.b) + c.a.toString(16).padStart(2, "0") : hex6(c.r, c.g, c.b))));
+  const missing = fxColors(colorItems.map((it) => it.image)).filter((h) => !have.has(h));
+  if (current.length + missing.length <= FX_PALETTE_CAP) {
+    return {
+      append: missing,
+      note: missing.length
+        ? ` Added its ${missing.length} color${missing.length === 1 ? "" : "s"} to the sprite palette (${current.length + missing.length} entries).`
+        : " Its colors were already in the sprite palette.",
+    };
+  }
+  if (!info.palette.length) return { note: "" };
+  for (const it of colorItems) it.image = snapToPalette(it.image, info.palette, 1);
+  return {
+    note: ` Its ${missing.length} new colors would take the sprite palette past ${FX_PALETTE_CAP} entries ` +
+      `(it has ${current.length}), so they were snapped to the sprite palette instead.`,
+  };
+}
+
 /** At most k colors for the images (median cut over 5-bit buckets, so huge color counts stay fast). */
 function reducedPalette(images: Rgba[], k: number): RGBA[] {
   const buckets = new Map<number, Counted>();
@@ -146,7 +173,7 @@ function reducedPalette(images: Rgba[], k: number): RGBA[] {
 }
 
 /** 'AI: fx <id>', or with a number when that layer exists, so a second effect never overwrites the first. */
-function freeLayerName(info: SpriteInfo, id: string): string {
+export function freeLayerName(info: SpriteInfo, id: string): string {
   const taken = new Set(info.layers.map((l) => l.name));
   for (let n = 1; ; n++) {
     const name = n === 1 ? `fx ${id}` : `fx ${id} ${n}`;
@@ -342,24 +369,7 @@ export const FX_TOOLS: Tool[] = [
       if (!colorItems.length && !glowItems.length) {
         return failure(`${e.id} at ${ax},${ay} lands outside the ${info.width}x${info.height} sprite; nothing was added.`);
       }
-      // The palette: by default the colors on the Normal layer join the sprite palette (the glow layer is light,
-      // not palette pixels); past FX_PALETTE_CAP entries they are snapped to the sprite palette instead.
-      let append: string[] | undefined, paletteNote = "";
-      if (input.palette === undefined && colorItems.length) {
-        const current = await doc.palette();
-        const have = new Set(current.map((c) => (c.a < 255 ? hex6(c.r, c.g, c.b) + c.a.toString(16).padStart(2, "0") : hex6(c.r, c.g, c.b))));
-        const missing = fxColors(colorItems.map((it) => it.image)).filter((h) => !have.has(h));
-        if (current.length + missing.length <= FX_PALETTE_CAP) {
-          append = missing;
-          paletteNote = missing.length
-            ? ` Added its ${missing.length} color${missing.length === 1 ? "" : "s"} to the sprite palette (${current.length + missing.length} entries).`
-            : " Its colors were already in the sprite palette.";
-        } else if (info.palette.length) {
-          for (const it of colorItems) it.image = snapToPalette(it.image, info.palette, 1);
-          paletteNote = ` Its ${missing.length} new colors would take the sprite palette past ${FX_PALETTE_CAP} entries ` +
-            `(it has ${current.length}), so they were snapped to the sprite palette instead.`;
-        }
-      }
+      const { append, note: paletteNote } = await fxPalette(doc, info, colorItems, input.palette);
       const res = await doc.putImages([...colorItems, ...glowItems], {
         frames: plan.frames, duration: newMs, label: `Add effect ${e.id}`, prompt: `add_fx ${e.id}`, palette: append,
       });

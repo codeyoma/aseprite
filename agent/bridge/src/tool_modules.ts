@@ -20,6 +20,7 @@ import { UI_TOOLS } from "./ui_tools.js";
 import { VOXEL_TOOLS } from "./voxel_tools.js";
 import { MODEL_TOOLS } from "./model_tools.js";
 import { FX_TOOLS } from "./fx_tools.js";
+import { FX_TIMING_TOOLS } from "./fx_timing_tools.js";
 
 export const TOOL_MODULES: { what: string; tools: Tool[] }[] = [
   { what: "Core: state, Lua, snapshots, checks, undo, sub-agents", tools: CORE_TOOLS },
@@ -41,4 +42,5 @@ export const TOOL_MODULES: { what: string; tools: Tool[] }[] = [
   { what: "Voxels and 2.5D (#45)", tools: VOXEL_TOOLS },
   { what: "3D model to pixel sprites (#44)", tools: MODEL_TOOLS },
   { what: "Pixel FX library (#69)", tools: FX_TOOLS },
+  { what: "FX on a character's timeline: overlay and hit-stop (#70)", tools: FX_TIMING_TOOLS },
 ];

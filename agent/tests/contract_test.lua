@@ -226,7 +226,7 @@ local function normalize(st)
       local item = { name = l.name, visible = l.visible, group = l.group and true or false }
       if l.group then item.layers = layers(l.layers)
       else
-        item.cels = l.celFrames or {}; item.tilemap = l.tilemap and true or false
+        item.cels = l.celFrames or {}; item.links = l.celLinks or {}; item.tilemap = l.tilemap and true or false
         item.opacity = l.opacity; item.blendMode = l.blendMode
       end
       out[i] = item
@@ -242,6 +242,7 @@ local function normalize(st)
     durations = durations, activeFrame = st.activeFrame, activeLayer = activeLayer,
     layers = layers(s.layers), tags = tags,
     palette = s.palette and s.palette.colors or {}, slices = s.slices or {}, selection = s.selection,
+    hits = s.fxHits or {},
   }
 end
 

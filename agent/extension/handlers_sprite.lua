@@ -252,14 +252,127 @@ return function(handlers, D)
   -- sprite changes. params.palette: hex colors appended to the sprite palette
   -- first (the ones it lacks), in the same transaction. Returns the layers
   -- written, in order of first use, and paletteAdded when palette was given.
+  --
+  -- Timeline edits (#70), in the same transaction, before the images:
+  -- params.insert = { { after, durations, shift? = { layers, offsets } } }
+  -- puts #durations new frames right after frame `after` (numbered as before
+  -- any insert). Each image layer's cel in a new frame is LINKED to its cel in
+  -- `after` (LinkCels' CopyCel with links), except shift.layers, which get a
+  -- copy moved by offsets[i] = { x, y } (linked cels share their position).
+  -- Tags that cover `after` grow; later tags and recorded hits move. Then
+  -- params.durations = { { frame, ms } } sets durations (final numbering) and
+  -- params.hit = { frame, freeze_ms, shake_ms?, amp? } is appended to the
+  -- sprite property aseprite-agent "fx.hits" (get_state's fxHits). Image
+  -- frames use the final numbering.
   local IMAGE_KEYS = { width = true, height = true, rgba = true, frame = true, new_layer = true, layer = true,
                        above = true, x = true, y = true, hide = true, blend_mode = true, opacity = true }
+  local HITS_KEY = "fx.hits"
+  local function isInt(v) return math.type(v) == "integer" end
+
+  -- params.insert checked, sorted by `after`, layers resolved. Returns the list and the frame count it adds.
+  local function checkInserts(sprite, list)
+    local out, seen, total = {}, {}, 0
+    for i, ins in ipairs(list or {}) do
+      local what = "Insert " .. i .. ": "
+      if type(ins) ~= "table" then error(what .. "expected an object") end
+      for k in pairs(ins) do
+        if k ~= "after" and k ~= "durations" and k ~= "shift" then error(what .. "unknown param '" .. tostring(k) .. "'") end
+      end
+      if not isInt(ins.after) or ins.after < 1 or ins.after > #sprite.frames then
+        error(string.format("%safter must be a frame from 1 to %d", what, #sprite.frames))
+      end
+      if seen[ins.after] then error(what .. "frame " .. ins.after .. " is listed twice") end
+      seen[ins.after] = true
+      local ds = ins.durations
+      if type(ds) ~= "table" or #ds == 0 then error(what .. "durations must list at least one duration") end
+      for _, d in ipairs(ds) do
+        if not isInt(d) or d < 1 then error(what .. "durations must be whole ms of at least 1") end
+      end
+      local shift = {}
+      if ins.shift ~= nil then
+        local sh = ins.shift
+        if type(sh) ~= "table" or type(sh.layers) ~= "table" or type(sh.offsets) ~= "table" then
+          error(what .. "shift needs layers and offsets")
+        end
+        if #sh.offsets ~= #ds then error(what .. "shift needs one offset per new frame") end
+        for _, o in ipairs(sh.offsets) do
+          if type(o) ~= "table" or not isInt(o.x) or not isInt(o.y) then error(what .. "offsets are { x, y } in whole pixels") end
+        end
+        for _, ref in ipairs(sh.layers) do
+          local l = layerById(ref, sprite)
+          if not l or not l.isImage then error(what .. "no image layer " .. tostring(ref)) end
+          shift[l.id] = true
+        end
+      end
+      out[#out + 1] = { after = ins.after, durations = ds, shift = shift, offsets = ins.shift and ins.shift.offsets }
+      total = total + #ds
+    end
+    table.sort(out, function(a, b) return a.after < b.after end)
+    return out, total
+  end
+
+  -- The recorded hits (aseprite-agent "fx.hits") as plain tables.
+  local function readHits(sprite)
+    local out = {}
+    for _, h in ipairs(sprite.properties(variations.KEY)[HITS_KEY] or {}) do
+      out[#out + 1] = { frame = h.frame, freezeMs = h.freezeMs, shakeMs = h.shakeMs, amp = h.amp }
+    end
+    return out
+  end
+
+  -- One insert, inside the caller's transaction: new frames after `after`, cels linked (or moved copies).
+  local function insertFrames(sprite, ins)
+    local n = #ins.durations
+    for k = 1, n do
+      local nf = sprite:newEmptyFrame(ins.after + k)
+      nf.duration = ins.durations[k] / 1000
+    end
+    local function each(layers)
+      for _, l in ipairs(layers) do
+        if l.isGroup then each(l.layers)
+        elseif l.isImage then
+          local cel = l:cel(ins.after)
+          if cel and ins.shift[l.id] then
+            for k = 1, n do
+              local o = ins.offsets[k]
+              sprite:newCel(l, ins.after + k, cel.image:clone(), Point(cel.position.x + o.x, cel.position.y + o.y))
+            end
+          elseif cel then
+            local frames = {}
+            for f = ins.after, ins.after + n do frames[#frames + 1] = sprite.frames[f] end
+            app.range.layers = { l }
+            app.range.frames = frames
+            app.command.LinkCels()
+          end
+        end
+      end
+    end
+    each(sprite.layers)
+    app.range:clear()
+  end
+
   handlers.put_images = function(params)
     local sprite = app.sprite
     local images = params.images or {}
-    if #images == 0 then error("No images") end
-    local count = math.max(#sprite.frames, params.frames or 0)
+    local inserts, inserted = checkInserts(sprite, params.insert)
+    if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil then error("No images") end
+    local count = math.max(#sprite.frames + inserted, params.frames or 0)
     if params.duration ~= nil and params.duration < 1 then error("duration must be at least 1 ms") end
+    for i, d in ipairs(params.durations or {}) do
+      if type(d) ~= "table" or not isInt(d.frame) or not isInt(d.ms) or d.ms < 1 then
+        error("Durations " .. i .. ": expected { frame, ms } with ms of at least 1")
+      end
+      if d.frame < 1 or d.frame > count then error(string.format("Durations %d: frame %d is out of range (1-%d)", i, d.frame, count)) end
+    end
+    local hit = params.hit
+    if hit ~= nil then
+      if not isInt(hit.frame) or hit.frame < 1 or hit.frame > count then
+        error(string.format("hit: frame must be from 1 to %d", count))
+      end
+      if not isInt(hit.freeze_ms) or hit.freeze_ms < 0 then error("hit: freeze_ms must be whole ms, 0 or more") end
+      if hit.shake_ms ~= nil and (not isInt(hit.shake_ms) or hit.shake_ms < 0) then error("hit: shake_ms must be whole ms, 0 or more") end
+      if hit.amp ~= nil and (not isInt(hit.amp) or hit.amp < 0) then error("hit: amp must be whole pixels, 0 or more") end
+    end
     local checked = {}
     for i, im in ipairs(images) do
       local what = "Image " .. i .. ": "
@@ -303,10 +416,32 @@ return function(handlers, D)
         for i, h in ipairs(paletteAdd) do p:setColor(start + i - 1, Color(px.parseHex(h))) end
         sprite:setPalette(p)
       end
+      -- Inserts, last first so every `after` keeps its number. Tag ranges and hits are worked out as numbers
+      -- and set at the end: a tag covering `after` grows, a later one moves.
+      if #inserts > 0 then
+        local ranges = {}
+        for i, t in ipairs(sprite.tags) do ranges[i] = { t.fromFrame.frameNumber, t.toFrame.frameNumber } end
+        local hits = readHits(sprite)
+        for k = #inserts, 1, -1 do
+          local ins, n = inserts[k], #inserts[k].durations
+          insertFrames(sprite, ins)
+          for _, r in ipairs(ranges) do
+            if r[1] > ins.after then r[1] = r[1] + n end
+            if r[2] >= ins.after then r[2] = r[2] + n end
+          end
+          for _, h in ipairs(hits) do if h.frame > ins.after then h.frame = h.frame + n end end
+          if activeFrame and activeFrame > ins.after then activeFrame = activeFrame + n end
+        end
+        for i, t in ipairs(sprite.tags) do
+          if t.toFrame.frameNumber ~= ranges[i][2] then t.toFrame = ranges[i][2] end
+          if t.fromFrame.frameNumber ~= ranges[i][1] then t.fromFrame = ranges[i][1] end
+        end
+        if #hits > 0 then sprite.properties(variations.KEY)[HITS_KEY] = hits end
+      end
       -- New frames at the end, each a copy of the last frame's cels. Aseprite grows a tag that ends on the
       -- last frame over new frames; put them back (as mirror_frames does).
-      local ranges = {}
-      for i, t in ipairs(sprite.tags) do ranges[i] = t.toFrame.frameNumber end
+      local ends = {}
+      for i, t in ipairs(sprite.tags) do ends[i] = t.toFrame.frameNumber end
       while #sprite.frames < count do
         local last = #sprite.frames
         local nf = sprite:newEmptyFrame(last + 1)
@@ -324,7 +459,13 @@ return function(handlers, D)
         added = added + 1
       end
       for i, t in ipairs(sprite.tags) do
-        if t.toFrame.frameNumber ~= ranges[i] then t.toFrame = ranges[i] end
+        if t.toFrame.frameNumber ~= ends[i] then t.toFrame = ends[i] end
+      end
+      for _, d in ipairs(params.durations or {}) do sprite.frames[d.frame].duration = d.ms / 1000 end
+      if hit then
+        local hits = readHits(sprite)
+        hits[#hits + 1] = { frame = hit.frame, freezeMs = hit.freeze_ms, shakeMs = hit.shake_ms, amp = hit.amp }
+        sprite.properties(variations.KEY)[HITS_KEY] = hits
       end
       for i, im in ipairs(images) do
         local c = checked[i]
@@ -339,7 +480,7 @@ return function(handlers, D)
     end)
     if activeFrame then app.frame = sprite.frames[activeFrame] end
     app.refresh()
-    return { layers = layers, frames = #sprite.frames, added = added,
+    return { layers = layers, frames = #sprite.frames, added = added, inserted = inserted,
              paletteAdded = params.palette ~= nil and #paletteAdd or nil }
   end
 

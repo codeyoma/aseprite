@@ -154,11 +154,20 @@ function M.new(opts)
         item.tilemap = l.isTilemap or nil
         item.background = l.isBackground or nil
         item.reference = l.isReference or nil
-        local cels = {}
+        local cels, byImage, links = {}, {}, {}
         for _, cel in ipairs(l.cels) do
           cels[#cels + 1] = cel.frameNumber
+          -- Linked cels share one image: celLinks lists each group of 2+ frames (#70).
+          local id = cel.image.id
+          if byImage[id] then
+            if #byImage[id] == 1 then links[#links + 1] = byImage[id] end
+            table.insert(byImage[id], cel.frameNumber)
+          else
+            byImage[id] = { cel.frameNumber }
+          end
         end
         item.celFrames = cels
+        if #links > 0 then item.celLinks = links end
       end
       out[#out + 1] = item
     end
@@ -216,6 +225,13 @@ function M.new(opts)
       }
     end
     if #slices > 0 then info.slices = slices end
+
+    -- Hits recorded by hit_stop (#70): the sprite property aseprite-agent "fx.hits".
+    local hits = {}
+    for _, h in ipairs(sprite.properties("aseprite-agent")["fx.hits"] or {}) do
+      hits[#hits + 1] = { frame = h.frame, freezeMs = h.freezeMs, shakeMs = h.shakeMs, amp = h.amp }
+    end
+    if #hits > 0 then info.fxHits = hits end
 
     local sel = sprite.selection
     if sel and not sel.isEmpty then
@@ -311,6 +327,13 @@ function M.new(opts)
         frames = frames,
       }
     end
+
+    -- Hits recorded by hit_stop (#70): the sprite property aseprite-agent "fx.hits".
+    local hits = {}
+    for _, h in ipairs(sprite.properties("aseprite-agent")["fx.hits"] or {}) do
+      hits[#hits + 1] = { frame = h.frame, freezeMs = h.freezeMs, shakeMs = h.shakeMs, amp = h.amp }
+    end
+    if #hits > 0 then info.fxHits = hits end
 
     local sel = sprite.selection
     if sel and not sel.isEmpty then

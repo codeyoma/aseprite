@@ -211,9 +211,17 @@ export function fakeDocument({
     ...(l.group ? { layers: describe(l.layers) } : {
       opacity: l.opacity ?? 255, blendMode: l.blendMode ?? "normal",
       celFrames: l.cels.flatMap((c, i) => (c ? [i + 1] : [])),
+      ...linksOf(l),
       ...(l.tilemap ? { tilemap: true } : {}),
     }),
   }));
+  // Linked cels are one cel object in several frames; celLinks lists each group of 2+ frames (document_view.lua).
+  const linksOf = (l) => {
+    const groups = new Map();
+    l.cels.forEach((c, i) => { if (c) groups.set(c, [...(groups.get(c) ?? []), i + 1]); });
+    const links = [...groups.values()].filter((g) => g.length > 1).sort((a, b) => a[0] - b[0]);
+    return links.length ? { celLinks: links } : {};
+  };
   const pathOf = (l) => (l.parent ? `${pathOf(l.parent)}/${l.name}` : l.name);
   // A new layer's blend mode and opacity from wire params, checked first (handlers_sprite.lua layerLook).
   const layerLook = (p, what) => {
@@ -266,6 +274,7 @@ export function fakeDocument({
           palette: { size: s.palette.length, colors: s.palette.slice(0, 256) },
           ...(s.slices.length ? { slices: s.slices.map((x) => ({ ...x })) } : {}),
           ...(s.selection ? { selection: { ...s.selection } } : {}),
+          ...(s.hits?.length ? { fxHits: s.hits.map((h) => ({ ...h })) } : {}),
         },
       };
     },
@@ -285,12 +294,51 @@ export function fakeDocument({
       const target = putOne(active.sprite, p, bytes, p.frame, layerLook(p, ""));
       return { layer: `L${target.id}`, name: target.name };
     },
-    // Several images in one undo step; the sprite first gets at least `frames` frames, copies of the last one.
+    // Several images in one undo step (handlers_sprite.lua put_images): inserts (linked cels or moved copies,
+    // tags covering `after` grow, later tags and hits move), then at least `frames` frames (copies of the last
+    // one), durations, a recorded hit, and the images, all in the numbering after the inserts.
     put_images: (p) => {
       const s = active.sprite;
-      if (!p.images.length) throw new Error("No images");
-      const count = Math.max(s.durations.length, p.frames ?? 0);
+      const isInt = Number.isInteger;
+      const inserts = (p.insert ?? []).map((ins, i) => {
+        const what = `Insert ${i + 1}: `;
+        if (!ins || typeof ins !== "object" || Array.isArray(ins)) throw new Error(`${what}expected an object`);
+        for (const k of Object.keys(ins)) if (!["after", "durations", "shift"].includes(k)) throw new Error(`${what}unknown param '${k}'`);
+        if (!isInt(ins.after) || ins.after < 1 || ins.after > s.durations.length) throw new Error(`${what}after must be a frame from 1 to ${s.durations.length}`);
+        if (!Array.isArray(ins.durations) || !ins.durations.length) throw new Error(`${what}durations must list at least one duration`);
+        if (ins.durations.some((d) => !isInt(d) || d < 1)) throw new Error(`${what}durations must be whole ms of at least 1`);
+        const shift = new Set();
+        if (ins.shift !== undefined) {
+          const sh = ins.shift;
+          if (!sh || !Array.isArray(sh.layers) || !Array.isArray(sh.offsets)) throw new Error(`${what}shift needs layers and offsets`);
+          if (sh.offsets.length !== ins.durations.length) throw new Error(`${what}shift needs one offset per new frame`);
+          if (sh.offsets.some((o) => !o || !isInt(o.x) || !isInt(o.y))) throw new Error(`${what}offsets are { x, y } in whole pixels`);
+          for (const ref of sh.layers) {
+            const l = byRef(ref);
+            if (!l || l.group) throw new Error(`${what}no image layer ${ref}`);
+            shift.add(l);
+          }
+        }
+        return { after: ins.after, durations: ins.durations, shift, offsets: ins.shift?.offsets };
+      }).sort((a, b) => a.after - b.after);
+      for (let i = 1; i < inserts.length; i++) {
+        if (inserts[i].after === inserts[i - 1].after) throw new Error(`Insert: frame ${inserts[i].after} is listed twice`);
+      }
+      const inserted = inserts.reduce((n, x) => n + x.durations.length, 0);
+      if (!p.images.length && !inserts.length && p.durations === undefined && p.hit === undefined) throw new Error("No images");
+      const count = Math.max(s.durations.length + inserted, p.frames ?? 0);
       if (p.duration !== undefined && p.duration < 1) throw new Error("duration must be at least 1 ms");
+      (p.durations ?? []).forEach((d, i) => {
+        if (!d || !isInt(d.frame) || !isInt(d.ms) || d.ms < 1) throw new Error(`Durations ${i + 1}: expected { frame, ms } with ms of at least 1`);
+        if (d.frame < 1 || d.frame > count) throw new Error(`Durations ${i + 1}: frame ${d.frame} is out of range (1-${count})`);
+      });
+      const hit = p.hit;
+      if (hit !== undefined) {
+        if (!isInt(hit.frame) || hit.frame < 1 || hit.frame > count) throw new Error(`hit: frame must be from 1 to ${count}`);
+        if (!isInt(hit.freeze_ms) || hit.freeze_ms < 0) throw new Error("hit: freeze_ms must be whole ms, 0 or more");
+        if (hit.shake_ms !== undefined && (!isInt(hit.shake_ms) || hit.shake_ms < 0)) throw new Error("hit: shake_ms must be whole ms, 0 or more");
+        if (hit.amp !== undefined && (!isInt(hit.amp) || hit.amp < 0)) throw new Error("hit: amp must be whole pixels, 0 or more");
+      }
       const checked = p.images.map((im, i) => {
         const what = `Image ${i + 1}: `;
         if (!im || typeof im !== "object" || Array.isArray(im)) throw new Error(`${what}expected an object`);
@@ -311,6 +359,26 @@ export function fakeDocument({
         if (paletteAdd.length && s.defaultPalette) throw unsupported("appending to the default palette of a new sprite");
       }
       if (paletteAdd) s.palette.push(...paletteAdd);
+      // Inserts, last first so every `after` keeps its number.
+      for (const ins of [...inserts].reverse()) {
+        const n = ins.durations.length, at = ins.after;
+        s.durations.splice(at, 0, ...ins.durations);
+        for (const l of walk(s.layers)) {
+          if (l.group) continue;
+          const c = l.cels[at - 1];
+          const fresh = !c ? Array(n).fill(undefined)
+            : ins.shift.has(l) ? ins.offsets.map((o) => ({ ...c, x: c.x + o.x, y: c.y + o.y, data: new Uint8Array(c.data) }))
+            : Array(n).fill(c);
+          while (l.cels.length < at) l.cels.push(undefined);
+          l.cels.splice(at, 0, ...fresh);
+        }
+        for (const t of s.tags) {
+          if (t.from > at) t.from += n;
+          if (t.to >= at) t.to += n;
+        }
+        for (const h of s.hits ?? []) if (h.frame > at) h.frame += n;
+        if (active.frame > at) active.frame += n;
+      }
       let added = 0;
       // Sprite:newFrame: a copy of the last frame's cels (every image layer), with its duration unless one is given.
       while (s.durations.length < count) {
@@ -322,12 +390,19 @@ export function fakeDocument({
         }
         added++;
       }
+      for (const d of p.durations ?? []) s.durations[d.frame - 1] = d.ms;
+      if (hit) {
+        s.hits = [...(s.hits ?? []), {
+          frame: hit.frame, freezeMs: hit.freeze_ms,
+          ...(hit.shake_ms !== undefined ? { shakeMs: hit.shake_ms } : {}), ...(hit.amp !== undefined ? { amp: hit.amp } : {}),
+        }];
+      }
       const layers = [], seen = new Set();
       p.images.forEach((im, i) => {
         const target = putOne(s, { ...im, prompt: p.prompt }, checked[i].bytes, im.frame, checked[i].look);
         if (!seen.has(target.id)) { seen.add(target.id); layers.push({ layer: `L${target.id}`, name: target.name }); }
       });
-      return { layers, frames: s.durations.length, added, ...(paletteAdd ? { paletteAdded: paletteAdd.length } : {}) };
+      return { layers, frames: s.durations.length, added, inserted, ...(paletteAdd ? { paletteAdded: paletteAdd.length } : {}) };
     },
     create_sprite: (p) => {
       const bytes = decode(p.rgba);

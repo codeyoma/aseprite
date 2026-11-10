@@ -301,6 +301,31 @@
     ]
   },
   {
+    "name": "fx_overlay",
+    "title": "Effect on an animation",
+    "kind": "edit",
+    "label": "Effect on the animation",
+    "input": [
+      "anchor",
+      "anchor_layer",
+      "flip",
+      "fps",
+      "glow",
+      "hit_frame",
+      "id",
+      "light",
+      "options",
+      "overflow",
+      "palette",
+      "seed",
+      "start_frame",
+      "tag",
+      "timing",
+      "x",
+      "y"
+    ]
+  },
+  {
     "name": "get_context",
     "title": "Get user context",
     "kind": "read",
@@ -320,6 +345,18 @@
     "kind": "read",
     "label": "Read the timeline",
     "input": []
+  },
+  {
+    "name": "hit_stop",
+    "title": "Hit-stop",
+    "kind": "edit",
+    "label": "Hit-stop",
+    "input": [
+      "flash_layer",
+      "frame",
+      "freeze_ms",
+      "shake"
+    ]
   },
   {
     "name": "import_sheet",
