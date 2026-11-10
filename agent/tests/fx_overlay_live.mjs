@@ -8,7 +8,7 @@ const { c, lua, chat, check, soft, done } = await live({ provider });
 
 // A 64x64 sprite: a Hero rectangle that winds up (left), lunges (right) and recovers over 6 frames of 100 ms,
 // tagged `attack`.
-const attack = `local s = Sprite(64, 64, ColorMode.RGB) s.layers[1].name = "Hero"
+const attack = `local s = Sprite(64, 64, ColorMode.RGB) s.layers[1].name = "Hero" local pal = Palette(3) pal:setColor(0, Color(0, 0, 0, 0)) pal:setColor(1, Color(0, 0, 0)) pal:setColor(2, Color(40, 90, 200)) s:setPalette(pal)
   for _ = 2, 6 do s:newEmptyFrame() end
   local xs = { 18, 16, 20, 28, 26, 22 }
   for f = 1, 6 do
@@ -40,7 +40,9 @@ check("an AI: fx layer exists", !!fxLayer, a.layers);
 // fx_overlay with the tag cuts or retimes inside it, so only the hit-stop changes the total; extending past the
 // tag (overflow 'extend') would add whole effect frames, which this check allows one of for rounding.
 const grew = a.total - before.total;
-check("the duration grew by 120 ms (within a frame of rounding)", Math.abs(grew - 120) <= step, { before: before.total, after: a.total });
+check("the duration grew by at least the 120 ms hit-stop", grew >= 120 - step, { before: before.total, after: a.total });
+// Exactly 120 ms unless the agent also chose to extend or retime the effect.
+soft("the duration grew by 120 ms (within a frame of rounding)", Math.abs(grew - 120) <= step, { before: before.total, after: a.total });
 const k = await c.call("check", {});
 check("check finds no errors", /\b0 errors\b/.test(k.content?.[0]?.text ?? ""), (k.content?.[0]?.text ?? "").split("\n")[0]);
 soft("a melee slash effect", /slash|cleave|claw/.test(fxLayer ?? ""), fxLayer);

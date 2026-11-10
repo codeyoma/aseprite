@@ -7,7 +7,7 @@ import { renderFx } from "./fx/index.js";
 import { findFx, type FxEntry } from "./fx/library.js";
 import { RECIPE_LIMITS, parseRecipe, recipeEntry } from "./fx/recipe.js";
 import { anchorInput, effectOptions, fxCanvas, fxSprite, placeFx, previewFx } from "./fx_tools.js";
-import type { Rgba } from "./image.js";
+import { OPAQUE, type Rgba } from "./image.js";
 import { failure, text, type Tool, type ToolResult } from "./tool.js";
 
 /** The effect an FX record names, rebuilt to render again: its recipe, else the library effect; undefined when neither. */
@@ -76,7 +76,7 @@ const span = (pts: { x0: number; y0: number; x1: number; y1: number }) => `x ${p
  *   out; without a record to render, a last frame with content that is the sprite's last frame.
  * - loop-seam: in a loop, the change from the layer's last frame back to its first (pixels that differ) is
  *   more than twice a normal step between neighbouring frames (the 90th percentile) and more than 12 px.
- * - colors: more distinct colors (RGB, any alpha) on the layer than maxColors.
+ * - colors: more distinct opaque colors (alpha >= OPAQUE; soft glow fringes do not count) on the layer than maxColors.
  */
 export function checkFxLayer(layer: LayerInfo, images: (Rgba | null)[], sprite: { width: number; height: number }, o: FxCheckOptions = {}): FxFinding[] {
   const out: FxFinding[] = [];
@@ -184,7 +184,7 @@ export function checkFxLayer(layer: LayerInfo, images: (Rgba | null)[], sprite: 
   // Colors.
   const max = o.maxColors ?? 24;
   const colors = new Set<number>();
-  for (const img of imgs) for (let i = 0; i < img.data.length; i += 4) if (img.data[i + 3]) colors.add((img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2]);
+  for (const img of imgs) for (let i = 0; i < img.data.length; i += 4) if (img.data[i + 3] >= OPAQUE) colors.add((img.data[i] << 16) | (img.data[i + 1] << 8) | img.data[i + 2]);
   if (colors.size > max) {
     out.push({ ...base, rule: "colors", severity: "warning", count: colors.size, pixels: [],
       message: `${colors.size} colors on the layer (more than ${max})`,
@@ -288,7 +288,7 @@ export const FX_RECIPE_TOOLS: Tool[] = [
       "spill (re-rendered from the layer's FX record at its origin: pixels outside the sprite, an error, or past the effect's own canvas, " +
       "where it was cut; without a record, pixels on the sprite's edge), one-shot-end (a one-shot that still draws at its duration, so it " +
       "pops off), loop-seam (a loop whose last frame jumps back to its first: more than twice a normal frame step and more than 12 px), " +
-      "and colors (more distinct colors than max_colors). Nothing changes. Run it after add_fx, fx_from_recipe or fx_overlay.",
+      "and colors (more distinct opaque colors than max_colors). Nothing changes. Run it after add_fx, fx_from_recipe or fx_overlay.",
     input: z.object({
       layer: z.string().optional().describe("A layer id ('L12') or name. Default every FX layer."),
       max_colors: z.number().int().min(1).max(256).optional().describe("Colors a layer may use. Default 24."),

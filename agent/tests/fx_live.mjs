@@ -5,7 +5,7 @@ import { live } from "./live.mjs";
 const provider = process.argv[2] ?? "claude";
 const { c, lua, chat, check, soft, done } = await live({ provider });
 
-await lua(`local s = Sprite(64, 64, ColorMode.RGB) s.layers[1].name = "Hero"
+await lua(`local s = Sprite(64, 64, ColorMode.RGB) s.layers[1].name = "Hero" local pal = Palette(3) pal:setColor(0, Color(0, 0, 0, 0)) pal:setColor(1, Color(0, 0, 0)) pal:setColor(2, Color(40, 90, 200)) s:setPalette(pal)
   local img = Image(64, 64, ColorMode.RGB)
   for y = 40, 60 do for x = 26, 38 do img:drawPixel(x, y, Color(40, 90, 200)) end end
   s.layers[1]:cel(1).image = img
