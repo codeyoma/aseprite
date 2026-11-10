@@ -1656,6 +1656,63 @@ handlers.put_image = function(params)
   return { layer = "L" .. target.id, name = target.name }
 end
 
+-- Copies frames (a tag, or a list) to new frames at the end, flipped
+-- horizontally, as a new tag (#43): left from right, NW from NE. Layers in
+-- keep_layers are copied unflipped (a sword hand that must stay on its
+-- side is redrawn by hand instead). One undo step.
+handlers.mirror_frames = function(params)
+  local sprite = app.sprite
+  if not sprite then error("No active sprite") end
+  local frames = {}
+  if params.tag then
+    for _, t in ipairs(sprite.tags) do
+      if t.name == params.tag then
+        for f = t.fromFrame.frameNumber, t.toFrame.frameNumber do frames[#frames + 1] = f end
+      end
+    end
+    if #frames == 0 then error("No tag named " .. tostring(params.tag)) end
+  else
+    frames = framesFromParam(sprite, params.frames)
+  end
+  local keep = {}
+  for _, name in ipairs(params.keep_layers or {}) do
+    local l = layerById(name, sprite)
+    if l then keep[l.id] = true end   -- by id: layer objects are new wrappers on each access
+  end
+  local first
+  app.transaction("Mirror frames", function()
+    for i, f in ipairs(frames) do
+      local nf = sprite:newEmptyFrame(#sprite.frames + 1)
+      nf.duration = sprite.frames[f].duration
+      if i == 1 then first = nf.frameNumber end
+      local function copy(layers)
+        for _, l in ipairs(layers) do
+          if l.isGroup then copy(l.layers)
+          elseif l.isImage then
+            local cel = l:cel(f)
+            if cel then
+              local img = cel.image:clone()
+              local pos = cel.position
+              if not keep[l.id] then
+                img:flip(FlipType.HORIZONTAL)
+                pos = Point(sprite.width - (pos.x + img.width), pos.y)
+              end
+              sprite:newCel(l, nf.frameNumber, img, pos)
+            end
+          end
+        end
+      end
+      copy(sprite.layers)
+    end
+    if params.new_tag then
+      local t = sprite:newTag(first, first + #frames - 1)
+      t.name = params.new_tag
+    end
+  end)
+  app.refresh()
+  return { from = first, to = first + #frames - 1, frames = #frames }
+end
+
 -- A swatch strip of colors on a new layer "AI: <name>" (one undo step).
 handlers.draw_swatches = function(params)
   local sprite = app.sprite

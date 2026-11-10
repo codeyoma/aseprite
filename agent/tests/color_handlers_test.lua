@@ -102,4 +102,24 @@ H.call("set_palette", { colors = { "#ff004d", "#29adff" }, append = true })
 local pp = H.call("get_palette", {}).colors
 check("palette append", #pp == 3 and pp[3] == "#29adff", table.concat(pp, ","))
 
+-- mirror_frames (#43): a tag copied flipped as a new tag; kept layers unflipped.
+local ms = Sprite(8, 4, ColorMode.RGB)
+ms:newFrame()
+local body = ms.layers[1]; body.name = "Body"
+local sword = ms:newLayer(); sword.name = "Sword"
+for f = 1, 2 do
+  local b = Image(2, 2, ColorMode.RGB); b:clear(Color(255, 0, 0)); b:drawPixel(0, 0, Color(0, 0, 255))
+  ms:newCel(body, f, b, Point(1, 1))
+  local w = Image(1, 1, ColorMode.RGB); w:clear(Color(0, 255, 0))
+  ms:newCel(sword, f, w, Point(6, 0))
+end
+local tg = ms:newTag(1, 2); tg.name = "walk_E"
+r = H.call("mirror_frames", { tag = "walk_E", new_tag = "walk_W", keep_layers = { "Sword" } })
+local wt
+for _, t in ipairs(ms.tags) do if t.name == "walk_W" then wt = t end end
+check("mirror: new frames and tag", #ms.frames == 4 and wt and wt.fromFrame.frameNumber == 3 and wt.toFrame.frameNumber == 4, json.encode(r))
+local mc = body:cel(3)
+check("mirror: flipped and moved", mc.position.x == 5 and app.pixelColor.rgbaB(mc.image:getPixel(1, 0)) == 255)
+check("mirror: kept layer unflipped", sword:cel(3).position.x == 6)
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

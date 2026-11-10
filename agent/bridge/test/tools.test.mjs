@@ -27,7 +27,7 @@ test("every tool is fully defined", () => {
     assert.ok(t.title && t.description, `${t.name}: title and description`);
     assert.ok(t.kind === "edit" || t.kind === "read", `${t.name}: kind`);
     assert.ok(t.label({}).length > 0, `${t.name}: label`);
-    const required = new Set(["execute_lua", "run_command", "propose_variations", "save_command", "run_saved_command", "delete_saved_command", "apply_timeline_text", "spawn_agents", "import_sheet", "recreate_from_reference", "make_ramp", "transform_layer", "rotate_layer", "squash_stretch", "smear_frame"]);
+    const required = new Set(["execute_lua", "run_command", "propose_variations", "save_command", "run_saved_command", "delete_saved_command", "apply_timeline_text", "spawn_agents", "import_sheet", "recreate_from_reference", "make_ramp", "transform_layer", "rotate_layer", "squash_stretch", "smear_frame", "mirror_direction"]);
     assert.ok(t.input.safeParse({}).success || required.has(t.name), `${t.name}: optional input`);
   }
 });
