@@ -1,0 +1,25 @@
+{
+  "skill": "make-tileset",
+  "title": "A 16x16 grass-on-dirt autotile set with a preview map",
+  "animated": false,
+  "target": { "title": "preview" },
+  "fixture": [
+    "local s = Sprite(16, 16, ColorMode.RGB)",
+    "local hx = { \"2a1d17\", \"5b3a24\", \"8a5a34\", \"b8844e\", \"1e4d2b\", \"2f7a3a\", \"4fa64a\", \"8fd16a\" }",
+    "local p = Palette(#hx + 1) p:setColor(0, Color(0, 0, 0, 0))",
+    "for i, h in ipairs(hx) do p:setColor(i, Color(tonumber(h:sub(1, 2), 16), tonumber(h:sub(3, 4), 16), tonumber(h:sub(5, 6), 16))) end",
+    "s:setPalette(p)"
+  ],
+  "steps": [
+    "/skill:make-tileset Make a 16x16 grass-on-dirt autotile set (47 tiles) in this sprite's palette, with a preview map. Don't export files.",
+    "Make the grass edge more irregular, with a few grass tufts hanging over the dirt, and update the set and the preview."
+  ],
+  "criteria": [
+    { "id": "ran-skill", "type": "skill" },
+    { "id": "set", "type": "sprites", "title": "47-tile set", "desc": "a 47-tile set sprite" },
+    { "id": "set-size", "type": "sprites", "title": "47-tile set", "width": 128, "height": 96, "desc": "16 px tiles in an 8x6 grid (128x96)" },
+    { "id": "preview", "type": "sprites", "title": "preview", "tilemap": true, "desc": "a preview map on a tilemap layer" },
+    { "id": "set-palette", "type": "palette", "sprite": { "title": "47-tile set" }, "colors": ["2a1d17", "5b3a24", "8a5a34", "b8844e", "1e4d2b", "2f7a3a", "4fa64a", "8fd16a"], "desc": "the set uses only the palette's colors" },
+    { "id": "set-check-clean", "type": "check", "sprite": { "title": "47-tile set" } }
+  ]
+}

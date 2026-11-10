@@ -1,0 +1,30 @@
+{
+  "skill": "animate",
+  "title": "Walk cycle and idle loop for a small side-view hero",
+  "animated": true,
+  "fixture": [
+    "local s = Sprite(24, 32, ColorMode.RGB) s.layers[1].name = \"Hero\"",
+    "local skin, shirt, pants, dark = Color(255, 204, 170), Color(41, 120, 255), Color(60, 60, 90), Color(24, 20, 37)",
+    "local pal = Palette(7) pal:setColor(0, Color(0, 0, 0, 0)) pal:setColor(1, dark) pal:setColor(2, skin) pal:setColor(3, shirt) pal:setColor(4, pants) pal:setColor(5, Color(29, 43, 83)) pal:setColor(6, Color(140, 200, 255)) s:setPalette(pal)",
+    "local img = Image(24, 32, ColorMode.RGB)",
+    "for y = 4, 10 do for x = 9, 15 do img:drawPixel(x, y, skin) end end",
+    "img:drawPixel(13, 7, dark)",
+    "for y = 11, 20 do for x = 9, 15 do img:drawPixel(x, y, shirt) end end",
+    "for y = 21, 30 do img:drawPixel(10, y, pants) img:drawPixel(11, y, pants) img:drawPixel(13, y, pants) img:drawPixel(14, y, pants) end",
+    "s.layers[1]:cel(1).image = img"
+  ],
+  "steps": [
+    "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs.",
+    "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+  ],
+  "criteria": [
+    { "id": "ran-skill", "type": "skill", "desc": "the first turn ran the animate skill" },
+    { "id": "size-kept", "type": "size", "width": 24, "height": 32, "desc": "the canvas keeps its size" },
+    { "id": "ten-frames", "type": "frames", "min": 10, "desc": "6 walk + 4 idle frames or more" },
+    { "id": "walk-tag", "type": "tag", "name": "walk", "minFrames": 6 },
+    { "id": "idle-tag", "type": "tag", "name": "idle", "minFrames": 4 },
+    { "id": "walk-moves", "type": "distinct", "tag": "walk", "min": 5, "desc": "every walk frame differs from the one before" },
+    { "id": "no-repeats-or-jitter", "type": "check", "rules": ["duplicate-frame", "ground-jitter"], "desc": "check: no repeated frames, feet stay on the ground" },
+    { "id": "check-clean", "type": "check", "desc": "check: 0 errors" }
+  ]
+}

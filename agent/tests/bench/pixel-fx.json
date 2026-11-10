@@ -1,0 +1,41 @@
+{
+  "skill": "pixel-fx",
+  "title": "Frost nova timed to a mage's staff attack",
+  "animated": true,
+  "fixture": [
+    "local s = Sprite(160, 112, ColorMode.RGB) s.layers[1].name = \"Mage\"",
+    "local robe, hood, staff, skin = Color(80, 40, 160), Color(50, 25, 110), Color(120, 80, 40), Color(240, 200, 160)",
+    "local pal = Palette(5) pal:setColor(0, Color(0, 0, 0, 0)) pal:setColor(1, robe) pal:setColor(2, hood) pal:setColor(3, staff) pal:setColor(4, skin) s:setPalette(pal)",
+    "for _ = 2, 6 do s:newEmptyFrame() end",
+    "local lean = { 0, -1, -2, 2, 3, 1 }",
+    "local tip = { -6, -10, -12, 4, 6, 0 }",
+    "for f = 1, 6 do",
+    "  s.frames[f].duration = 0.1",
+    "  local img = Image(160, 112, ColorMode.RGB)",
+    "  local x0 = 72 + lean[f]",
+    "  for y = 74, 99 do for x = x0 - math.floor((y - 74) / 5), x0 + 9 + math.floor((y - 74) / 5) do img:drawPixel(x, y, robe) end end",
+    "  for y = 62, 73 do for x = x0 + 1, x0 + 8 do img:drawPixel(x, y, hood) end end",
+    "  for y = 66, 70 do for x = x0 + 3, x0 + 6 do img:drawPixel(x, y, skin) end end",
+    "  local sx = x0 + 14 + math.max(tip[f], 0)",
+    "  for y = 60 + math.min(tip[f], 0), 96 do img:drawPixel(sx, y, staff) end",
+    "  s:newCel(s.layers[1], f, img, Point(0, 0))",
+    "end",
+    "local t = s:newTag(1, 6) t.name = \"attack\"",
+    "app.frame = s.frames[1]"
+  ],
+  "steps": [
+    "/skill:pixel-fx Add a frost nova to my mage's attack, bursting from the staff tip when it thrusts forward.",
+    "Add a short hit stop on the impact frame, and make sure the effect ends cleanly."
+  ],
+  "criteria": [
+    { "id": "ran-skill", "type": "skill" },
+    { "id": "size-kept", "type": "size", "width": 160, "height": 112 },
+    { "id": "frames-kept", "type": "frames", "min": 6 },
+    { "id": "attack-tag", "type": "tag", "name": "^attack$", "minFrames": 6 },
+    { "id": "fx-layer", "type": "layers", "match": "^AI: fx ", "min": 1, "desc": "an AI: fx layer holds the effect" },
+    { "id": "hit-recorded", "type": "lua", "desc": "a hit stop is recorded on the sprite (fx.hits)",
+      "code": "local h = app.sprite.properties(\"aseprite-agent\")[\"fx.hits\"] or {} return { ok = #h > 0, detail = #h }" },
+    { "id": "fx-check-clean", "type": "check_fx" },
+    { "id": "check-clean", "type": "check" }
+  ]
+}

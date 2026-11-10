@@ -1,0 +1,23 @@
+{
+  "skill": "make-ui",
+  "title": "A three-state Play button and a 9-patch panel in a fixed palette",
+  "animated": false,
+  "target": { "minFrames": 3 },
+  "fixture": [
+    "local s = Sprite(64, 64, ColorMode.RGB) local p = Palette(16)",
+    "local hx = { \"000000\", \"1d2b53\", \"7e2553\", \"008751\", \"ab5236\", \"5f574f\", \"c2c3c7\", \"fff1e8\", \"ff004d\", \"ffa300\", \"ffec27\", \"00e436\", \"29adff\", \"83769c\", \"ff77a8\", \"ffccaa\" }",
+    "for i, h in ipairs(hx) do p:setColor(i - 1, Color(tonumber(h:sub(1, 2), 16), tonumber(h:sub(3, 4), 16), tonumber(h:sub(5, 6), 16))) end",
+    "s:setPalette(p)"
+  ],
+  "steps": [
+    "/skill:make-ui Make a 'Play' button with normal, hover and pressed states, using this sprite's palette.",
+    "Now make a small 48x32 panel in the same style, with 9-patch slices, in the same palette."
+  ],
+  "criteria": [
+    { "id": "ran-skill", "type": "skill" },
+    { "id": "button", "type": "sprites", "minFrames": 3, "nineSlice": true, "desc": "a button sprite with 3 or more state frames and a 9-patch slice" },
+    { "id": "panel", "type": "sprites", "nineSlice": true, "min": 2, "desc": "a second sprite with a 9-patch slice (the panel)" },
+    { "id": "button-palette", "type": "palette", "sprite": { "minFrames": 3 }, "colors": ["000000", "1d2b53", "7e2553", "008751", "ab5236", "5f574f", "c2c3c7", "fff1e8", "ff004d", "ffa300", "ffec27", "00e436", "29adff", "83769c", "ff77a8", "ffccaa"], "desc": "the button uses only the palette's colors" },
+    { "id": "button-check-clean", "type": "check", "sprite": { "minFrames": 3 } }
+  ]
+}

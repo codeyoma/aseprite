@@ -78,6 +78,18 @@ node agent/tests/eval_live.mjs --keep dither             # directly; --keep leav
 
 **agent**: the chat tests. Hard checks (`PASS`/`FAIL`) prove the skill ran: the header names the skill, the result exists, and `check` reports 0 errors. Soft checks (`SOFT-PASS`/`SOFT-FAIL`) score what the model chose, such as layer and tag names, brightness thresholds and timing. They are listed in the summary but don't fail the run. `run_live.mjs` exits with 1 only when a hard check fails.
 
+**Benchmarks** (`agent/tests/bench/<name>.json`) judge the art, not only the tools: each one builds a fixed sprite with its own palette, sends a fixed sequence of prompts through the panel, checks pass/fail criteria through the tools (frames, tags, layers, sizes, palette, `check` and `check_fx` errors), saves the result, and has the other provider score it blind on the 0-4 rubric in `agent/tests/bench/RUBRIC.md`. A run goes to `agent/tests/bench/runs/<date>-<provider>/<name>/` (`generation.yaml`, `filmstrip.png`, `final.png`, `final-1x.png`, `result.aseprite`). The exit code is 1 when a criterion failed:
+
+```bash
+node agent/tests/run_bench.mjs --list                              # the benchmarks
+node agent/tests/run_bench.mjs                                     # all, drawn by Claude, judged by Codex
+node agent/tests/run_bench.mjs --provider codex animate pixel-fx   # some, drawn by Codex, judged by Claude
+node agent/tests/run_bench.mjs --no-judge recolor                  # criteria only
+node agent/tests/run_bench.mjs --rejudge agent/tests/bench/runs/2026-11-11-claude   # score a run again
+```
+
+`--model <id>` records the drawing model (the panel does not report it) and `--judge-model <id>` picks the judge's. The benchmarks share one chat conversation, so start with a fresh panel (New chat) for a baseline.
+
 End to end, with Aseprite open:
 
 ```bash

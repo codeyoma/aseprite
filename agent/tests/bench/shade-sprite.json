@@ -1,0 +1,27 @@
+{
+  "skill": "shade-sprite",
+  "title": "Shade a flat green ball, then outline it",
+  "animated": false,
+  "fixture": [
+    "local s = Sprite(32, 32, ColorMode.RGB) s.layers[1].name = \"Body\"",
+    "local pal = Palette(8) pal:setColor(0, Color(0, 0, 0, 0)) pal:setColor(1, Color(20, 40, 30)) pal:setColor(2, Color(30, 90, 60)) pal:setColor(3, Color(60, 170, 80)) pal:setColor(4, Color(140, 220, 110)) pal:setColor(5, Color(230, 250, 180)) pal:setColor(6, Color(24, 20, 37)) pal:setColor(7, Color(255, 255, 255)) s:setPalette(pal)",
+    "local img = Image(32, 32, ColorMode.RGB)",
+    "for y = 0, 31 do for x = 0, 31 do if (x - 15.5) ^ 2 + (y - 15.5) ^ 2 < 100 then img:drawPixel(x, y, Color(60, 170, 80)) end end end",
+    "s.layers[1]:cel(1).image = img"
+  ],
+  "steps": [
+    "/skill:shade-sprite Shade this flat ball with light from the top left, 3 bands, using the palette's greens.",
+    "Now add a selout outline around it, darker than the shading."
+  ],
+  "criteria": [
+    { "id": "ran-skill", "type": "skill" },
+    { "id": "size-kept", "type": "size", "width": 32, "height": 32 },
+    { "id": "one-frame", "type": "frames", "min": 1, "max": 1, "desc": "still a single frame" },
+    { "id": "ai-layer", "type": "layers", "match": "^AI: ", "min": 1, "desc": "the result is on AI: layers" },
+    { "id": "outline-pixel", "type": "lua", "desc": "an opaque pixel just outside the original circle (the outline)",
+      "code": "local s = app.sprite local img = Image(s.width, s.height, ColorMode.RGB) img:drawSprite(s, 1) local a = app.pixelColor.rgbaA(img:getPixel(15, 5)) return { ok = a == 255, detail = a }" },
+    { "id": "lit-top-left", "type": "lua", "desc": "the top-left of the ball is brighter than the bottom-right",
+      "code": "local s = app.sprite local img = Image(s.width, s.height, ColorMode.RGB) img:drawSprite(s, 1) local function L(x, y) local v = img:getPixel(x, y) return app.pixelColor.rgbaR(v) * 0.3 + app.pixelColor.rgbaG(v) * 0.59 + app.pixelColor.rgbaB(v) * 0.11 end local tl, br = L(10, 10), L(21, 21) return { ok = tl > br + 20, detail = { tl = tl, br = br } }" },
+    { "id": "check-clean", "type": "check" }
+  ]
+}

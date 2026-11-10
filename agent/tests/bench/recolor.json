@@ -1,0 +1,38 @@
+{
+  "skill": "recolor",
+  "title": "Red and green team versions that keep the shading",
+  "animated": false,
+  "fixture": [
+    "local s = Sprite(16, 20, ColorMode.RGB) s.layers[1].name = \"Hero\"",
+    "local pal = Palette(6) pal:setColor(0, Color(0, 0, 0, 0)) pal:setColor(1, Color(24, 20, 37)) pal:setColor(2, Color(255, 204, 170)) pal:setColor(3, Color(29, 43, 83)) pal:setColor(4, Color(41, 120, 255)) pal:setColor(5, Color(140, 200, 255)) s:setPalette(pal)",
+    "local img = Image(16, 20, ColorMode.RGB)",
+    "for y = 1, 6 do for x = 5, 10 do img:drawPixel(x, y, Color(255, 204, 170)) end end",
+    "local shirt = { Color(29, 43, 83), Color(41, 120, 255), Color(140, 200, 255) }",
+    "for y = 7, 16 do for x = 4, 11 do img:drawPixel(x, y, shirt[(x < 6) and 1 or ((x > 9) and 3 or 2)]) end end",
+    "for y = 1, 16 do img:drawPixel(4, y, Color(24, 20, 37)) img:drawPixel(11, y, Color(24, 20, 37)) end",
+    "s.layers[1]:cel(1).image = img"
+  ],
+  "steps": [
+    "/skill:recolor Make a red team version of the Hero, recoloring only the blue shirt and keeping its three shades.",
+    "Now make a green team version the same way."
+  ],
+  "criteria": [
+    { "id": "ran-skill", "type": "skill" },
+    { "id": "size-kept", "type": "size", "width": 16, "height": 20 },
+    { "id": "two-variants", "type": "layers", "match": "^AI: ", "min": 2, "desc": "two AI: variant layers (nested ones count)" },
+    { "id": "skin-kept", "type": "lua", "desc": "every variant keeps the skin color and has a shirt that is no longer blue",
+      "code": [
+        "local out, ok, n = {}, true, 0",
+        "local function walk(layers) for _, l in ipairs(layers) do",
+        "  if l.isGroup then walk(l.layers) elseif l.name:match(\"^AI:\") and l:cel(1) then",
+        "    local c = l:cel(1) local function at(x, y) local p = c.image:getPixel(x - c.position.x, y - c.position.y) return app.pixelColor.rgbaR(p), app.pixelColor.rgbaG(p), app.pixelColor.rgbaB(p) end",
+        "    local r, g, b = at(7, 3) local sr, sg, sb = at(7, 10)",
+        "    local good = r == 255 and g == 204 and b == 170 and (sr > sb or sg > sb)",
+        "    ok = ok and good n = n + 1 out[#out + 1] = l.name .. (good and \" ok\" or \" bad\")",
+        "  end end end",
+        "walk(app.sprite.layers)",
+        "return { ok = ok and n >= 2, detail = out }"
+      ] },
+    { "id": "check-clean", "type": "check" }
+  ]
+}
