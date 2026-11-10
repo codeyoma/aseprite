@@ -10,7 +10,13 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Wire Protocol**: the JSON-RPC messages between bridge and extension, defined once in `agent/extension/protocol.json` (version, requests, binary results, bridge methods, chat events). Both sides check their code against it, and the bridge rejects a different version at hello.
 
-**Agent Provider**: one agent CLI the chat panel can run (Claude Code, Codex). Each provider is an adapter that builds the CLI command for a message and parses the CLI's JSON output into provider events (`agent/bridge/src/providers`).
+**Agent Provider**: one agent the chat panel can run (Claude Code, Codex). Each provider names its ACP agent package and how to pass the system prompt, and keeps a stream-json adapter (the CLI command plus a parser of its JSON output) as a fallback (`agent/bridge/src/providers`).
+
+**ACP Runtime**: how the chat runs agents by default: the Agent Client Protocol, through `claude-agent-acp` and `codex-acp`. One long-lived agent process per provider, one ACP session per Conversation; a message is `session/prompt`, Stop is `session/cancel`, and after a bridge restart the Conversation continues with `session/load` (`agent/bridge/src/acp.ts`, mapped to chat events by `acp_mapper.ts`). `ASEPRITE_AGENT_RUNTIME=stream` uses the stream-json CLIs instead.
+
+**Plan**: the agent's checklist for the running turn (ACP `plan` updates), shown in the Chat Panel and updated in place.
+
+**Permission request**: an ACP agent asking before it uses a tool that is not pre-approved. The Chat Panel shows the agent's options; no answer within two minutes rejects it.
 
 **Conversation**: one chat thread with a provider, identified by the provider's own id (Claude session id, Codex thread id). The chat panel's Conversation module (`agent/extension/conversation.lua`) records its messages and steps and keeps the ids, so a conversation survives bridge restarts.
 

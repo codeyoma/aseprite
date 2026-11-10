@@ -92,6 +92,36 @@ do
   check("no check, no badge", c:entries()[#c:entries()].check == nil)
 end
 
+-- ACP: refined tool steps, plans and permission requests (#31).
+do
+  local c = Conversation.new{ clock = clock }
+  c:send("draw", "claude")
+  c:apply{ type = "tool", id = "t1", tool = "Run Lua", name = "execute_lua", kind = "edit" }
+  c:apply{ type = "tool", id = "t1", tool = "Run Lua: add layer", name = "execute_lua", kind = "edit", detail = "code" }
+  local tools = 0
+  for _, e in ipairs(c:entries()) do if e.kind == "tool" then tools = tools + 1 end end
+  local t = c:entries()[#c:entries()]
+  check("same tool id refines the step", tools == 1 and t.text == "Run Lua: add layer" and t.detail == "code")
+
+  c:apply{ type = "plan", entries = { { content = "Add layer", status = "in_progress" }, { content = "Draw", status = "pending" } } }
+  c:apply{ type = "plan", entries = { { content = "Add layer", status = "completed" }, { content = "Draw", status = "in_progress" } } }
+  local plans, plan = 0, nil
+  for _, e in ipairs(c:entries()) do if e.kind == "plan" then plans = plans + 1; plan = e end end
+  check("one plan per turn, updated in place", plans == 1 and plan.items[1].status == "completed" and #plan.items == 2)
+
+  local r = c:apply{ type = "permission", requestId = "p1", text = "Run ls", options = { { optionId = "allow", name = "Allow" } } }
+  check("permission is handed to the panel", r.permission and r.permission.requestId == "p1" and not r.turnEnded)
+  c:recordPermission("Run ls", "Allow")
+  check("answer recorded", c:entries()[#c:entries()].text == "Permission for Run ls: Allow")
+  c:apply{ type = "done" }
+
+  c:send("again", "claude")
+  c:apply{ type = "plan", entries = { { content = "New", status = "pending" } } }
+  plans = 0
+  for _, e in ipairs(c:entries()) do if e.kind == "plan" then plans = plans + 1 end end
+  check("next turn gets its own plan", plans == 2)
+end
+
 -- Mentions and links (#20)
 do
   local m = { Body = "aseprite://layer/L2", walk = "aseprite://tag/walk" }

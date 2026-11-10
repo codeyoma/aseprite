@@ -5,6 +5,14 @@ export const codexProvider: AgentProvider = {
   id: "codex",
   executable: "codex",
 
+  acp: {
+    package: "@agentclientprotocol/codex-acp",
+    bin: "codex-acp",
+    sessionMeta: () => ({}),
+    // CODEX_CONFIG is merged into the session config.
+    env: (systemPrompt) => ({ CODEX_CONFIG: JSON.stringify({ developer_instructions: systemPrompt }) }),
+  },
+
   command({ message, conversationId, mcpUrl, mcpToken, systemPrompt }) {
     const s = `mcp_servers.${MCP_SERVER_NAME}`;
     const config = [

@@ -10,7 +10,7 @@ export type ProviderEvent =
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
   /** `tool` is the bridge's tool name without any MCP prefix, e.g. "execute_lua". */
-  | { type: "tool"; id: string; tool: string; input: unknown }
+  | { type: "tool"; id: string; tool: string; input: unknown; kind?: "edit" | "read" }
   | { type: "tool_result"; id: string; tool: string; ok: boolean; content: unknown }
   | { type: "error"; text: string };
 
@@ -26,8 +26,21 @@ export interface CommandRequest {
   systemPrompt: string;
 }
 
+/** How to run the provider as an ACP agent (Agent Client Protocol). */
+export interface AcpSpec {
+  /** npm package that provides the ACP agent, and its bin name. */
+  package: string;
+  bin: string;
+  /** `_meta` for session/new and session/load. */
+  sessionMeta(systemPrompt: string): Record<string, unknown>;
+  /** Extra environment for the agent process. */
+  env(systemPrompt: string): Record<string, string>;
+}
+
 export interface AgentProvider {
   readonly id: ProviderId;
+  /** Preferred runtime; the stream-json command below is the fallback. */
+  readonly acp?: AcpSpec;
   /** Executable looked up on PATH. */
   readonly executable: string;
   /** Command-line arguments for one message. */

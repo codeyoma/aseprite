@@ -332,6 +332,20 @@ return function(deps)
         end
         stepRow(e, drawIcon, e.text, turnUndone and C.faint or C.text, e.status or (busy and "running" or nil), e.detail, e.result)
 
+      elseif k == "plan" then
+        -- The agent's plan as a checklist (ACP).
+        addRow(lh, function(y)
+          gc.color = C.dim
+          gc:fillText("Plan", pad, y)
+        end, nil, u)
+        for _, it in ipairs(e.items or {}) do
+          local mark = it.status == "completed" and "[x]" or (it.status == "in_progress" and "[>]" or "[ ]")
+          local color = it.status == "completed" and C.dim or C.text
+          local h, draw = textBlock(it, "plan", mark .. " " .. it.content, pad + u * 2, textW - u * 2, color)
+          addRow(h, draw, nil, u)
+        end
+        rows[#rows].gap = u * 3
+
       elseif k == "text" then
         -- Replies may cite objects as [label](aseprite://...) links (#20).
         local display, links = deps.Conversation.parseLinks(e.text)
@@ -476,6 +490,7 @@ return function(deps)
     if ev.type == "tool_result" or ev.type == "done" or ev.type == "error" then refreshContext() end
     local r = conv:apply(ev)
     if r.status then updateStatus(r.status) end
+    if r.permission then Panel.askPermission(r.permission) end
     if r.turnEnded and currentTurn then
       deps.TurnHistory.finish(currentTurn, app.sprite)
       lastTurn, currentTurn = currentTurn, nil
@@ -634,6 +649,25 @@ return function(deps)
     refreshContext()
     if dlg then dlg:repaint() end
     return ok
+  end
+
+  -- A permission request from the agent (ACP): ask, then answer the bridge.
+  -- Tests can set Panel.permissionAnswer to a function(request) -> option index.
+  function Panel.askPermission(req)
+    local options = req.options or {}
+    local labels = {}
+    for i, o in ipairs(options) do labels[i] = o.name or o.optionId end
+    if #labels == 0 then labels = { "OK" } end
+    local index
+    if Panel.permissionAnswer then
+      index = Panel.permissionAnswer(req)
+    else
+      index = app.alert{ title = "AI Agent asks permission", text = { "The agent wants to use:", req.text or "a tool" }, buttons = labels }
+    end
+    local chosen = options[index]
+    deps.request("chat.permission", { requestId = req.requestId, optionId = chosen and chosen.optionId or "" }, function() end)
+    conv:recordPermission(req.text, chosen and (chosen.name or chosen.optionId) or "rejected")
+    changed()
   end
 
   -- The most recent reply's record, and actions on it (tests, other scripts).

@@ -31,7 +31,7 @@ async function main() {
   log(`listening on ws://127.0.0.1:${port} (${daemon ? "daemon" : "stdio"}), MCP HTTP on ${endpoint.url}`);
 
   const shutdown = () => {
-    chat.stop();
+    chat.dispose();
     link.stop();
     endpoint.server.close();
     process.exit(0);

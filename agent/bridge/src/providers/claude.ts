@@ -7,6 +7,18 @@ export const claudeProvider: AgentProvider = {
   id: "claude",
   executable: "claude",
 
+  acp: {
+    package: "@agentclientprotocol/claude-agent-acp",
+    bin: "claude-agent-acp",
+    // Append our instructions to Claude Code's prompt; no built-in tools (no
+    // shell, files or web), and the Aseprite tools without asking each time.
+    sessionMeta: (systemPrompt) => ({
+      systemPrompt: { append: systemPrompt },
+      claudeCode: { options: { tools: [], allowedTools: [`mcp__${MCP_SERVER_NAME}`] } },
+    }),
+    env: () => ({}),
+  },
+
   command({ message, conversationId, mcpUrl, mcpToken, systemPrompt }) {
     const mcpConfig = {
       mcpServers: {

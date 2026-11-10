@@ -13,6 +13,7 @@
 --   { kind = "thought", text, secs }
 --   { kind = "tool", text, id, toolKind = "edit"|"read", detail, status = nil|"ok"|"failed", result }
 --   { kind = "worked", secs, check = nil|{ errors, warnings } }   -- the turn's last check, if any
+--   { kind = "plan", items = { { content, status = "pending"|"in_progress"|"completed" }, ... } }
 
 local PROVIDER_NAMES = { claude = "Claude", codex = "Codex" }
 local MAX_ENTRIES = 400
@@ -96,8 +97,31 @@ function Conversation:apply(ev)
   elseif t == "thinking" then
     push(self, { kind = "thought", text = ev.text or "", secs = sinceLast(self) })
   elseif t == "tool" then
+    -- ACP agents refine a step as its input streams in: same id, newer label.
+    for i = #self.list, 1, -1 do
+      local e = self.list[i]
+      if e.kind == "user" then break end
+      if e.kind == "tool" and ev.id and e.id == ev.id then
+        e.text, e.detail = ev.tool or e.text, ev.detail or e.detail
+        e.name, e.toolKind = ev.name or e.name, ev.kind or e.toolKind
+        return { turnEnded = false }
+      end
+    end
     sinceLast(self)
     push(self, { kind = "tool", text = ev.tool or "tool", name = ev.name, id = ev.id, toolKind = ev.kind, detail = ev.detail })
+  elseif t == "plan" then
+    -- One plan per turn, updated in place as the agent works through it.
+    local items = {}
+    for _, it in ipairs(ev.entries or {}) do items[#items + 1] = { content = it.content, status = it.status } end
+    for i = #self.list, 1, -1 do
+      local e = self.list[i]
+      if e.kind == "user" then break end
+      if e.kind == "plan" then e.items = items; return { turnEnded = false } end
+    end
+    push(self, { kind = "plan", items = items })
+  elseif t == "permission" then
+    -- The panel asks the user; the answer is recorded with recordPermission.
+    return { turnEnded = false, permission = ev }
   elseif t == "tool_result" then
     sinceLast(self)
     for i = #self.list, 1, -1 do
@@ -123,6 +147,11 @@ function Conversation:apply(ev)
     return { turnEnded = true }
   end
   return { turnEnded = false }
+end
+
+-- Records the user's answer to a permission request.
+function Conversation:recordPermission(title, answer)
+  push(self, { kind = "status", text = string.format("Permission for %s: %s", title or "a tool", answer) })
 end
 
 -- Forgets the messages and conversation ids (New chat).

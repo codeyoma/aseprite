@@ -38,6 +38,9 @@
   },
   "homepage": "https://github.com/codeyoma/aseprite/tree/agent/agent",
   "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "^0.102.0",
+    "@agentclientprotocol/codex-acp": "^2.6.0",
+    "@agentclientprotocol/sdk": "^2.5.0",
     "@modelcontextprotocol/node": "^2.1.2",
     "@modelcontextprotocol/server": "^2.4.0",
     "pngjs": "^7.0.0",

@@ -77,6 +77,10 @@ function init(plugin)
       return Panel.turnAction(t, "revert")
     end,
     restoreLast = function() local t = Panel.lastTurn(); return t and Panel.turnAction(t, "restore") end,
+    setPermissionAnswer = function(fn) Panel.permissionAnswer = fn end,
+    -- Feeds a chat event to the panel as if the bridge sent it (tests).
+    applyEvent = function(ev) Panel.onEvent(ev) end,
+    stop = function() connection.request("chat.stop", {}, function() end) end,
     lastTurnStatus = function() local t = Panel.lastTurn(); return t and load("turn_history.lua").status(t) end,
   }
 

@@ -12,12 +12,14 @@ import type { HttpEndpoint } from "./http.js";
 import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type ProviderId } from "./providers/index.js";
 import { sessionDir } from "./session.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
+import { acpCommand, AcpRunner, type PermissionOutcome, type PermissionRequest } from "./acp.js";
+import type { AcpEvent, PlanEntry } from "./providers/acp_mapper.js";
 
 export type { ProviderId as Provider } from "./providers/index.js";
 
 /** What the chat panel receives (method "chat.event"). */
 export interface ChatEvent {
-  type: "status" | "text" | "thinking" | "tool" | "tool_result" | "done" | "error" | "session";
+  type: "status" | "text" | "thinking" | "tool" | "tool_result" | "done" | "error" | "session" | "plan" | "permission";
   text?: string;
   /** Step label, e.g. "Add Shadow layer". */
   tool?: string;
@@ -32,7 +34,15 @@ export interface ChatEvent {
   ok?: boolean;
   provider?: ProviderId;
   sessionId?: string;
+  /** "plan": the agent's plan as a checklist (ACP). */
+  entries?: PlanEntry[];
+  /** "permission": the request to answer with chat.permission, and its options. */
+  requestId?: string;
+  options?: { optionId: string; name: string; kind: string }[];
 }
+
+/** How long a permission request waits for the user before it is rejected. */
+export const PERMISSION_TIMEOUT_MS = 120_000;
 
 export const SYSTEM_PROMPT = `You are the AI assistant inside Aseprite's "AI Agent" panel. The user is talking to you from inside Aseprite while they draw.
 Use the aseprite MCP tools to do what they ask in the open document. Read the guide with read_guide("basics") before your first edit in a conversation.
@@ -54,7 +64,7 @@ export function toChatEvent(ev: ProviderEvent, provider: ProviderId): ChatEvent 
     case "thinking": return { type: "thinking", text: ev.text };
     case "error": return { type: "error", text: ev.text };
     case "tool":
-      return { type: "tool", id: ev.id, tool: describeTool(ev.tool, ev.input), name: ev.tool, kind: toolKind(ev.tool), detail: inputDetail(ev.input) };
+      return { type: "tool", id: ev.id, tool: describeTool(ev.tool, ev.input), name: ev.tool, kind: ev.kind ?? toolKind(ev.tool), detail: inputDetail(ev.input) };
     case "tool_result":
       return { type: "tool_result", id: ev.id, tool: ev.tool, name: ev.tool, ok: ev.ok, detail: resultDetail(ev.content) };
   }
@@ -68,6 +78,11 @@ function which(cmd: string): string | undefined {
 
 export class ChatRunner {
   private proc?: ChildProcess;
+  // ACP runtime (preferred): one long-lived agent per provider.
+  private acpRunners = new Map<ProviderId, AcpRunner>();
+  private acpTurn?: { provider: ProviderId; stopped: boolean };
+  private permissions = new Map<string, { resolve: (o: PermissionOutcome) => void; timer: NodeJS.Timeout; options: PermissionRequest["options"] }>();
+  private nextPermission = 1;
   // Conversation ids. The panel owns them (they survive bridge restarts) and
   // passes them with each message; new ones are reported with "session".
   private conversations: Partial<Record<ProviderId, string>> = {};
@@ -84,7 +99,13 @@ export class ChatRunner {
   }
 
   get busy(): boolean {
-    return this.proc !== undefined;
+    return this.proc !== undefined || this.acpTurn !== undefined;
+  }
+
+  /** "acp" unless ASEPRITE_AGENT_RUNTIME=stream or the ACP agent isn't installed. */
+  runtimeFor(provider: AgentProvider): "acp" | "stream" {
+    if (process.env.ASEPRITE_AGENT_RUNTIME === "stream") return "stream";
+    return acpCommand(provider) ? "acp" : "stream";
   }
 
   providers(): Record<ProviderId, boolean> {
@@ -102,7 +123,26 @@ export class ChatRunner {
     this.conversations = {};
   }
 
+  /** Ends the agent processes (bridge shutdown). */
+  dispose(): void {
+    this.stop();
+    for (const r of this.acpRunners.values()) r.dispose();
+    this.acpRunners.clear();
+  }
+
   stop(): void {
+    if (this.acpTurn) {
+      // Cancel the turn but keep the session; the prompt then ends with
+      // stopReason "cancelled" and reports "Stopped.".
+      this.acpTurn.stopped = true;
+      for (const [id, p] of this.permissions) {
+        clearTimeout(p.timer);
+        p.resolve({ outcome: "cancelled" });
+        this.permissions.delete(id);
+      }
+      void this.acpRunners.get(this.acpTurn.provider)?.cancel();
+      return;
+    }
     if (this.proc) {
       this.proc.kill("SIGTERM");
       this.proc = undefined;
@@ -110,10 +150,73 @@ export class ChatRunner {
     }
   }
 
+  private sendAcp(prompt: string, state: string, provider: AgentProvider): void {
+    let runner = this.acpRunners.get(provider.id);
+    if (!runner) {
+      const record = this.recordDir
+        ? join(this.recordDir, `acp-${provider.id}-${new Date().toISOString().replace(/[:.]/g, "-")}.jsonl`)
+        : undefined;
+      runner = new AcpRunner(provider, this.endpoint, this.cwd, SYSTEM_PROMPT, {
+        onEvent: (ev: AcpEvent) => {
+          if (ev.type === "plan") this.emit({ type: "plan", entries: ev.entries });
+          else this.emit(toChatEvent(ev, provider.id));
+        },
+        onPermission: (req) => this.askPermission(req),
+      }, record);
+      this.acpRunners.set(provider.id, runner);
+    }
+
+    const turn = { provider: provider.id, stopped: false };
+    this.acpTurn = turn;
+    log(`chat: starting ${provider.id} (acp)`);
+    this.emit({ type: "status", text: `${provider.id} is working...` });
+    runner
+      .prompt(composeMessage(prompt, state), this.conversations[provider.id])
+      .then(({ conversationId, stopReason }) => {
+        if (this.conversations[provider.id] !== conversationId) {
+          this.conversations[provider.id] = conversationId;
+          this.emit({ type: "session", provider: provider.id, sessionId: conversationId });
+        }
+        if (stopReason === "cancelled" || turn.stopped) this.emit({ type: "done", text: "Stopped." });
+        else if (stopReason === "end_turn") this.emit({ type: "done" });
+        else this.emit({ type: "done", text: `The agent stopped early (${stopReason}).` });
+      })
+      .catch((err) => this.emit({ type: "error", text: err instanceof Error ? err.message : String(err) }))
+      .finally(() => {
+        if (this.acpTurn === turn) this.acpTurn = undefined;
+        log(`chat: ${provider.id} (acp) turn ended`);
+      });
+  }
+
+  /** Forwards a permission request to the panel and waits for the answer. */
+  private askPermission(req: PermissionRequest): Promise<PermissionOutcome> {
+    const requestId = `perm-${this.nextPermission++}`;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.permissions.delete(requestId);
+        resolve(rejectOutcome(req.options));
+        this.emit({ type: "status", text: "A permission request timed out and was rejected." });
+      }, PERMISSION_TIMEOUT_MS);
+      this.permissions.set(requestId, { resolve, timer, options: req.options });
+      this.emit({ type: "permission", requestId, text: req.title, options: req.options });
+    });
+  }
+
+  /** Answers a permission request from the panel (optionId, or null to reject). */
+  answerPermission(requestId: string, optionId: string | null): boolean {
+    const p = this.permissions.get(requestId);
+    if (!p) return false;
+    clearTimeout(p.timer);
+    this.permissions.delete(requestId);
+    p.resolve(optionId && p.options.some((o) => o.optionId === optionId) ? { outcome: "selected", optionId } : rejectOutcome(p.options));
+    return true;
+  }
+
   send(prompt: string, state: string, provider: AgentProvider, conversationId?: string): void {
-    if (this.proc) throw new Error("The agent is still working. Stop it first.");
+    if (this.busy) throw new Error("The agent is still working. Stop it first.");
     if (conversationId) this.conversations[provider.id] = conversationId;
     else delete this.conversations[provider.id];
+    if (this.runtimeFor(provider) === "acp") return this.sendAcp(prompt, state, provider);
     const bin = which(provider.executable);
     if (!bin) throw new Error(`${provider.executable} CLI not found on PATH`);
 
@@ -178,6 +281,11 @@ export class ChatRunner {
  * Handlers for the requests the extension's chat panel sends (the
  * protocol's bridgeMethods), keyed by method name.
  */
+function rejectOutcome(options: PermissionRequest["options"]): PermissionOutcome {
+  const reject = options.find((o) => o.kind === "reject_once") ?? options.find((o) => o.kind?.startsWith("reject"));
+  return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
+}
+
 export function chatMethods(chat: ChatRunner, version: string): Record<string, (params: any) => unknown> {
   return {
     "chat.info": () => ({ providers: chat.providers(), busy: chat.busy, version }),
@@ -189,6 +297,9 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
       chat.send(p.prompt, state, providerFor(p.provider), p.sessionId || undefined);
       return { started: true };
     },
+    "chat.permission": (p: { requestId: string; optionId?: string | null }) => ({
+      answered: chat.answerPermission(String(p.requestId), p.optionId ?? null),
+    }),
     "chat.stop": () => {
       chat.stop();
       return { stopped: true };
