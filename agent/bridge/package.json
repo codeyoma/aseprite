@@ -16,7 +16,8 @@
     "build": "tsc && node scripts/copy-guide.mjs",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test": "npm run build && node --test test/"
   },
   "engines": {
     "node": ">=20"

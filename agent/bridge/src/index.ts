@@ -10,7 +10,8 @@
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { AsepriteLink, log } from "./aseprite.js";
-import { ChatRunner, type Provider } from "./chat.js";
+import { ChatRunner } from "./chat.js";
+import { providerFor } from "./providers/index.js";
 import { startHttpEndpoint } from "./http.js";
 import { createMcpServer, VERSION } from "./server.js";
 import { newToken } from "./session.js";
@@ -26,9 +27,9 @@ async function main() {
   const chat = new ChatRunner(link, endpoint);
 
   link.onRequest("chat.info", () => ({ providers: chat.providers(), busy: chat.busy, version: VERSION }));
-  link.onRequest("chat.send", (p: { prompt: string; context?: string; provider?: Provider; sessionId?: string }) => {
+  link.onRequest("chat.send", (p: { prompt: string; context?: string; provider?: string; sessionId?: string }) => {
     if (!p.prompt?.trim()) throw new Error("Empty prompt");
-    chat.send(p.prompt, p.context ?? "", p.provider === "codex" ? "codex" : "claude", p.sessionId || undefined);
+    chat.send(p.prompt, p.context ?? "", providerFor(p.provider), p.sessionId || undefined);
     return { started: true };
   });
   link.onRequest("chat.stop", () => {

@@ -37,6 +37,10 @@ jobs:
           npm ci
           npm run build
 
+      - name: Unit tests (bridge)
+        working-directory: agent/bridge
+        run: node --test test/
+
       - name: Check the command catalog is up to date
         run: |
           python3 tools/gen_commands.py
