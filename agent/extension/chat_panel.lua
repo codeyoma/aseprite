@@ -4,7 +4,7 @@
 --
 -- Loaded by agent.lua: `local Panel = dofile(path)(deps)` where deps has
 --   request(method, params, callback), isConnected(), contextString(), stateBlock(),
---   mentionTargets(), resolveUri(uri), selectUri(uri),
+--   mentionTargets(), resolveUri(uri), selectUri(uri), TurnHistory (turn_history.lua),
 --   ensureBridge(callback), preferences, Conversation (conversation.lua).
 --
 -- The conversation itself (entries, timings, tool status, conversation ids)
@@ -28,6 +28,10 @@ return function(deps)
   local scrollPx = 0          -- distance scrolled up from the bottom, in pixels
   local hitRows = {}          -- clickable rows from the last paint: { y0, y1, entry }
   local hitLinks = {}         -- links drawn in the last paint: { x0, y0, x1, y1, uri }
+  local hitButtons = {}       -- Revert/Restore buttons: { x0, y0, x1, y1, action }
+  local turns = setmetatable({}, { __mode = "k" })   -- header entry -> Turn History record
+  local currentTurn = nil     -- the running turn's record
+  local lastTurn = nil        -- the last finished turn, for "changes since your last reply"
   local mentions = {}         -- @[label] -> aseprite:// URI for the draft being typed
   local lastPrompt = ""
   local contentH, viewH = 0, 0
@@ -254,6 +258,7 @@ return function(deps)
     end
 
     local busy = conv:isBusy()
+    local turnUndone = false     -- steps of a reverted reply are drawn faint
     for _, e in ipairs(conv:entries()) do
       local k = e.kind
       if k == "user" then
@@ -281,6 +286,9 @@ return function(deps)
         end, nil, u * 4)
 
       elseif k == "header" then
+        local turn = turns[e]
+        local status = turn and turn.finish and deps.TurnHistory.status(turn) or nil
+        turnUndone = (status == "undone")
         addRow(lh, function(y)
           local d = math.floor(lh * 0.55)
           gc.color = C.accent
@@ -289,6 +297,30 @@ return function(deps)
           gc:fill()
           gc.color = C.text
           gc:fillText(e.text, pad + d + u * 2, y)
+          -- Revert / Restore for the whole reply (#22).
+          local action, label
+          if status == "done" or status == "partly undone" then
+            if deps.TurnHistory.canRevert(turn) then action, label = "revert", "Revert" end
+          elseif status == "undone" then
+            action, label = "restore", "Restore"
+          end
+          local x = w - pad
+          if label then
+            local bw = gc:measureText(label).width + u * 4
+            x = x - bw
+            gc.color = C.rule
+            gc:beginPath()
+            gc:roundedRect(Rectangle(x, y - u // 2, bw, lh + u), u * 2, u * 2)
+            gc:fill()
+            gc.color = C.text
+            gc:fillText(label, x + u * 2, y)
+            hitButtons[#hitButtons + 1] = { x0 = x, y0 = y - u // 2, x1 = x + bw, y1 = y + lh + u // 2, turn = turn, action = action }
+          end
+          if status == "undone" or status == "partly undone" then
+            local note = status == "undone" and "reverted" or "partly undone"
+            gc.color = C.dim
+            gc:fillText(note, x - gc:measureText(note).width - u * 3, y)
+          end
         end, nil, u * 3)
 
       elseif k == "thought" then
@@ -298,7 +330,7 @@ return function(deps)
         local drawIcon = function(g, x, y, s)
           if e.toolKind == "edit" then iconPencil(g, x, y, s, C.dim) else iconEye(g, x, y, s, C.dim) end
         end
-        stepRow(e, drawIcon, e.text, C.text, e.status or (busy and "running" or nil), e.detail, e.result)
+        stepRow(e, drawIcon, e.text, turnUndone and C.faint or C.text, e.status or (busy and "running" or nil), e.detail, e.result)
 
       elseif k == "text" then
         -- Replies may cite objects as [label](aseprite://...) links (#20).
@@ -398,6 +430,7 @@ return function(deps)
 
     hitRows = {}
     hitLinks = {}
+    hitButtons = {}
     for _, r in ipairs(rows) do
       if y + r.h >= 0 and y <= h then r.draw(y) end
       if r.entry then hitRows[#hitRows + 1] = { y0 = y, y1 = y + r.h, entry = r.entry } end
@@ -443,6 +476,10 @@ return function(deps)
     if ev.type == "tool_result" or ev.type == "done" or ev.type == "error" then refreshContext() end
     local r = conv:apply(ev)
     if r.status then updateStatus(r.status) end
+    if r.turnEnded and currentTurn then
+      deps.TurnHistory.finish(currentTurn, app.sprite)
+      lastTurn, currentTurn = currentTurn, nil
+    end
     if r.turnEnded then
       updateStatus("")
       syncBusy()
@@ -512,14 +549,21 @@ return function(deps)
     if prompt:match("^%s*$") then return end
     local provider = dlg.data.provider or providers[1]
     deps.preferences.provider = provider
-    -- The document's state goes with every message (#18).
+    -- The document's state goes with every message (#18), after what changed
+    -- since the agent's last reply (#19), if anything.
     local state = deps.stateBlock()
+    local changes = lastTurn and lastTurn.sprite == app.sprite and deps.TurnHistory.changesSince(lastTurn) or nil
+    if changes then state = changes .. "\n" .. state end
 
     -- @[label] tokens become "label (aseprite://...)" for the agent (#20).
     local expanded = deps.Conversation.expandMentions(prompt, mentions)
     mentions = {}
     lastPrompt = ""
     conv:send(prompt, provider)
+    -- Record where this reply starts in the undo history (#22).
+    local header = conv:entries()[#conv:entries()]
+    currentTurn = deps.TurnHistory.begin(app.sprite)
+    turns[header] = currentTurn
     dlg:modify{ id = "prompt", text = "" }
     syncBusy()
     changed()
@@ -527,6 +571,7 @@ return function(deps)
 
     local function fail(text)
       conv:fail(text)
+      if currentTurn then deps.TurnHistory.finish(currentTurn, app.sprite); currentTurn = nil end
       syncBusy()
       updateStatus("")
       changed()
@@ -565,7 +610,34 @@ return function(deps)
   -- Adds a mention as the picker would (for tests and other scripts).
   function Panel.mention(name, uri) insertMention{ name = name, uri = uri } end
   function Panel.close() if dlg then dlg:close() end end
-  function Panel.refreshContext() refreshContext() end
+  function Panel.refreshContext()
+    refreshContext()
+    if dlg then dlg:repaint() end   -- undo/redo changes the replies' state
+  end
+
+  -- Revert or restore a reply (#22). Reverting over later edits asks first.
+  function Panel.turnAction(turn, action)
+    local TH = deps.TurnHistory
+    local ok, why
+    if action == "restore" then
+      ok, why = TH.restore(turn)
+    else
+      ok, why = TH.revert(turn)
+      if not ok and TH.hasLaterEdits(turn) then
+        local answer = app.alert{ title = "Revert reply",
+          text = { "You edited the sprite after this reply.", "Reverting also undoes those edits (they stay redoable)." },
+          buttons = { "Revert anyway", "Cancel" } }
+        if answer == 1 then ok, why = TH.revert(turn, true) end
+      end
+    end
+    if not ok and why then app.tip(why) end
+    refreshContext()
+    if dlg then dlg:repaint() end
+    return ok
+  end
+
+  -- The most recent reply's record, and actions on it (tests, other scripts).
+  function Panel.lastTurn() return lastTurn end
 
   -- Entries as plain records (for tests and other scripts).
   function Panel.entries()
@@ -609,6 +681,12 @@ return function(deps)
         dlg:repaint()
       end,
       onmousedown = function(ev)
+        for _, b in ipairs(hitButtons) do
+          if ev.x >= b.x0 and ev.x <= b.x1 and ev.y >= b.y0 and ev.y <= b.y1 then
+            Panel.turnAction(b.turn, b.action)
+            return
+          end
+        end
         for _, l in ipairs(hitLinks) do
           if ev.x >= l.x0 and ev.x <= l.x1 and ev.y >= l.y0 and ev.y <= l.y1 then
             if not deps.selectUri(l.uri) then app.tip("That no longer exists") end

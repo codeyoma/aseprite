@@ -53,6 +53,7 @@ function init(plugin)
     mentionTargets = handlers.Uri.targets,
     resolveUri = handlers.Uri.resolve,
     selectUri = handlers.Uri.select,
+    TurnHistory = load("turn_history.lua"),
     ensureBridge = connection.ensureBridge,
     preferences = plugin.preferences,
   }
@@ -69,6 +70,14 @@ function init(plugin)
     setPrompt = function(text) Panel.setPrompt(text) end,
     expandAll = function(state) Panel.expandAll(state) end,
     mention = function(name, uri) Panel.mention(name, uri) end,
+    revertLast = function(force)
+      local t = Panel.lastTurn()
+      if not t then return false end
+      if force then return load("turn_history.lua").revert(t, true) end
+      return Panel.turnAction(t, "revert")
+    end,
+    restoreLast = function() local t = Panel.lastTurn(); return t and Panel.turnAction(t, "restore") end,
+    lastTurnStatus = function() local t = Panel.lastTurn(); return t and load("turn_history.lua").status(t) end,
   }
 
   plugin:newMenuGroup{
@@ -110,6 +119,8 @@ function init(plugin)
 
   if app.events then
     app.events:on("sitechange", function() Panel.refreshContext() end)
+    -- Undo/redo from the Edit menu changes which replies are applied.
+    app.events:on("aftercommand", function() Panel.refreshContext() end)
   end
 
   -- Auto-connect by default; the menu's Disconnect turns it off.

@@ -29,7 +29,7 @@ Aseprite only loads extensions from real folders: it skips a symlinked extension
 ```bash
 E="$HOME/Library/Application Support/Aseprite/extensions/aseprite-agent"
 mkdir -p "$E"
-for f in package.json protocol.json agent.lua document_handlers.lua bridge_connection.lua chat_panel.lua conversation.lua; do
+for f in package.json protocol.json agent.lua document_handlers.lua bridge_connection.lua chat_panel.lua conversation.lua turn_history.lua; do
   ln -sf "$PWD/agent/extension/$f" "$E/$f"
 done
 ```
@@ -61,6 +61,12 @@ build/bin/aseprite -b \
   --script-param ext="$PWD/agent/extension" \
   --script-param fixtures="$PWD/agent/tests/fixtures" \
   --script agent/tests/conversation_test.lua
+```
+
+Reply history (revert/restore, changes since the last reply), in batch mode:
+
+```bash
+build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/turn_history_test.lua
 ```
 
 Pixel-art check rules, in batch mode:

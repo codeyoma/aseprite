@@ -30,6 +30,10 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **aseprite:// URI**: the address of a document object, shared by mentions and the agent's citations: `aseprite://layer/L12`, `frame/3`, `tag/<name>`, `cel/L12:3`, `palette/5`, `slice/<name>`, `selection`. Links in replies select the object when clicked (`Uri` in `document_handlers.lua`).
 
+**Turn History**: where each agent reply sits in the sprite's undo history (`turn_history.lua`). It reverts and restores a whole reply and summarises what changed since the last reply (`<changes-since-your-last-reply>`, sent before the state block).
+
+**Undo state id**: a never-reused id of an undo history state (this fork's `UndoState::id()`), read through `sprite.undoHistory.states` / `.current` and used with `sprite:undoTo(id)`.
+
 **Step**: one row of an agent turn in the chat panel: a thought, a tool call with its result, or the reply.
 
 **Script Panel**: a script dialog docked in the main window (`Dialog{ dockable = true }`), implemented by `ScriptPanel` in this fork.

@@ -10,6 +10,7 @@
 #endif
 
 #include "app/app.h"
+#include "app/cmd.h"
 #include "app/cmd/add_layer.h"
 #include "app/cmd/add_slice.h"
 #include "app/cmd/add_tile.h"
@@ -1073,6 +1074,24 @@ int Sprite_get_undoHistory(lua_State* L)
   lua_newtable(L);
   setfield_integer(L, "undoSteps", undoSteps);
   setfield_integer(L, "redoSteps", redoSteps);
+
+  // This fork: every state in creation order and the current one, so
+  // scripts can record positions and go back with sprite:undoTo(id).
+  // Ids are unique and never reused; 0 means "before the first state".
+  lua_newtable(L);
+  int i = 1;
+  for (const undo::UndoState* st = history->firstState(); st; st = st->next()) {
+    lua_newtable(L);
+    lua_pushinteger(L, lua_Integer(st->id()));
+    lua_setfield(L, -2, "id");
+    const auto* cmd = static_cast<const Cmd*>(st->cmd());
+    lua_pushstring(L, cmd ? cmd->label().c_str() : "");
+    lua_setfield(L, -2, "label");
+    lua_rawseti(L, -2, i++);
+  }
+  lua_setfield(L, -2, "states");
+  lua_pushinteger(L, lua_Integer(currentState ? currentState->id() : 0));
+  lua_setfield(L, -2, "current");
   return 1;
 }
 
@@ -1082,12 +1101,46 @@ int Sprite_get_isValid(lua_State* L)
   return 1;
 }
 
+// sprite:undoTo(id) (this fork): moves the undo history to that state
+// (0 = before the first state), like clicking it in the Undo History
+// panel. Returns false if the state doesn't exist.
+int Sprite_undoTo(lua_State* L)
+{
+  auto sprite = get_docobj<Sprite>(L, 1);
+  const lua_Integer id = luaL_checkinteger(L, 2);
+  Doc* doc = static_cast<Doc*>(sprite->document());
+  DocUndo* undo = doc->undoHistory();
+
+  const undo::UndoState* target = nullptr;
+  if (id != 0) {
+    for (const undo::UndoState* s = undo->firstState(); s; s = s->next()) {
+      if (lua_Integer(s->id()) == id) {
+        target = s;
+        break;
+      }
+    }
+    if (!target) {
+      lua_pushboolean(L, false);
+      return 1;
+    }
+  }
+  if (undo->currentState() != target) {
+    DocWriter writer(doc, 500);
+    undo->moveToState(target);
+    doc->generateMaskBoundaries();
+    doc->notifyGeneralUpdate();
+  }
+  lua_pushboolean(L, true);
+  return 1;
+}
+
 const luaL_Reg Sprite_methods[] = {
   { "__eq",              Sprite_eq                },
   { "resize",            Sprite_resize            },
   { "crop",              Sprite_crop              },
   { "saveAs",            Sprite_saveAs            },
   { "saveCopyAs",        Sprite_saveCopyAs        },
+  { "undoTo",            Sprite_undoTo            },
   { "close",             Sprite_close             },
   { "loadPalette",       Sprite_loadPalette       },
   { "setPalette",        Sprite_setPalette        },
@@ -1121,6 +1174,7 @@ const luaL_Reg Sprite_methods[] = {
 
 const Property Sprite_properties[] = {
   { "id",                   Sprite_get_id,                   nullptr                         },
+  { "undoHistory",          Sprite_get_undoHistory,          nullptr                         },
   { "filename",             Sprite_get_filename,             Sprite_set_filename             },
   { "isModified",           Sprite_get_isModified,           nullptr                         },
   { "hasAssociatedFile",    Sprite_get_hasAssociatedFile,    nullptr                         },
@@ -1148,7 +1202,6 @@ const Property Sprite_properties[] = {
   { "events",               Sprite_get_events,               nullptr                         },
   { "tileManagementPlugin", Sprite_get_tileManagementPlugin, Sprite_set_tileManagementPlugin },
   { "useLayerUuids",        Sprite_get_useLayerUuids,        Sprite_set_useLayerUuids        },
-  { "undoHistory",          Sprite_get_undoHistory,          nullptr                         },
   { "isValid",              Sprite_get_isValid,              nullptr                         },
   { nullptr,                nullptr,                         nullptr                         }
 };
