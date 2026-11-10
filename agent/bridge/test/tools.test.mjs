@@ -193,3 +193,36 @@ test("every registered tool module adds tools, and every tool has one owner", as
   const owned = TOOL_MODULES.flatMap((m) => m.tools);
   for (const t of owned) assert.equal(TOOLS.filter((x) => x === t).length, 1, t.name);
 });
+
+// Registration parity: moving tools between modules must not change what
+// agents see. fixtures/tool_registry.json was taken before the core tools
+// left tools.ts; update it only when a tool is meant to change.
+test("every tool keeps its name, title, kind, label and input keys", async () => {
+  const { readFileSync } = await import("node:fs");
+  const expected = JSON.parse(readFileSync(new URL("./fixtures/tool_registry.json", import.meta.url), "utf8"));
+  const actual = TOOLS.map((t) => ({ name: t.name, title: t.title, kind: t.kind, label: t.label({}), input: Object.keys(t.input.shape).sort() }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  assert.deepEqual(actual, expected);
+});
+
+test("spawn_agents runs through the context's sub-agent runner", async () => {
+  const { toolContext } = await import("../dist/tools.js");
+  const tool = findTool("spawn_agents");
+  const none = await runTool(tool, { tasks: [{ prompt: "x", frames: 1 }] }, toolContext(fakeAseprite()));
+  assert.match(textOf(none), /not available/);
+
+  const runs = [];
+  const subAgents = {
+    async run(tasks, parallel) {
+      runs.push({ tasks, parallel });
+      return tasks.map((t) => ({ label: `frames ${t.frames}`, ok: true, text: "Shaded.", seconds: 1 }));
+    },
+  };
+  const ctx = toolContext(fakeAseprite(), { subAgents });
+  const res = await runTool(tool, { instruction: "Shade", tasks: [{ frames: "1-2" }, { frames: 3, prompt: "darker" }], parallel: 2 }, ctx);
+  assert.equal(res.isError, undefined);
+  assert.match(textOf(res), /2 of 2 sub-agents finished/);
+  assert.deepEqual(runs[0].tasks.map((t) => t.prompt), ["Shade", "Shade\n\ndarker"]);
+  assert.equal(runs[0].parallel, 2);
+  assert.equal((await runTool(tool, { tasks: [{ frames: 1 }] }, ctx)).isError, true, "needs an instruction or prompts");
+});

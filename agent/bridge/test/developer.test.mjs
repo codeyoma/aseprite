@@ -131,3 +131,63 @@ test("developer conversations and tools are separate from normal ones", () => {
   assert.equal(sandbox("ask"), "read-only");
   assert.equal(sandbox("plan"), "read-only");
 });
+
+// dev.build and dev.relaunch with fakes for ninja, the clock, timers and Aseprite.
+test("dev.build throttles progress and reports the result", async () => {
+  const { developerMethods, BUILD_PROGRESS_MS } = await import("../dist/developer_methods.js");
+  const events = [];
+  let clock = 0;
+  let finish;
+  const lines = [[0, "[1/9] a.cpp"], [100, "[2/9] b.cpp"], [BUILD_PROGRESS_MS + 1, "[3/9] c.cpp"], [BUILD_PROGRESS_MS + 50, "[4/9] d.cpp"],
+    [2 * BUILD_PROGRESS_MS + 2, "x".repeat(200)]];
+  const methods = developerMethods({
+    notify: (ev) => events.push(ev),
+    root: () => "/repo",
+    now: () => clock,
+    build: (root, onLine) => {
+      assert.equal(root, "/repo");
+      for (const [t, l] of lines) {
+        clock = t;
+        onLine(l);
+      }
+      return new Promise((r) => (finish = r));
+    },
+  });
+  assert.deepEqual(methods["dev.build"](), { started: true });
+  assert.deepEqual(events.map((e) => e.text), ["Building: [1/9] a.cpp", "Building: [3/9] c.cpp", `Building: ${"x".repeat(120)}`]);
+  assert.ok(events.every((e) => e.type === "status"));
+  finish({ ok: false, tail: "error: b.cpp" });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(events.at(-1), { type: "build", ok: false, text: "error: b.cpp" });
+});
+
+test("dev.relaunch waits for Aseprite to disconnect, then launches the build", async () => {
+  const { developerMethods, RELAUNCH_DELAY_MS } = await import("../dist/developer_methods.js");
+  const launched = [], timers = [];
+  const listeners = {};
+  const link = { connected: true, once: (ev, fn) => (listeners[ev] = fn) };
+  const methods = developerMethods({
+    notify: () => {},
+    link,
+    root: () => "/repo",
+    binary: (root) => `${root}/build/bin/aseprite`,
+    launch: (bin) => launched.push(bin),
+    delay: (fn, ms) => timers.push({ fn, ms }),
+  });
+  assert.deepEqual(methods["dev.relaunch"](), { relaunching: true, bin: "/repo/build/bin/aseprite" });
+  assert.equal(timers.length, 0, "nothing starts while Aseprite is still connected");
+  listeners.disconnected();
+  assert.equal(timers[0].ms, RELAUNCH_DELAY_MS);
+  assert.deepEqual(launched, []);
+  timers[0].fn();
+  assert.deepEqual(launched, ["/repo/build/bin/aseprite"]);
+
+  // Not connected: the delay starts at once. No build or no clone: an error.
+  link.connected = false;
+  methods["dev.relaunch"]();
+  assert.equal(timers.length, 2);
+  const noBuild = developerMethods({ notify: () => {}, root: () => "/repo", binary: () => undefined });
+  assert.throws(() => noBuild["dev.relaunch"](), /No build of the fork/);
+  const noRepo = developerMethods({ notify: () => {}, root: () => undefined });
+  assert.throws(() => noRepo["dev.status"](), /not running from a clone/);
+});

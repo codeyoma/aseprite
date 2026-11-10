@@ -8,15 +8,17 @@
 // localhost HTTP for agents spawned by the chat panel, and run the chat.
 
 import { SubAgents } from "./subagents.js";
-import { setAgentSpawner } from "./tools.js";
 import { cleanAttachments } from "./attachments.js";
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { AsepriteLink, log } from "./aseprite.js";
-import { bridgeMethods, ChatRunner } from "./chat.js";
+import { bridgeMethods } from "./bridge_methods.js";
+import { ChatRunner } from "./chat.js";
 import { startHttpEndpoint } from "./http.js";
+import { SavedCommands } from "./saved_commands.js";
 import { createMcpServer, VERSION } from "./server.js";
 import { newToken, recordBridge } from "./session.js";
+import { toolContext } from "./tool.js";
 
 const DAEMON_IDLE_EXIT_MS = 120_000;
 
@@ -26,18 +28,21 @@ async function main() {
   link.sessionExtra = { bridgePath: fileURLToPath(import.meta.url), version: VERSION, mode: daemon ? "daemon" : "stdio" };
   recordBridge(fileURLToPath(import.meta.url), VERSION);
 
-  const endpoint = await startHttpEndpoint(link, newToken());
+  const commands = new SavedCommands();
+  // spawn_agents (#33): set below, since sub-agents connect back to the endpoint.
+  let subAgents: SubAgents | undefined;
+  const endpoint = await startHttpEndpoint(link, newToken(), { commands, subAgents: () => subAgents });
   const chat = new ChatRunner(link, endpoint);
-  // spawn_agents (#33): sub-agents with the running chat's agent, shown in the panel.
-  setAgentSpawner(new SubAgents(
+  // Sub-agents use the running chat's agent and show their steps in the panel.
+  subAgents = new SubAgents(
     endpoint,
     async () => (await link.request("state_block", {})).result.text as string,
     () => chat.currentProvider(),
     (ev) => chat.notify(ev),
-  ));
+  );
   cleanAttachments(); // rendered attachments older than a week
 
-  for (const [method, handler] of Object.entries(bridgeMethods(chat, VERSION, link))) {
+  for (const [method, handler] of Object.entries(bridgeMethods(chat, VERSION, { link, commands }))) {
     link.onRequest(method, handler);
   }
 
@@ -67,7 +72,7 @@ async function main() {
   }
 
   process.stdin.on("close", shutdown);
-  await createMcpServer(link).connect(new StdioServerTransport());
+  await createMcpServer(toolContext(link, { commands, subAgents })).connect(new StdioServerTransport());
 }
 
 main().catch((err) => {

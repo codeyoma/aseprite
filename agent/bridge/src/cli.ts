@@ -22,8 +22,15 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsepriteLink } from "./aseprite.js";
-import { findTool, formatCheck, runTool, type ToolResult } from "./tools.js";
+import { findTool, formatCheck, runTool, toolContext, type AsepriteRequester, type ToolResult } from "./tools.js";
 import { VERSION } from "./server.js";
+
+/** For offline commands (ase commands): tools that need Aseprite fail clearly. */
+const OFFLINE: AsepriteRequester = {
+  request: async (method) => {
+    throw new Error(`${method} needs the running Aseprite`);
+  },
+};
 
 export class CliError extends Error {
   constructor(message: string, readonly fix: string) {
@@ -100,7 +107,7 @@ async function withAseprite<T>(fn: (link: AsepriteLink) => Promise<T>): Promise<
 }
 
 async function tool(name: string, input: Record<string, unknown>): Promise<ToolResult> {
-  return withAseprite((link) => runTool(findTool(name)!, input, link));
+  return withAseprite((link) => runTool(findTool(name)!, input, toolContext(link)));
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +232,7 @@ export async function run(p: Parsed): Promise<Output> {
       throw new CliError("Nothing to render", "Add --sheet out.png or --gif out.gif.");
     }
     case "commands": {
-      const r = await runTool(findTool("list_commands")!, { filter: p.positional[0] }, { request: async () => ({}) } as any);
+      const r = await runTool(findTool("list_commands")!, { filter: p.positional[0] }, toolContext(OFFLINE));
       return { json: { text: textOf(r) }, text: textOf(r) };
     }
     case "help":

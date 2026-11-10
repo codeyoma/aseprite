@@ -8,7 +8,8 @@ import {
   localhostHostValidation,
   localhostOriginValidation,
 } from "@modelcontextprotocol/node";
-import type { AsepriteLink } from "./aseprite.js";
+import type { SavedCommands } from "./saved_commands.js";
+import { toolContext, type AsepriteRequester, type SubAgentRunner } from "./tool.js";
 import { log } from "./aseprite.js";
 import { createMcpServer } from "./server.js";
 
@@ -20,7 +21,14 @@ export interface HttpEndpoint {
   server: Server;
 }
 
-export async function startHttpEndpoint(link: AsepriteLink, token: string): Promise<HttpEndpoint> {
+export interface HttpEndpointOptions {
+  /** The Saved Commands store; default: the user's folder. */
+  commands?: SavedCommands;
+  /** spawn_agents' runner for the lead agent's endpoints. A getter, since SubAgents needs this endpoint's URL. */
+  subAgents?: () => SubAgentRunner | undefined;
+}
+
+export async function startHttpEndpoint(link: AsepriteRequester, token: string, opts: HttpEndpointOptions = {}): Promise<HttpEndpoint> {
   const validateHost = localhostHostValidation();
   const validateOrigin = localhostOriginValidation();
 
@@ -41,11 +49,11 @@ export async function startHttpEndpoint(link: AsepriteLink, token: string): Prom
       return;
     }
     // Stateless: one MCP server and transport per request.
-    const requester = scope
-      ? { request: (method: string, params: Record<string, unknown> = {}, timeoutMs?: number) =>
-          link.request(method, { ...params, scope }, timeoutMs) }
+    const requester: AsepriteRequester = scope
+      ? { request: (method, params = {}, timeoutMs) => link.request(method, { ...params, scope }, timeoutMs) }
       : link;
-    const mcp = createMcpServer(requester as AsepriteLink, { readOnly: path === "/mcp/ask", subAgent: !!scope });
+    const ctx = toolContext(requester, { commands: opts.commands, subAgents: scope ? undefined : opts.subAgents?.() });
+    const mcp = createMcpServer(ctx, { readOnly: path === "/mcp/ask", subAgent: !!scope });
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     res.on("close", () => {
       void transport.close();

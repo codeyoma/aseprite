@@ -1,6 +1,10 @@
 // The registry of tool modules: each *_tools.ts adds one import and one
 // entry here, and TOOLS, the MCP server and the tests pick it up.
 import type { Tool } from "./tool.js";
+import { CORE_TOOLS } from "./core_tools.js";
+import { COMMAND_TOOLS } from "./command_tools.js";
+import { TIMELINE_TOOLS } from "./timeline_tools.js";
+import { GUIDE_TOOLS } from "./guide_tools.js";
 import { COLOR_TOOLS } from "./color_tools.js";
 import { PIXEL_TOOLS } from "./pixel_tools.js";
 import { SHEET_TOOLS } from "./sheet_tools.js";
@@ -17,6 +21,10 @@ import { VOXEL_TOOLS } from "./voxel_tools.js";
 import { MODEL_TOOLS } from "./model_tools.js";
 
 export const TOOL_MODULES: { what: string; tools: Tool[] }[] = [
+  { what: "Core: state, Lua, snapshots, checks, undo, sub-agents", tools: CORE_TOOLS },
+  { what: "Aseprite commands and Saved Commands (#26)", tools: COMMAND_TOOLS },
+  { what: "Timeline as text", tools: TIMELINE_TOOLS },
+  { what: "Guide and Skill Catalog (#35)", tools: GUIDE_TOOLS },
   { what: "Palette and tone tools (#36, #38)", tools: COLOR_TOOLS },
   { what: "Pixel snap tools (#37)", tools: PIXEL_TOOLS },
   { what: "Sprite sheet import (#41)", tools: SHEET_TOOLS },

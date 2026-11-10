@@ -2,8 +2,7 @@
 // the Tool table (tools.ts).
 
 import { McpServer } from "@modelcontextprotocol/server";
-import type { AsepriteRequester } from "./tools.js";
-import { runTool, TOOLS } from "./tools.js";
+import { runTool, TOOLS, type ToolContext } from "./tools.js";
 
 export const VERSION = "0.4.0";
 
@@ -37,8 +36,11 @@ export const READ_ONLY_NOTE =
   "This connection is read-only (Ask or Plan mode): only tools that read the document are available. " +
   "Do not try to change the document; describe or plan changes instead.";
 
-/** The MCP server. readOnly lists (and so allows) only the read tools (Ask and Plan modes). */
-export function createMcpServer(aseprite: AsepriteRequester, opts: { readOnly?: boolean; subAgent?: boolean } = {}): McpServer {
+/**
+ * The MCP server over one ToolContext. readOnly lists (and so allows) only
+ * the read tools (Ask and Plan modes); subAgent leaves out spawn_agents.
+ */
+export function createMcpServer(ctx: ToolContext, opts: { readOnly?: boolean; subAgent?: boolean } = {}): McpServer {
   const instructions = opts.readOnly ? `${INSTRUCTIONS}\n\n${READ_ONLY_NOTE}` : INSTRUCTIONS;
   const server = new McpServer({ name: "aseprite-agent", version: VERSION }, { instructions });
   for (const tool of TOOLS) {
@@ -48,7 +50,7 @@ export function createMcpServer(aseprite: AsepriteRequester, opts: { readOnly?: 
     server.registerTool(
       tool.name,
       { title: tool.title, description: tool.description, inputSchema: tool.input },
-      (input: any) => runTool(tool, input, aseprite) as any,
+      (input: any) => runTool(tool, input, ctx) as any,
     );
   }
   return server;

@@ -11,9 +11,8 @@ import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type Pr
 import { AcpRuntime, StreamRuntime, which, type Runtime, type TurnSink } from "./runtime.js";
 import { sessionDir } from "./session.js";
 import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
-import { catalog, skillContext } from "./guide.js";
-import { SavedCommands } from "./saved_commands.js";
-import { applyDev, build, devStatus, discard, DEVELOPER_PROMPT, ensureDevWorktree, launch, asepriteBinary, repoRoot } from "./developer.js";
+import { skillContext } from "./guide.js";
+import { DEVELOPER_PROMPT, ensureDevWorktree, repoRoot } from "./developer.js";
 import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels.js";
 import type { ChatMode, PermissionOutcome, PermissionRequest } from "./acp.js";
 import type { PlanEntry } from "./providers/acp_mapper.js";
@@ -303,72 +302,12 @@ export class ChatRunner {
   }
 }
 
-/**
- * Handlers for the requests the extension's chat panel sends (the
- * protocol's bridgeMethods), keyed by method name.
- */
 function rejectOutcome(options: PermissionRequest["options"]): PermissionOutcome {
   const reject = options.find((o) => o.kind === "reject_once") ?? options.find((o) => o.kind?.startsWith("reject"));
   return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
 }
 
-/** Every method the extension may call on the bridge (protocol.json bridgeMethods). */
-export function bridgeMethods(chat: ChatRunner, version: string, link?: AsepriteLink): Record<string, (params: any) => unknown> {
-  return {
-    ...chatMethods(chat, version),
-    ...commandMethods(),
-    ...developerMethods(chat, link),
-    // The Skill Catalog for the panel's / picker (#35).
-    "skills.list": () => ({ skills: catalog() }),
-  };
-}
-
-/** Developer mode (#28): what changed, rebuild, discard, relaunch. */
-export function developerMethods(chat: ChatRunner, link?: AsepriteLink): Record<string, (params: any) => unknown> {
-  const root = () => {
-    const r = repoRoot();
-    if (!r) throw new Error("The bridge is not running from a clone of the Aseprite fork");
-    return r;
-  };
-  return {
-    "dev.status": () => devStatus(root()),
-    // Fast-forwards the user's branch to the agent's work (before a rebuild or relaunch).
-    "dev.apply": () => applyDev(root()),
-    // Answers at once; progress and the result arrive as chat events ("status", then "build").
-    "dev.build": () => {
-      const r = root();
-      let last = 0;
-      void build(r, (line) => {
-        const now = Date.now();
-        if (now - last > 400) {
-          last = now;
-          chat.notify({ type: "status", text: `Building: ${line.slice(0, 120)}` });
-        }
-      }).then(({ ok, tail }) => chat.notify({ type: "build", ok, text: tail }));
-      return { started: true };
-    },
-    "dev.discard": () => discard(root()),
-    // Waits for Aseprite to quit, then starts the fork's build again.
-    "dev.relaunch": () => {
-      const bin = asepriteBinary(root());
-      if (!bin) throw new Error("No build of the fork at build/bin/aseprite");
-      const start = () => setTimeout(() => launch(bin), 1500);
-      if (link?.connected) link.once("disconnected", start);
-      else start();
-      return { relaunching: true, bin };
-    },
-  };
-}
-
-/** Saved commands for the panel (#26): versions, revert, enable/disable. */
-export function commandMethods(store = new SavedCommands()): Record<string, (params: any) => unknown> {
-  return {
-    "commands.history": (p: { name: string }) => ({ versions: store.history(String(p.name)) }),
-    "commands.revert": (p: { name: string; rev?: string }) => ({ restored: store.revert(String(p.name), p.rev) }),
-    "commands.setEnabled": (p: { name: string; enabled: boolean }) => ({ ok: store.setEnabled(String(p.name), !!p.enabled) }),
-  };
-}
-
+/** The chat panel's chat.* requests; the other bridge methods are in bridge_methods.ts. */
 export function chatMethods(chat: ChatRunner, version: string): Record<string, (params: any) => unknown> {
   return {
     "chat.info": () => ({ providers: chat.providers(), busy: chat.busy, version }),

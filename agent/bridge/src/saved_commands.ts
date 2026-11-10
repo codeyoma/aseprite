@@ -155,3 +155,12 @@ export class SavedCommands {
     return target;
   }
 }
+
+/** Saved commands for the panel (#26): versions, revert, enable/disable. */
+export function commandMethods(store = new SavedCommands()): Record<string, (params: any) => unknown> {
+  return {
+    "commands.history": (p: { name: string }) => ({ versions: store.history(String(p.name)) }),
+    "commands.revert": (p: { name: string; rev?: string }) => ({ restored: store.revert(String(p.name), p.rev) }),
+    "commands.setEnabled": (p: { name: string; enabled: boolean }) => ({ ok: store.setEnabled(String(p.name), !!p.enabled) }),
+  };
+}
