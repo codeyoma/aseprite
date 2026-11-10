@@ -15,18 +15,13 @@ local variations         -- variations.lua, loaded by new()
 local timelineText       -- timeline_text.lua, loaded by new()
 local scopeGuard         -- scope_guard.lua, loaded by new()
 local wireParams         -- wire_params.lua, loaded by new()
+local px                 -- pixels.lua, loaded by new()
 
 
 ---------------------------------------------------------------------------
 -- Utilities
 ---------------------------------------------------------------------------
 
-local function colorToHex(c)
-  if c.alpha == 255 then
-    return string.format("#%02x%02x%02x", c.red, c.green, c.blue)
-  end
-  return string.format("#%02x%02x%02x%02x", c.red, c.green, c.blue, c.alpha)
-end
 
 local COLOR_MODES = {
   [ColorMode.RGB] = "rgb",
@@ -66,7 +61,7 @@ local function toPlain(v, depth)
   end
   if t == "userdata" then
     local name = typeName(v)
-    if name == "Color" then return colorToHex(v) end
+    if name == "Color" then return px.colorHex(v) end
     if name == "Point" then return { x = v.x, y = v.y } end
     if name == "Size" then return { width = v.width, height = v.height } end
     if name == "Rectangle" then return { x = v.x, y = v.y, width = v.width, height = v.height } end
@@ -161,7 +156,7 @@ local function describeSprite(sprite, full)
   local colors = {}
   local limit = math.min(#pal, 256)
   for i = 0, limit - 1 do
-    colors[#colors + 1] = colorToHex(pal:getColor(i))
+    colors[#colors + 1] = px.colorHex(pal:getColor(i))
   end
   info.palette = { size = #pal, colors = colors }
 
@@ -185,8 +180,8 @@ local function getState()
     apiVersion = app.apiVersion,
     openSprites = sprites,
     tool = app.tool and app.tool.id or nil,
-    fgColor = colorToHex(app.fgColor),
-    bgColor = colorToHex(app.bgColor),
+    fgColor = px.colorHex(app.fgColor),
+    bgColor = px.colorHex(app.bgColor),
   }
 
   local sprite = app.sprite
@@ -204,28 +199,6 @@ end
 ---------------------------------------------------------------------------
 
 -- Convert a cel image of any color mode to an RGB image, using the palette.
-local function toRgbImage(src, palette)
-  if src.colorMode == ColorMode.RGB then return src end
-  local dst = Image(src.width, src.height, ColorMode.RGB)
-  if src.colorMode == ColorMode.INDEXED then
-    local mask = src.spec.transparentColor
-    for it in src:pixels() do
-      local idx = it()
-      if idx ~= mask and idx < #palette then
-        local c = palette:getColor(idx)
-        dst:drawPixel(it.x, it.y, app.pixelColor.rgba(c.red, c.green, c.blue, c.alpha))
-      end
-    end
-  elseif src.colorMode == ColorMode.GRAYSCALE then
-    local pc = app.pixelColor
-    for it in src:pixels() do
-      local v = it()
-      local g, a = pc.grayaV(v), pc.grayaA(v)
-      dst:drawPixel(it.x, it.y, pc.rgba(g, g, g, a))
-    end
-  end
-  return dst
-end
 
 local function findLayer(layers, name)
   for _, l in ipairs(layers) do
@@ -278,7 +251,7 @@ local function snapshot(params)
     if layer.isGroup then error("Snapshot of a group layer is not supported; snapshot the sprite instead") end
     local cel = layer:cel(frameNumber)
     if cel then
-      local rgb = toRgbImage(cel.image, sprite.palettes[1])
+      local rgb = px.toRgbImage(cel.image, sprite.palettes[1])
       img:drawImage(rgb, cel.position)
     end
   else
@@ -496,7 +469,7 @@ handlers.propose_variations = function(params)
   local items, names = {}, {}
   local area
   for i, l in ipairs(list) do
-    local img = variations.render(l, toRgbImage)
+    local img = variations.render(l, px.toRgbImage)
     items[i] = { name = l.name, image = img }
     names[i] = l.name
     local b = img:shrinkBounds()
@@ -531,19 +504,11 @@ handlers.execute_lua = function(params)
 end
 
 -- "#rrggbb" or "#rrggbbaa" -> Color. (Color("#...") is not supported.)
-local function hexToColor(hex)
-  local h = tostring(hex):gsub("^#", "")
-  if not h:match("^%x+$") or (#h ~= 6 and #h ~= 8) then
-    error("Invalid color: " .. tostring(hex) .. " (use #rrggbb or #rrggbbaa)")
-  end
-  local n = function(i) return tonumber(h:sub(i, i + 1), 16) end
-  return Color(n(1), n(3), n(5), #h == 8 and n(7) or 255)
-end
 
 -- JSON values from the bridge -> Aseprite types for command params.
 local function toLuaParam(v)
   if type(v) ~= "table" and type(v) ~= "userdata" then return v end
-  if v.__color then return hexToColor(v.__color) end
+  if v.__color then return px.color(v.__color) end
   if v.x ~= nil and v.width ~= nil then return Rectangle(v.x, v.y, v.width, v.height) end
   if v.width ~= nil and v.height ~= nil then return Size(v.width, v.height) end
   if v.x ~= nil and v.y ~= nil then return Point(v.x, v.y) end
@@ -586,8 +551,8 @@ local BRUSH_TYPES = {
 handlers.get_context = function()
   local ctx = {
     tool = app.tool and app.tool.id or nil,
-    fgColor = colorToHex(app.fgColor),
-    bgColor = colorToHex(app.bgColor),
+    fgColor = px.colorHex(app.fgColor),
+    bgColor = px.colorHex(app.bgColor),
   }
   local brush = app.brush
   if brush then
@@ -673,7 +638,7 @@ handlers.read_pixels = function(params)
   local indexed = sprite.colorMode == ColorMode.INDEXED
   local paletteIndex = {}
   if indexed then
-    for i = #palette - 1, 0, -1 do paletteIndex[colorToHex(palette:getColor(i))] = i end
+    for i = #palette - 1, 0, -1 do paletteIndex[px.colorHex(palette:getColor(i))] = i end
   end
 
   -- Indexed sprites use palette indices as keys; RGB sprites get short keys.
@@ -735,7 +700,6 @@ local CHECK_RULES = { "off-palette", "orphan", "semi-transparent", "empty-cel", 
 local CHECK_MAX_PIXELS = 20            -- coordinates listed per finding
 local CHECK_PIXEL_BUDGET = 1000000     -- skip pixel rules on huge documents
 
-local function hexOf(r, g, b) return string.format("#%02x%02x%02x", r, g, b) end
 
 -- Palette entries as { index, r, g, b } (opaque entries only).
 local function paletteEntries(palette)
@@ -757,15 +721,6 @@ local function nearestEntry(entries, r, g, b)
 end
 
 -- Calls fn(x, y, r, g, b, a) for every pixel of a cel, in sprite coordinates.
-local function eachPixel(cel, palette, fn)
-  local img = toRgbImage(cel.image, palette)
-  local pc = app.pixelColor
-  local ox, oy = cel.position.x, cel.position.y
-  for it in img:pixels() do
-    local v = it()
-    fn(it.x + ox, it.y + oy, pc.rgbaR(v), pc.rgbaG(v), pc.rgbaB(v), pc.rgbaA(v))
-  end
-end
 
 -- Frames from a frame spec, default all (the same grammar the wire uses).
 local function framesFromParam(sprite, frames)
@@ -820,9 +775,9 @@ local function check(params)
         local offPalette = {}   -- hex -> { pixels, count, r, g, b }
         local semi = { pixels = {}, count = 0 }
         local color = {}        -- "x,y" -> hex, for the orphan rule
-        eachPixel(cel, palette, function(x, y, r, g, b, a)
+        px.eachPixel(cel, palette, function(x, y, r, g, b, a)
           if a == 0 then return end
-          local hex = hexOf(r, g, b)
+          local hex = px.hex(r, g, b)
           if enabled["orphan"] then color[x .. "," .. y] = hex .. ":" .. a end
           if enabled["semi-transparent"] and a < 255 then
             semi.count = semi.count + 1
@@ -850,7 +805,7 @@ local function check(params)
           local e = nearestEntry(entries, o.r, o.g, o.b)
           add{ rule = "off-palette", severity = "error", layer = layer.name, layerId = layerId(layer), frame = f,
                color = hex, count = o.count, pixels = o.pixels,
-               fix = string.format("Use palette index %d (%s), the nearest color", e.i, hexOf(e.r, e.g, e.b)) }
+               fix = string.format("Use palette index %d (%s), the nearest color", e.i, px.hex(e.r, e.g, e.b)) }
         end
 
         if semi.count > 0 then
@@ -1072,7 +1027,7 @@ local function stateBlock()
 
     local pal = sprite.palettes[1]
     local colors = {}
-    for i = 0, math.min(#pal, STATE_MAX_COLORS) - 1 do colors[#colors + 1] = colorToHex(pal:getColor(i)) end
+    for i = 0, math.min(#pal, STATE_MAX_COLORS) - 1 do colors[#colors + 1] = px.colorHex(pal:getColor(i)) end
     add(string.format("palette: %d color%s %s%s", #pal, #pal == 1 and "" or "s", table.concat(colors, " "),
       #pal > STATE_MAX_COLORS and string.format(" (+%d)", #pal - STATE_MAX_COLORS) or ""))
 
@@ -1204,7 +1159,7 @@ function Uri.resolve(uri, sprite)
   elseif kind == "palette" then
     local i = tonumber(rest)
     if i and i >= 0 and i < #sprite.palettes[1] then
-      return { kind = "palette", index = i, label = "color " .. i .. " " .. colorToHex(sprite.palettes[1]:getColor(i)) }
+      return { kind = "palette", index = i, label = "color " .. i .. " " .. px.colorHex(sprite.palettes[1]:getColor(i)) }
     end
   elseif kind == "slice" then
     local name = urlDecode(rest)
@@ -1273,7 +1228,7 @@ function Uri.targets(limits)
   for _, t in ipairs(sprite.tags) do add("Tags", t.name, Uri.tag(t)) end
   for i = 1, math.min(#sprite.frames, limits.frames or 24) do add("Frames", "Frame " .. i, Uri.frame(i), "frame " .. i) end
   for i = 0, math.min(#sprite.palettes[1], limits.colors or 16) - 1 do
-    local hex = colorToHex(sprite.palettes[1]:getColor(i))
+    local hex = px.colorHex(sprite.palettes[1]:getColor(i))
     add("Palette", string.format("%d %s", i, hex), Uri.palette(i), "color " .. i)
   end
   for _, sl in ipairs(sprite.slices) do add("Slices", sl.name, Uri.slice(sl)) end
@@ -1311,15 +1266,7 @@ end
 -- in the bridge (color.ts); these read colors and apply color maps.
 ---------------------------------------------------------------------------
 
-local function rgbaHex(r, g, b, a)
-  return a < 255 and string.format("#%02x%02x%02x%02x", r, g, b, a) or string.format("#%02x%02x%02x", r, g, b)
-end
 
-local function hexRgba(hex)
-  local r, g, b, a = hex:match("^#?(%x%x)(%x%x)(%x%x)(%x?%x?)$")
-  if not r then error("Not a color: " .. tostring(hex)) end
-  return tonumber(r, 16), tonumber(g, 16), tonumber(b, 16), a ~= "" and tonumber(a, 16) or 255
-end
 
 -- The image layers and frames a color request covers.
 local function colorTargets(sprite, params)
@@ -1368,7 +1315,7 @@ handlers.collect_colors = function(params)
                 local gray = pc.grayaV(v); r, g, b, a = gray, gray, gray, pc.grayaA(v)
               end
               if a and a > 0 then
-                local key = rgbaHex(r, g, b, a)
+                local key = px.hex(r, g, b, a)
                 counts[key] = (counts[key] or 0) + 1
                 total = total + 1
               end
@@ -1391,7 +1338,7 @@ handlers.get_palette = function()
   local p, out = sprite.palettes[1], {}
   for i = 0, #p - 1 do
     local c = p:getColor(i)
-    out[#out + 1] = rgbaHex(c.red, c.green, c.blue, c.alpha)
+    out[#out + 1] = px.hex(c.red, c.green, c.blue, c.alpha)
   end
   return { colors = out }
 end
@@ -1410,7 +1357,7 @@ handlers.set_palette = function(params)
     if params.append then
       local cur = sprite.palettes[1]
       local have, add = {}, {}
-      for i = 0, #cur - 1 do local c = cur:getColor(i); have[rgbaHex(c.red, c.green, c.blue, c.alpha)] = true end
+      for i = 0, #cur - 1 do local c = cur:getColor(i); have[px.hex(c.red, c.green, c.blue, c.alpha)] = true end
       for _, h in ipairs(colors) do if not have[h] then add[#add + 1] = h end end
       p = Palette(cur)
       start = #cur
@@ -1419,7 +1366,7 @@ handlers.set_palette = function(params)
     else
       p = Palette(#colors)
     end
-    for i, h in ipairs(list) do p:setColor(start + i - 1, Color(hexRgba(h))) end
+    for i, h in ipairs(list) do p:setColor(start + i - 1, Color(px.parseHex(h))) end
     sprite:setPalette(p)
   end)
   app.refresh()
@@ -1434,8 +1381,8 @@ handlers.apply_color_map = function(params)
   local pc = app.pixelColor
   local map = {}
   for from, to in pairs(params.map or {}) do
-    local r, g, b, a = hexRgba(from)
-    local r2, g2, b2, a2 = hexRgba(to)
+    local r, g, b, a = px.parseHex(from)
+    local r2, g2, b2, a2 = px.parseHex(to)
     map[pc.rgba(r, g, b, a)] = pc.rgba(r2, g2, b2, a2)
   end
   local changed = 0
@@ -1473,39 +1420,11 @@ handlers.apply_color_map = function(params)
 end
 
 -- base64 -> bytes (for images the bridge sends, e.g. fix_pixel_art).
-local B64 = {}
-do
-  local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-  for i = 1, #chars do B64[chars:byte(i)] = i - 1 end
-end
-local function base64Decode(s)
-  local out, n = {}, 0
-  local bits, nbits = 0, 0
-  local chunk = {}
-  for i = 1, #s do
-    local v = B64[s:byte(i)]
-    if v then
-      bits = (bits << 6) | v
-      nbits = nbits + 6
-      if nbits >= 8 then
-        nbits = nbits - 8
-        n = n + 1
-        chunk[n] = (bits >> nbits) & 0xFF
-        if n == 4096 then
-          out[#out + 1] = string.char(table.unpack(chunk, 1, n))
-          n = 0
-        end
-      end
-    end
-  end
-  if n > 0 then out[#out + 1] = string.char(table.unpack(chunk, 1, n)) end
-  return table.concat(out)
-end
 
 -- A new RGB sprite from RGBA bytes (base64), with an optional palette.
 handlers.create_sprite = function(params)
   local w, h = params.width, params.height
-  local bytes = base64Decode(params.rgba or "")
+  local bytes = px.base64Decode(params.rgba or "")
   if #bytes ~= w * h * 4 then error(string.format("Expected %d bytes, got %d", w * h * 4, #bytes)) end
   local sprite = Sprite(w, h, ColorMode.RGB)
   local img = Image(w, h, ColorMode.RGB)
@@ -1513,7 +1432,7 @@ handlers.create_sprite = function(params)
   sprite.cels[1].image = img
   if params.palette and #params.palette > 0 then
     local p = Palette(#params.palette)
-    for i, hx in ipairs(params.palette) do p:setColor(i - 1, Color(hexRgba(hx))) end
+    for i, hx in ipairs(params.palette) do p:setColor(i - 1, Color(px.parseHex(hx))) end
     sprite:setPalette(p)
   end
   if params.title then sprite.filename = params.title end
@@ -1530,7 +1449,7 @@ handlers.create_animation = function(params)
   local sprite = Sprite(w, h, ColorMode.RGB)
   for i, f in ipairs(frames) do
     if i > 1 then sprite:newEmptyFrame() end
-    local bytes = base64Decode(f.rgba or "")
+    local bytes = px.base64Decode(f.rgba or "")
     if #bytes ~= w * h * 4 then error(string.format("Frame %d: expected %d bytes, got %d", i, w * h * 4, #bytes)) end
     local img = Image(w, h, ColorMode.RGB)
     img.bytes = bytes
@@ -1539,7 +1458,7 @@ handlers.create_animation = function(params)
   end
   if params.palette and #params.palette > 0 then
     local p = Palette(#params.palette)
-    for i, hx in ipairs(params.palette) do p:setColor(i - 1, Color(hexRgba(hx))) end
+    for i, hx in ipairs(params.palette) do p:setColor(i - 1, Color(px.parseHex(hx))) end
     sprite:setPalette(p)
   end
   local dirs = { forward = AniDir.FORWARD, reverse = AniDir.REVERSE, pingpong = AniDir.PING_PONG,
@@ -1570,7 +1489,7 @@ handlers.split_layer_by_colors = function(params)
   local groupOf = {}
   for gi, g in ipairs(params.groups or {}) do
     for _, h in ipairs(g.colors or {}) do
-      local r, gg, b = hexRgba(h)
+      local r, gg, b = px.parseHex(h)
       groupOf[pc.rgba(r, gg, b, 255)] = gi
     end
   end
@@ -1619,7 +1538,7 @@ handlers.put_image = function(params)
   local sprite = app.sprite
   if not sprite then error("No active sprite") end
   local w, h = params.width, params.height
-  local bytes = base64Decode(params.rgba or "")
+  local bytes = px.base64Decode(params.rgba or "")
   if #bytes ~= w * h * 4 then error(string.format("Expected %d bytes, got %d", w * h * 4, #bytes)) end
   local frame = params.frame or (app.frame and app.frame.frameNumber) or 1
   local target
@@ -1753,7 +1672,7 @@ handlers.draw_swatches = function(params)
     local img = Image(sprite.width, sprite.height, ColorMode.RGB)
     for i, h in ipairs(colors) do
       local x, y = ((i - 1) % perRow) * size, ((i - 1) // perRow) * size
-      local r, g, b, a = hexRgba(h)
+      local r, g, b, a = px.parseHex(h)
       for dy = 0, size - 1 do for dx = 0, size - 1 do img:drawPixel(x + dx, y + dy, app.pixelColor.rgba(r, g, b, a)) end end
     end
     sprite:newCel(layer, app.frame or 1, img, Point(0, 0))
@@ -1774,6 +1693,7 @@ function M.new(opts)
   timelineText = dofile(app.fs.joinPath(chunkDir, "timeline_text.lua"))
   scopeGuard = dofile(app.fs.joinPath(chunkDir, "scope_guard.lua"))
   wireParams = dofile(app.fs.joinPath(chunkDir, "wire_params.lua"))
+  px = dofile(app.fs.joinPath(chunkDir, "pixels.lua"))
   onVariations = opts.onVariations
   onCommandsChanged = opts.onCommandsChanged
   PROTOCOL = assert(opts.protocol, "protocol required")

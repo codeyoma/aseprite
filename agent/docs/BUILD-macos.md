@@ -81,6 +81,12 @@ Request params at the wire seam (schemas, layer and frame resolution), in batch 
 build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/wire_params_test.lua
 ```
 
+The pixel and color module:
+
+```bash
+build/bin/aseprite -b --script-param ext="$PWD/agent/extension" --script agent/tests/pixels_test.lua
+```
+
 Bridge unit tests (no Aseprite needed):
 
 ```bash
