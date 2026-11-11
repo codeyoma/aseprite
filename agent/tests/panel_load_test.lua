@@ -36,5 +36,21 @@ if ok then
   local id = Panel.newChat()
   check("new chat", id ~= nil and Panel.currentChat() == id)
   check("not busy", Panel.isBusy() == false)
+
+  -- #93: a style memory proposal and a rewind of the conversation, through the panel.
+  Panel.showChat(Panel.chats()[1].id)
+  local conv = deps.turns.conversation
+  conv:send("draw a slime", "claude")
+  Panel.onEvent{ type = "memory", topic = "outline", text = "1 px dark selout" }
+  Panel.onEvent{ type = "done" }
+  local last
+  for _, e in ipairs(Panel.entries()) do if e.kind == "memory" then last = e end end
+  check("memory card entry", last and last.topic == "outline" and last.answered == nil)
+  check("don't remember answers the card", Panel.answerMemory and Panel.answerLastMemory(2) == true)
+  check("restore sprite without a checkpoint is refused", Panel.rewindUser(1, "sprite") == false)
+  check("restore conversation", Panel.rewindUser(1, "conversation") == true)
+  local users = 0
+  for _, e in ipairs(Panel.entries()) do if e.kind == "user" then users = users + 1 end end
+  check("the message is gone", users == 0)
 end
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

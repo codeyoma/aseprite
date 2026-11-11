@@ -101,6 +101,33 @@ function Prompter.permissionQuestion(req)
     text = { "The agent wants to use:", req.text or "a tool" }, buttons = labels, request = req }
 end
 
+-- Rewind to before a user message (#93). The buttons map to
+-- REWIND_CHOICES by index. info: { text, plan = "undo"|"file"|nil, why, own,
+-- at (os.time of the checkpoint), warnings = { ... }, running, busy }.
+Prompter.REWIND_CHOICES = { "sprite", "conversation", "both", "branch" }
+function Prompter.rewindQuestion(info)
+  local text = tostring(info.text or ""):gsub("%s+", " ")
+  if #text > 60 then text = text:sub(1, utf8.offset(text, 58) or 58) .. "…" end
+  local lines = { "Go back to before: \"" .. text .. "\"" }
+  if info.plan == "undo" then
+    lines[#lines + 1] = "Restore sprite: back through the undo history (Edit > Redo brings the later work back)."
+  elseif info.plan == "file" then
+    lines[#lines + 1] = "Restore sprite: the undo history no longer reaches it, so the copy opens as a new tab."
+  else
+    lines[#lines + 1] = "Restore sprite: not available. " .. tostring(info.why or "")
+  end
+  if info.plan and not info.own then
+    lines[#lines + 1] = "(This message ran no Agent turn: the sprite comes from the next checkpoint after it.)"
+  end
+  lines[#lines + 1] = "Restore conversation: forgets this message and the replies after it; the text goes back in the box."
+  lines[#lines + 1] = "Branch: a new chat with the conversation before it, on a copy of the sprite as it was then."
+  for _, w in ipairs(info.warnings or {}) do lines[#lines + 1] = w end
+  if info.running then lines[#lines + 1] = "A chat is working on this sprite: stop it before restoring the sprite." end
+  if info.busy then lines[#lines + 1] = "This chat is working: stop it before restoring the conversation." end
+  return { id = "rewind", title = "Rewind", text = lines,
+    buttons = { "Restore sprite", "Restore conversation", "Restore both", "Branch from here", "Cancel" }, info = info }
+end
+
 -- A message with only an OK button.
 function Prompter.notice(title, text)
   return { id = "notice", title = title, text = text, buttons = { "OK" } }

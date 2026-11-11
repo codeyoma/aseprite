@@ -55,7 +55,7 @@ export interface ToolContext extends AsepriteRequester {
   /** Image generation jobs (#102); absent where there is no generator. */
   images?: ImageJobs;
   /** Shows an event in the calling chat's log (ask_user's question card); absent outside the panel's chats. */
-  post?: (ev: { type: string; text?: string; choices?: string[] }) => void;
+  post?: (ev: { type: string; text?: string; choices?: string[]; topic?: string }) => void;
   /** ab_compare's coin flip; default Math.random (tests pass a seeded one). */
   random?: () => number;
 }

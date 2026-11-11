@@ -75,6 +75,13 @@ end
 -- opts.px: pixels.lua (hex colors).
 function M.new(opts)
   local px = assert(opts and opts.px, "px (pixels.lua) required")
+  -- Style memory (#93), shown in the State block; project_memory.lua sits next to this file.
+  local Memory = opts.memory
+  if not Memory then
+    local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
+    local ok, m = pcall(dofile, here .. "project_memory.lua")
+    Memory = ok and m or nil
+  end
   local V = { COLOR_MODES = COLOR_MODES, ANI_DIRS = ANI_DIRS, BLEND_MODES = BLEND_MODES, typeName = typeName }
 
   -------------------------------------------------------------------------
@@ -481,6 +488,9 @@ function M.new(opts)
         local b = sel.bounds
         add(string.format("pixel selection: x=%d y=%d %dx%d", b.x, b.y, b.width, b.height))
       end
+
+      -- The style memory the user approved (#93).
+      for _, l in ipairs(Memory and Memory.stateLines(Memory.entries(sprite)) or {}) do add(l) end
     end
 
     local others = {}

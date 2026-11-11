@@ -62,7 +62,7 @@ test("normalizeTool names", () => {
 test("permission requests go to the panel and back", async () => {
   const { ChatRunner, chatMethods } = await import("../dist/chat.js");
   const sent = [];
-  const chat = new ChatRunner({ notify: (method, params) => sent.push({ method, params }) }, { url: "", token: "" });
+  const chat = new ChatRunner({ notify: (method, params) => sent.push({ method, params }) }, { url: "", token: "" }, { dirsFile: null });
   const methods = chatMethods(chat, "test");
   const options = [
     { optionId: "allow", name: "Allow", kind: "allow_once" },
