@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Mascot: a digging shovel that doesn't read as a gesture
+- **How:** the `shovel` icon is tilted (blade down-left, handle up-right), and the digging mood's second frame swaps to `shovel_dirt` (the blade in a mound) instead of moving the same icon up and down.
+- **Why:** the upright 5x5 shovel (a vertical line on a block) bobbing up and down read as a raised middle finger.
+- **Architecture:** icons stay 5x5 grids in `mascot.lua` `ICONS`; a frame can change its icon (`i`) like any other field.
+
 ## Image generator for art from scratch (#102)
 - **How:**
   - `generate_image` (`concept_tools.ts`) asks the chat's user first through the panel's permission prompt (`ChatRunner.ask`: "Allow once" or "Deny"). A timeout or a stop counts as "Deny". After a "Deny", the same question returns no without asking until the user's next message.

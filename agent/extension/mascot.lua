@@ -100,7 +100,9 @@ M.ICONS = {
   arrow = { "..#..", "...#.", "#####", "...#.", "..#.." },
   clock = { ".###.", "#.#.#", "#.###", "#...#", ".###." },
   folder = { "##...", "#####", "#...#", "#...#", "#####" },
-  shovel = { "..#..", "..#..", "..#..", ".###.", ".###." },
+  -- Tilted, blade down-left, and the blade in a mound: an upright shovel read as a raised finger.
+  shovel = { "...##", "...#.", "..#..", ".##..", "##..." },
+  shovel_dirt = { "...#.", "..#..", ".##..", "###.#", "#####" },
   web = { ".###.", "#.#.#", "#####", "#.#.#", ".###." },
   star = { "..#..", ".###.", "#####", ".###.", ".#.#." },
   brain = { ".###.", "#.#.#", "#####", "#.#.#", ".###." },
@@ -157,7 +159,7 @@ MOODS.eureka = mood({ e = "wide", c = "big", i = "bulb", ic = "Y" }, { { dy = -1
 -- Searching
 MOODS.searching = mood({ i = "lens" }, { { ex = -1, ix = -1, d = 0.5 }, { ex = 1, ix = 1, d = 0.5 } })
 MOODS.rummaging = mood({ e = "down", i = "folder" }, { { dx = -1, d = 0.25 }, { dx = 1, d = 0.25 }, { dx = 0, iy = -1, d = 0.25 }, { dy = 1, d = 0.25 } })
-MOODS.digging = mood({ e = "down", i = "shovel" }, { { dy = 0, iy = -1, d = 0.3 }, { dy = 1, iy = 1, d = 0.3 } })
+MOODS.digging = mood({ e = "down", i = "shovel" }, { { dy = 0, iy = -1, ix = 1, d = 0.3 }, { dy = 1, i = "shovel_dirt", iy = 0, d = 0.3 } })
 MOODS.scanning = mood({ e = "line" }, { { scan = 2, d = 0.2 }, { scan = 5, d = 0.2 }, { scan = 8, d = 0.2 }, { scan = 5, d = 0.2 } })
 MOODS.browsing = mood({ i = "web" }, { { ey = 0, d = 0.4 }, { ey = 1, d = 0.4 }, { ey = 2, ex = 1, d = 0.4 } })
 MOODS.found = mood({ e = "wide", c = "big", i = "check", ic = "G" }, { { dy = -1, d = 0.3 }, { d = 0.9 } })
