@@ -36,11 +36,13 @@ local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
 local function loadComposer() return dofile(here .. "composer.lua") end
 local Prompter = dofile(here .. "prompter.lua")
 local Mascot = dofile(here .. "mascot.lua")
+local Mood = dofile(here .. "mascot_mood.lua")
 
 return function(deps)
   local Panel = {}
 
   local dlg = nil
+  local animT = 0              -- panel clock in seconds for the mascot (ticker steps; os.time is whole seconds)
   local turns = assert(deps.turns, "turns required: turns.lua")
   local conv = turns.conversation
   local prompter = deps.prompter or Prompter.app()
@@ -85,7 +87,9 @@ return function(deps)
   end
   local function makeChat(key, spriteId, chatTurns)
     nextChat = nextChat + 1
-    local chat = { id = "c" .. nextChat, key = key, spriteId = spriteId, queue = {}, queuePaused = false, draft = "" }
+    local chat = { id = "c" .. nextChat, key = key, spriteId = spriteId, queue = {}, queuePaused = false, draft = "",
+                   mood = Mood.new() }
+    chat.mood:greet(animT)
     chat.turns = chatTurns or deps.newTurns(function() return spriteById(chat.spriteId) or app.sprite end)
     chat.conv = chat.turns.conversation
     chat.composer = (chatTurns and composer) or newComposer(chat.turns)
@@ -111,7 +115,6 @@ return function(deps)
   local refreshCatalog       -- defined with the picker below
   local providers = { "claude" }
   local ticker = nil
-  local animT = 0              -- seconds of mascot animation (ticker steps; os.time is whole seconds)
   -- Each chat's queue (chat.queue): messages sent while a turn runs wait and
   -- go one by one when it ends. Stop pauses the queue; Send now (on a queued
   -- row) stops the turn and sends that one next.
@@ -589,16 +592,18 @@ return function(deps)
       end
     end
 
-    if busy then
-      -- The mascot (the logo's face) thinks while the turn runs.
+    -- The mascot shows the chat's mood: working while its turn runs,
+    -- results after, idling and sleeping in between (mascot_mood.lua).
+    do
       local ms = math.max(3, (lh * 3) // Mascot.HEIGHT)
       local mw, mh = Mascot.size(ms)
       addRow(mh, function(y)
-        local pose = Mascot.pose(animT)
-        Mascot.draw(gc, pad, y, ms, pose)
+        local name, t = current.mood:current(animT)
+        Mascot.draw(gc, pad, y, ms, Mascot.frame(name, t))
         gc.color = C.dim
-        local word = (current.waiting and "Waiting for its sprite's tab" or pose.word)
-        gc:fillText(word .. "... " .. formatSeconds(conv:elapsed() or 0), pad + mw + u * 2, y + (mh - lh) // 2)
+        local word = current.waiting and "Waiting for its sprite's tab" or Mascot.label(name)
+        if busy then word = word .. "... " .. formatSeconds(conv:elapsed() or 0) end
+        gc:fillText(word, pad + mw + u * 2, y + (mh - lh) // 2)
       end, nil, u * 2)
     end
 
@@ -641,7 +646,7 @@ return function(deps)
       end, nil, u)
     end
 
-    if #rows == 0 then
+    if #conv:entries() == 0 then
       local h, draw = textBlock({}, "t",
         "Ask the agent to change the open sprite.\nExample: add a Shadow layer under this one at 50%.",
         pad, textW, C.dim)
@@ -819,15 +824,14 @@ return function(deps)
       dlg:modify{ id = "send", text = b and "&Queue" or "&Send" }
       dlg:modify{ id = "stop", enabled = running ~= nil and running == current }
     end
-    if b and not ticker and dlg then
-      -- Repaint for the mascot's moves and the "Working... Ns" counter.
-      animT = 0
-      ticker = Timer{ interval = 0.1, ontick = function() animT = animT + 0.1; if dlg then dlg:repaint() end end }
-      ticker:start()
-    elseif not b then
+    -- The ticker moves the mascot: every 0.1 s while a turn runs, 0.25 s idle.
+    local interval = b and 0.1 or 0.25
+    if dlg and (not ticker or ticker.interval ~= interval) then
       stopTicker()
-      if dlg then dlg:repaint() end
+      ticker = Timer{ interval = interval, ontick = function() animT = animT + interval; if dlg then dlg:repaint() end end }
+      ticker:start()
     end
+    if dlg then dlg:repaint() end
   end
 
   function Panel.onEvent(ev)
@@ -835,6 +839,7 @@ return function(deps)
     if ev.type == "tool_result" or ev.type == "done" or ev.type == "error" then refreshContext() end
     -- Events go to their chat (the running one when untagged, e.g. builds).
     local chat = (ev.chatId and chatById[ev.chatId]) or running or current
+    chat.mood:event(ev, animT)
     -- The Turn controller claims edit steps' captures and finishes the turn.
     local r = chat.turns:apply(ev)
     if r.status then updateStatus(r.status) end
@@ -851,6 +856,17 @@ return function(deps)
   end
 
   function Panel.onConnectionChange(isConnected)
+    -- A turn can't outlive its bridge: its events would never arrive, and
+    -- the chat would stay busy with every new message queued behind it.
+    if not isConnected and running then
+      local chat = running
+      running = nil
+      chat.turns:fail("The bridge disconnected during this turn")
+      chat.mood:event({ type = "error" }, animT)
+      if deps.onTurnEnd then deps.onTurnEnd() end
+      syncBusy()
+      changed()
+    end
     if not dlg then return end
     updateStatus(isConnected and "" or "Bridge not connected")
     if isConnected then
@@ -866,6 +882,7 @@ return function(deps)
           dlg:modify{ id = "provider", options = list, option = current }
         end
         if result.busy then syncBusy() end
+        Panel.sendQueued()
       end)
     end
   end
@@ -1066,6 +1083,10 @@ return function(deps)
     -- The message, and where this reply starts in the undo history (#22),
     -- of the chat's own sprite.
     running = chat
+    local resumed = next(chat.conv:conversationIds()) ~= nil
+    chat.mood:answered(animT)
+    chat.mood:send(animT, { attachments = p.attachments ~= nil, resumed = resumed })
+    chat.mood:queued(false, animT)
     chat.turns:start(spriteById(chat.spriteId) or app.sprite, { text = r.shown, provider = p.provider, mode = p.mode, skill = r.skillTitle })
     if chat == current and not r.queued then dlg:modify{ id = "prompt", text = "" } end
     syncBusy()
@@ -1127,6 +1148,7 @@ return function(deps)
         -- A turn runs (this chat's or another's): the message waits.
         r.queued = true
         current.queue[#current.queue + 1] = r
+        if running ~= current then current.mood:queued(true, animT) end
         dlg:modify{ id = "prompt", text = "" }
         updateAttachments()
         changed()
@@ -1312,7 +1334,11 @@ return function(deps)
     if not spriteById(running.spriteId) then return "The sprite this chat works on was closed" end
     local ok = app.sprite and app.sprite.id == running.spriteId
     local waiting = not ok
-    if running.waiting ~= waiting then running.waiting = waiting; if dlg then dlg:repaint() end end
+    if running.waiting ~= waiting then
+      running.waiting = waiting
+      running.mood:hold(waiting, animT)
+      if dlg then dlg:repaint() end
+    end
     return ok or "hold"
   end
 

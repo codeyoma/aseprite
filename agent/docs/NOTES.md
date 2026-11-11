@@ -2,6 +2,27 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Mascot: the new logo face and 56 moods driven by chat events
+- **How:**
+  - `mascot.lua` draws the new logo: a 12x13 white face with the top corners cut, eye bars at columns 3 and 8, and a blue-gray chin.
+  - A mood is a few frames. Each frame can set: eye style (`open`, `half`, `closed`, `happy`, `sad`, `x`, `ring`, `wide`, `squeeze`, `down`, …, per eye or both), eye offset, chin shape (`smile`, `flat`, `big`, `frown`, `open`, `grit`), face offset, a small icon (about 40 pixel icons, colored by meaning), thinking dots, a progress bar or a scan line.
+  - All 56 moods of the brief are in `Mascot.GROUPS`: Idle, Receiving, Thinking, Searching, Working, Connecting, Saving, Waiting, Verifying, Result, Requesting. Open eyes blink every 3.1 s.
+  - `mascot_mood.lua` (pure) picks a chat's mood. Sends, chat events, holds and queue waits go in. It keeps a steady mood and short reactions:
+    - acknowledge, or uploading with attachments, or remembered when the conversation resumes, then listening or reading;
+    - thinking, which turns into deep thinking after 8 s;
+    - per tool, a mood by name (`TOOL_MOODS`: check → checking, export → saving, execute_lua → building, delete → deleting, …), with a tool_pick flash, eureka after a long think, and loading after 3 s;
+    - after a tool result: retry or flustered or confused on failures, found after a search;
+    - need_approval, and asking when the reply ends with "?";
+    - at the end: done, proud or celebrate (by edit count), apologetic when stopped, stuck, error.
+    - Without a turn it cycles idle, look_around, wander and zone_out, and gets sleepy after 90 s; it stretches when woken.
+  - The panel always draws the mood row at the bottom of the log, with a label ("Searching... 7s", "Ready"). Each chat has its own mood. The ticker runs every 0.1 s during a turn and every 0.25 s when idle.
+  - Gallery: `docs/mascot_moods.gif`. Tests: `tests/mascot_test.lua`.
+  - Fixed on the way: a bridge disconnect now ends the running turn ("The bridge disconnected during this turn"). Before, the chat stayed busy forever and every new message was queued behind it.
+- **Why:**
+  - The user asked for a mascot that shows what the agent is doing.
+  - Moods are data, so a new one is a few lines, and the mood logic is unit-tested without drawing.
+- **Architecture:** `mascot.lua` (look) and `mascot_mood.lua` (state) are both pure; `chat_panel.lua` only feeds events and the panel clock (`animT`, since `os.time` has whole seconds) and draws.
+
 ## Chats per sprite, several chats per sprite, one turn at a time
 - **How:**
   - The panel keeps chats grouped by sprite (`chats[key]`, key `s<Sprite.id>` or `none`). Each chat has its own Conversation, Turns (over its own sprite), Composer (draft) and queue. `activate` swaps the panel's `conv`/`turns`/`composer` upvalues, so the drawing and send code stay as they were.
