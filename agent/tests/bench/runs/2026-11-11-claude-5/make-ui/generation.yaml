@@ -1,0 +1,97 @@
+benchmark: make-ui
+skill: make-ui
+title: A three-state Play button and a 9-patch panel in a fixed palette
+provider: claude
+model: null
+commit: "3c579d07d"
+date: "2026-11-11T02:08:12.521Z"
+seconds: 38
+passed: 5
+total: 5
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Pixel text and UI"
+      - Claude
+  - id: button
+    type: sprites
+    desc: a button sprite with 3 or more state frames and a 9-patch slice
+    pass: true
+    detail:
+      - panel 48x32 1f
+      - play_button 32x16 4f
+      - Sprite 64x64 1f
+  - id: panel
+    type: sprites
+    desc: a second sprite with a 9-patch slice (the panel)
+    pass: true
+    detail:
+      - panel 48x32 1f
+      - play_button 32x16 4f
+      - Sprite 64x64 1f
+  - id: button-palette
+    type: palette
+    desc: "the button uses only the palette's colors"
+    pass: true
+    detail: "7 colors"
+  - id: button-check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 3 warnings"
+steps:
+  - prompt: "/skill:make-ui Make a 'Play' button with normal, hover and pressed states, using this sprite's palette."
+    seconds: 28
+    header: "Claude · Pixel text and UI"
+    tools:
+      - tool: Make button
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I made a new 32x16 sprite, `play_button`, with a \"Play\" label in the sprite's PICO-8 colors. It uses a green fill (#008751), a black border, a #00e436 highlight, a #1d2b53 shadow and a #fff1e8 label.\n\n- **Frame 1, normal:** raised bevel, lit on the top left.\n- **Frame 2, hover:** the frame turns bright green.\n- **Frame 3, pressed:** the bevel is reversed and the label sits 1 px lower.\n- **Frame 4, disabled:** flat and gray. You didn't ask for it, so delete the frame if you don't want it.\n\nIn the snapshot the four states are easy to tell apart, and the label is readable on each one. For your engine there is a 9-patch slice called `play_button` whose stretchable center is 28x12 at (2,2). The check found no errors. It did flag 3 single pixels in each state, but they are the label's shadow pix"
+    errors: []
+  - prompt: "Now make a small 48x32 panel in the same style, with 9-patch slices, in the same palette."
+    seconds: 10
+    header: Claude
+    tools:
+      - tool: Make panel
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I made a new 48x32 sprite, `panel`, in the same style as the Play button. It has the same black border, rounded corners and bevel: #00e436 highlight on the top left, #1d2b53 shadow on the bottom right, and a #008751 fill.\n\nFor your engine it has one 9-patch slice, `panel`. Its stretchable center is 44x28 at (2,2), so the panel scales to any size without distorting the corners or edges. The check found no errors or warnings."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - sprite-1.png
+  - result.aseprite
+  - extra-1.aseprite
+  - extra-2.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+    - sprite-1.png
+  seconds: 42
+  scores:
+    readability: 3
+    form: 2
+    palette: 3
+    motion: null
+    fit: 3
+  overall: 2.75
+  note: "Clean lettering, distinct button states, and the matching 48×32 panel fulfill the request, including the specified slices. The vivid borders compete with the label, while simple bevel shading gives only shallow depth."

@@ -15,11 +15,12 @@ Hits, slashes, explosions, magic, fire and smoke: phases, timing, color and shap
 | Hit spark | 3-5 | 40-60 each |
 | Slash smear | 3-4 | 30-50 each |
 | Explosion | 8-12 | flash 1 x 40, fireball 3 x 60, smoke 4-6 x 80-100 |
+| Nova or area burst | 6-8 | flash 1 x 40-60, ring 3 x 60-80, fade 2-4 x 80-100 |
 | Smoke puff | 4-6 | 80-120 |
 | Fire loop | 4-6 | 80-120 |
 | Magic or status loop | 6-8 | 80-100 (0.5-1.5 s a cycle) |
 | Snappy hit, spark, slash in all | | done in 0.3-0.8 s |
-| Big explosion, nova, pillar in all | | lingers 2-4 s (smoke, embers) |
+| Big explosion or pillar in all | | lingers 2-4 s (smoke, embers); a nova's ring is done in under 1 s |
 
 ## Hit-stop and shake {#vfx.hitstop}
 
@@ -43,7 +44,7 @@ Hits, slashes, explosions, magic, fire and smoke: phases, timing, color and shap
 
 ## Scale to the character {#vfx.scale}
 
-- Hit spark: a third to a half of the character's height. Slash: the weapon's reach. Explosion: 1-2 times the character.
+- Hit spark: a third to a half of the character's height. Slash: the weapon's reach. Explosion: 1-2 times the character. Nova or area burst: its ring reaches 1.5-2 times the character's height.
 - An effect drawn at another size is redrawn, not scaled (`rule:char.resize`).
 
 ## Loops {#vfx.loops}

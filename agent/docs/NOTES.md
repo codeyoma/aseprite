@@ -2,6 +2,35 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Low-scoring skills: tool fixes, sizing rules, a fairer judge (#82 follow-up)
+- **How:**
+  - `fx_overlay` takes `recipe` as well as `id`. Library-less effects (frost) can now land on the hit frame and extend past the tag; the recipe is stored in the FX record.
+  - `make_ui` with a palette steps state shades along it (`paletteStep`: the nearest color in hue at least 0.05 Oklab L lighter or darker, avoiding a big chroma drop), instead of adjusting then snapping. Hover gets a lit frame when a lighter fill would leave the label under 0.25 L apart. Disabled is flat gray (`paletteDisabled`). The label shadow stays the darker step when the pressed bevel swaps. The new sprite gets the palette.
+  - The filmstrip prints each frame's ms at the right of its label when durations differ (`contactSheet` `notes`; M and S glyphs).
+  - Skills and rules gained the decisions the judge kept marking down: pixel-fx "size it before you place it" (reach, length, weight, ramp; `vfx.scale`/`vfx.timing` rows for novas), `anim.walk.limbs` (a per-frame near/far limb table), make-tileset edge lip and tuft variety, and the make-ui state check.
+  - The runner saves `start.png` (the fixture before the request) as the first extra image, and the judge prompt says to score what was made on it. The recolor fixture is now a small character instead of a rectangle. The `skill` criterion accepts a header ending in the skill's name.
+- **Why:** the judge's notes split into tool defects, missing guidance and benchmark unfairness:
+  - Tool defects: hover snapping back onto normal, muddy pressed labels, and frost that could not be timed.
+  - Missing guidance: tiny 3-frame effects, and arms on the wrong phase.
+  - Benchmark unfairness: crude fixtures scored as the agent's form, and hit-stops invisible in a sheet.
+
+  Each was fixed where it lives, not by prompting harder. Scores, baseline to now (Claude drawing, Codex judging):
+
+  | Skill | Baseline | Now |
+  |---|---|---|
+  | pixel-fx | 1.2 | 1.8 |
+  | animate | 1.6 | 2.0 |
+  | recolor | 1.25 | 3.25 |
+  | make-ui | 1.5 | 2.75 |
+  | make-tileset | 2.0 | 2.75 |
+  | shade-sprite | 3.25 | 3.5 |
+
+  The remaining notes are craft (thin rings, a stiff walk).
+- **Architecture:**
+  - `fx_overlay` gained one optional input (registry fixture updated); no wire change.
+  - Palette stepping lives in `ui_tools.ts` next to its only user. The filmstrip note is generic in `contactSheet`.
+  - Tests: `fx_timing_tools.test.mjs` (recipe overlay), `ui.test.mjs` (palette states), `views.test.mjs` (notes), `bench.test.mjs` (start image, skill header).
+
 ## Benchmark judge sees the whole result; palette_swap adds its colors (#82 follow-up)
 - **How:** `run_bench.mjs` now also saves `sprite-<n>.png` for each other non-empty sprite the benchmark made (a filmstrip when it has frames) and, when a benchmark sets `showLayers` (a regex; recolor uses `^AI: `), `layer-<n>.png` for each matching leaf layer alone. Each extra has a neutral description; 9-patch slices are listed as text (name, bounds, center), because snapshots don't draw slices. `bench.judgeImages` numbers the extras on from `image-4.png`, up to `MAX_EXTRA_IMAGES` (6). The list goes into `judge-images.json`, so `--rejudge` shows the judge the same images. `palette_swap` writes every variant and frame in one `putImages` call and passes the variants' target colors as its `palette`, so they are appended to the sprite palette.
 - **Why:** the baseline judge saw only the main sprite's last frame. It marked the tile set and the panel missing (they were other sprites), and the green recolor wrong (only the top variant layer shows in the composite). That made the scores measure the camera, not the art. With the extras the judge's notes are about the art (recolor 1.25 to 2.5, make-ui 1.5 to 2.5, make-tileset 2.0 to 2.75). A rerun also showed `palette_swap` left new colors off the palette, so `check` reported off-palette errors whenever the model chose colors the palette lacked.

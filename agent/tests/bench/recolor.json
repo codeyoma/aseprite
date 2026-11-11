@@ -5,12 +5,12 @@
   "animated": false,
   "fixture": [
     "local s = Sprite(16, 20, ColorMode.RGB) s.layers[1].name = \"Hero\"",
-    "local pal = Palette(6) pal:setColor(0, Color(0, 0, 0, 0)) pal:setColor(1, Color(24, 20, 37)) pal:setColor(2, Color(255, 204, 170)) pal:setColor(3, Color(29, 43, 83)) pal:setColor(4, Color(41, 120, 255)) pal:setColor(5, Color(140, 200, 255)) s:setPalette(pal)",
+    "local C = { o = Color(24, 20, 37), s = Color(255, 204, 170), a = Color(29, 43, 83), b = Color(41, 120, 255), c = Color(140, 200, 255), p = Color(90, 74, 106) }",
+    "local pal = Palette(7) pal:setColor(0, Color(0, 0, 0, 0)) pal:setColor(1, C.o) pal:setColor(2, C.s) pal:setColor(3, C.a) pal:setColor(4, C.b) pal:setColor(5, C.c) pal:setColor(6, C.p) s:setPalette(pal)",
+    "-- A small hero: hair, face with an eye, a blue shirt in three shades with sleeves and hands, pants, shoes.",
+    "local rows = { \"................\", \".....oooooo.....\", \"....oooooooo....\", \"....osssssso....\", \"....osssosso....\", \"....osssssso....\", \".....osssso.....\", \"...oaabbbbcco...\", \"..oaaabbbbccco..\", \"..oaaobbbbocco..\", \"..oaaobbbbocco..\", \"..oaaobbbbocco..\", \"..ossobbbbosso..\", \"...oooaaaaooo...\", \"....opppppppo...\", \"....opppopppo...\", \"....opppopppo...\", \"....opppopppo...\", \"...ooooo.ooooo..\", \"................\" }",
     "local img = Image(16, 20, ColorMode.RGB)",
-    "for y = 1, 6 do for x = 5, 10 do img:drawPixel(x, y, Color(255, 204, 170)) end end",
-    "local shirt = { Color(29, 43, 83), Color(41, 120, 255), Color(140, 200, 255) }",
-    "for y = 7, 16 do for x = 4, 11 do img:drawPixel(x, y, shirt[(x < 6) and 1 or ((x > 9) and 3 or 2)]) end end",
-    "for y = 1, 16 do img:drawPixel(4, y, Color(24, 20, 37)) img:drawPixel(11, y, Color(24, 20, 37)) end",
+    "for y, row in ipairs(rows) do for x = 1, #row do local k = row:sub(x, x) if C[k] then img:drawPixel(x - 1, y - 1, C[k]) end end end",
     "s.layers[1]:cel(1).image = img"
   ],
   "steps": [
@@ -18,10 +18,27 @@
     "Now make a green team version the same way."
   ],
   "criteria": [
-    { "id": "ran-skill", "type": "skill" },
-    { "id": "size-kept", "type": "size", "width": 16, "height": 20 },
-    { "id": "two-variants", "type": "layers", "match": "^AI: ", "min": 2, "desc": "two AI: variant layers (nested ones count)" },
-    { "id": "skin-kept", "type": "lua", "desc": "every variant keeps the skin color and has a shirt that is no longer blue",
+    {
+      "id": "ran-skill",
+      "type": "skill"
+    },
+    {
+      "id": "size-kept",
+      "type": "size",
+      "width": 16,
+      "height": 20
+    },
+    {
+      "id": "two-variants",
+      "type": "layers",
+      "match": "^AI: ",
+      "min": 2,
+      "desc": "two AI: variant layers (nested ones count)"
+    },
+    {
+      "id": "skin-kept",
+      "type": "lua",
+      "desc": "every variant keeps the skin color and has a shirt that is no longer blue",
       "code": [
         "local out, ok, n = {}, true, 0",
         "local function walk(layers) for _, l in ipairs(layers) do",
@@ -33,7 +50,11 @@
         "  end end end",
         "walk(app.sprite.layers)",
         "return { ok = ok and n >= 2, detail = out }"
-      ] },
-    { "id": "check-clean", "type": "check" }
+      ]
+    },
+    {
+      "id": "check-clean",
+      "type": "check"
+    }
   ]
 }

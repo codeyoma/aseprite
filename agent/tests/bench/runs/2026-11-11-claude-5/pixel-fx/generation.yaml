@@ -1,0 +1,127 @@
+benchmark: pixel-fx
+skill: pixel-fx
+title: "Frost nova timed to a mage's staff attack"
+provider: claude
+model: null
+commit: "3c579d07d"
+date: "2026-11-11T02:09:32.513Z"
+seconds: 78
+passed: 8
+total: 8
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Pixel FX"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: null
+    pass: true
+    detail: "160x112"
+  - id: frames-kept
+    type: frames
+    desc: null
+    pass: true
+    detail: 8
+  - id: attack-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: attack 1-8
+  - id: fx-layer
+    type: layers
+    desc: "an AI: fx layer holds the effect"
+    pass: true
+    detail:
+      - "AI: fx recipe:frost-nova"
+  - id: hit-recorded
+    type: lua
+    desc: a hit stop is recorded on the sprite (fx.hits)
+    pass: true
+    detail: 1
+  - id: fx-check-clean
+    type: check_fx
+    desc: null
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 6 warnings"
+steps:
+  - prompt: "/skill:pixel-fx Add a frost nova to my mage's attack, bursting from the staff tip when it thrusts forward."
+    seconds: 68
+    header: "Claude · Pixel FX"
+    tools:
+      - tool: "Read guide: basics"
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Preview recipe
+        status: ok
+      - tool: Recipe effect on the animation
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Undo
+        status: ok
+      - tool: Recipe effect on the animation
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Start frost nova on thrust frame
+        status: ok
+      - tool: Hit-stop
+        status: ok
+      - tool: Check effects
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: "Snap frost nova to 5-color ramp, solid alpha"
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Effect placed but reads dark and stops early; redoing with baked glow and 100 ms extended frames.\nSnapped nova to 5-color ramp; verifying.\nI added a frost nova on [AI: fx recipe:frost-nova](aseprite://layer/L2826). It bursts from the staff tip at (92,60) on thrust frame 4, which now holds for 180 ms. The library has no ice effect, so I built it from a custom recipe.\n\n- **Frames:** frame 4 shows a white core with an icy ring. On frames 5–7 the ring spreads to about 40 px radius with flakes, then breaks up. Frame 8 is empty.\n- **Timeline:** the [attack](aseprite://tag/attack) tag grew from 6 to 8 frames. The mage holds the last pose for the 2 new frames.\n- **Changed for clean pixels:** I took the effect off frame 3 so it starts on the thrust and not one frame early. I also set every effect p"
+    errors: []
+  - prompt: "Add a short hit stop on the impact frame, and make sure the effect ends cleanly."
+    seconds: 10
+    header: Claude
+    tools:
+      - tool: Read the timeline
+        status: ok
+      - tool: Check effects
+        status: ok
+    reply: "Both were already in place from the last step, so I changed nothing.\n\n- **Hit stop:** frame 4, the thrust and impact frame, holds for 180 ms instead of 100 ms, an 80 ms freeze. The hit is recorded on the sprite for export.\n- **Clean end:** the effect's last pixels are a faint ring on frame 7. Frame 8 has no effect pixels, so the tag ends on the mage alone. `check_fx` reports 0 errors and 0 warnings, and the one-shot end check found no leftover pixels.\n\nIf you want more punch on the impact, I can add a small 1–2 px shake to the freeze."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 85
+  scores:
+    readability: 2
+    form: 0
+    palette: 2
+    motion: 2
+    fit: 3
+  overall: 1.8
+  note: "The staff-tip flash, 180 ms impact hold, and clean disappearance fulfill the requested sequence. The nova becomes a thin, flat ring with sparse shading and limited follow-through, weakening its icy character and impact at 1x."

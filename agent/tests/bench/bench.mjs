@@ -142,7 +142,8 @@ export function evaluate(c, facts, { skill } = {}) {
     case "skill": {
       const title = skillTitle(skill);
       const h = list(facts.headers);
-      return { pass: h.some((t) => t === skill || t?.endsWith(title)), detail: h.slice(0, 3) };
+      // The header ends with the skill's title, or its name when the panel shows that ("Claude · animate").
+      return { pass: h.some((t) => t === skill || t?.endsWith(title) || t?.endsWith(` ${skill}`)), detail: h.slice(0, 3) };
     }
     case "frames":
       return { pass: s.frames >= (c.min ?? 0) && s.frames <= (c.max ?? Infinity), detail: s.frames };
@@ -266,6 +267,9 @@ export function judgePrompt({ steps, animated, images = JUDGE_IMAGES, rubric = r
     "",
     "Score each axis from 0 to 4 against the anchors below. When the work sits between two anchors, give the lower score unless every part of the higher one holds.",
     animated ? "This is an animation: score motion." : "This is a still image: give motion as null.",
+    ...(images.some((im) => im.file === "start.png")
+      ? ["The starting sprite was given with the request (the image described as the sprite before the request). Score what was made on it and how well it fits the request, not the starting sprite's own design."]
+      : []),
     "",
     rubric,
     "",

@@ -263,12 +263,15 @@ async function filmstrip(doc: ReturnType<typeof documentOf>, info: SpriteInfo, f
   const picked = frames.slice(0, layout.shown);
   const images = [];
   for (const f of picked) images.push(await doc.pixels(input.layer, f));
+  const durations = picked.map((f) => info.durations[f - 1]);
+  // Mixed timing (holds, hit-stops, fast smears) is part of the motion, so each frame shows its ms then.
+  const mixed = durations.some((d) => d !== durations[0]);
   const sheet = contactSheet(onBackground(images, input.background, layout.zoom), {
-    labels: picked.map(String), columns: layout.columns, zoom: layout.zoom, background: SHEET_BACKDROP, labelColor: SHEET_LABEL,
+    labels: picked.map(String), notes: mixed ? durations.map((d) => `${d}MS`) : undefined,
+    columns: layout.columns, zoom: layout.zoom, background: SHEET_BACKDROP, labelColor: SHEET_LABEL,
   });
   const range = picked.length > 1 && picked.every((f, i) => i === 0 || f === picked[i - 1] + 1)
     ? `${picked[0]}-${picked[picked.length - 1]}` : picked.join(", ");
-  const durations = picked.map((f) => info.durations[f - 1]);
   const timing = durations.every((d) => d === durations[0]) ? `${durations[0]} ms each` : `durations ${durations.join(", ")} ms`;
   const cut = layout.shown < frames.length
     ? ` Only the first ${layout.shown} of ${frames.length} frames fit; ask for the rest with frames.` : "";
@@ -277,7 +280,7 @@ async function filmstrip(doc: ReturnType<typeof documentOf>, info: SpriteInfo, f
       image(sheet),
       text(`Filmstrip of frames ${range}${input.tag ? ` (tag "${input.tag}")` : ""}${input.layer ? `, layer "${input.layer}"` : ""}: ` +
         `${picked.length} frames of ${w}x${h} px at ${layout.zoom}x, ${layout.columns} per row, ${timing} (${sheet.width}x${sheet.height}). ` +
-        `Read left to right, top to bottom; the number above each is its frame. Check that each frame moves on from the ` +
+        `Read left to right, top to bottom; the number above each is its frame (and, when durations differ, its ms at the right). Check that each frame moves on from the ` +
         `last, the silhouette keeps its size, and the loop's last frame leads into the first.${cut}`),
     ],
   };

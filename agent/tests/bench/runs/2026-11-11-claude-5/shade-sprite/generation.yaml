@@ -1,0 +1,117 @@
+benchmark: shade-sprite
+skill: shade-sprite
+title: "Shade a flat green ball, then outline it"
+provider: claude
+model: null
+commit: "3c579d07d"
+date: "2026-11-11T02:13:30.662Z"
+seconds: 48
+passed: 7
+total: 7
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Shade and outline"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: null
+    pass: true
+    detail: "32x32"
+  - id: one-frame
+    type: frames
+    desc: still a single frame
+    pass: true
+    detail: 1
+  - id: ai-layer
+    type: layers
+    desc: "the result is on AI: layers"
+    pass: true
+    detail:
+      - "AI: shaded Body"
+      - "AI: outline"
+  - id: outline-pixel
+    type: lua
+    desc: an opaque pixel just outside the original circle (the outline)
+    pass: true
+    detail: 255
+  - id: lit-top-left
+    type: lua
+    desc: the top-left of the ball is brighter than the bottom-right
+    pass: true
+    detail:
+      br: 68.69999999999999
+      tl: 183.89999999999998
+  - id: check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 0 warnings"
+steps:
+  - prompt: "/skill:shade-sprite Shade this flat ball with light from the top left, 3 bands, using the palette's greens."
+    seconds: 33
+    header: "Claude · Shade and outline"
+    tools:
+      - tool: "Read guide: basics"
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Shade from top-left
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Redraw ball bands as radial falloff
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Palette already holds a green ramp, so no new ramp needed.\nI shaded the ball with light from the top-left, using 3 bands from the palette's greens: `#8cdc6e` for light, `#3caa50` for mid and `#1e5a3c` for shadow. The result is on [AI: shaded Body](aseprite://layer/L3171), and the original [Body](aseprite://layer/L3142) is hidden.\n\nThe automatic shading came out with a straight diagonal edge and some stray pixels, so I redrew the bands as curved rings around a light point at the upper left. The ball now reads as round. `check` found no problems.\n\nI added no outline, and `#14281e` and `#e6fab4` are still unused. They would work as a darker edge and a small highlight."
+    errors: []
+  - prompt: "Now add a selout outline around it, darker than the shading."
+    seconds: 15
+    header: Claude
+    tools:
+      - tool: Outline (selout)
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Darken selout outline one ramp step
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added a 1 px selout outline around the ball on a new layer, **AI: outline**, and every outline pixel is now darker than the shading it touches. `check` found no problems.\n\nThe automatic outline came out too light on the lit side: it used `#3caa50`, the same green as the mid band. I moved each outline color one step darker:\n- **Lit side:** `#1e5a3c`.\n- **Middle:** `#14281e`.\n- **Shadow side:** `#181425`."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 55
+  scores:
+    readability: 4
+    form: 3
+    palette: 3
+    motion: null
+    fit: 4
+  overall: 3.5
+  note: "Three green bands establish clear top-left lighting, and the selective outline reads crisply at 1x. Parallel steps in the lower-right shadow and outline make that edge slightly rigid."

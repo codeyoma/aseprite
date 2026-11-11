@@ -169,3 +169,18 @@ test("snapshot without a view is unchanged; the step label names the view", asyn
   assert.equal(label({ view: "onion" }), "Look at the onion skin");
   assert.equal(label({ view: "compare" }), "Compare with the reference");
 });
+
+test("contactSheet notes: a frame's ms right-aligned in the label strip, only when it fits", async () => {
+  const { contactSheet, sheetGeometry } = await import("../dist/image.js");
+  const frame = { width: 32, height: 8, data: new Uint8Array(32 * 8 * 4) };
+  const bg = { r: 0, g: 0, b: 0, a: 255 }, labelColor = { r: 255, g: 255, b: 255, a: 255 };
+  const lit = (img, x0, x1, y1) => { let n = 0; for (let y = 0; y < y1; y++) for (let x = x0; x < x1; x++) if (img.data[(y * img.width + x) * 4]) n++; return n; };
+  const o = { columns: 1, zoom: 2, background: bg, labelColor };
+  const g = sheetGeometry(1, 32, 8, o);
+  const right = (img) => lit(img, g.gap + g.cellW - 20, g.gap + g.cellW, g.gap + 10);
+  assert.equal(right(contactSheet([frame], { ...o, labels: ["5"] })), 0);
+  assert.ok(right(contactSheet([frame], { ...o, labels: ["5"], notes: ["180MS"] })) > 0, "the note is drawn at the right");
+  const narrow = { width: 4, height: 8, data: new Uint8Array(4 * 8 * 4) };
+  const a = contactSheet([narrow], { ...o, labels: ["5"] }), b = contactSheet([narrow], { ...o, labels: ["5"], notes: ["180MS"] });
+  assert.deepEqual(b.data, a.data, "too narrow: no note");
+});

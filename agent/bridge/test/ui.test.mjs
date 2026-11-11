@@ -52,6 +52,33 @@ test("make_ui button: 4 tagged frames and a 9-patch slice", async () => {
   assert.match(r.content[0].text, /48x16 button with normal, hover, pressed and disabled frames/);
 });
 
+test("make_ui button in a fixed palette: every state differs, disabled has no bevel, the sprite gets the palette", async () => {
+  const pico = ["#000000", "#1d2b53", "#7e2553", "#008751", "#ab5236", "#5f574f", "#c2c3c7", "#fff1e8", "#ff004d", "#ffa300", "#ffec27", "#00e436", "#29adff", "#83769c", "#ff77a8", "#ffccaa"];
+  const fake = fakeDocument({ width: 32, height: 16, palette: pico, layers: [{ name: "L", frames: [new Uint8Array(32 * 16 * 4)] }] });
+  const r = await runTool(findTool("make_ui"), { kind: "button", width: 32, height: 15, fill: "#008751", label: "Play" }, fake);
+  assert.ok(!r.isError);
+  const anim = fake.calls.find((c) => c.method === "create_animation").params;
+  assert.deepEqual(anim.palette, pico, "the new sprite carries the palette it was snapped to");
+  const px = (f, x, y) => { const d = Buffer.from(anim.frames[f].rgba, "base64"); const i = (y * 32 + x) * 4; return [d[i], d[i + 1], d[i + 2]].join(); };
+  const fill = (f) => px(f, 16, 2); // inside the bevel, above the label
+  assert.equal(new Set(anim.frames.map((f) => f.rgba)).size, 4, "four distinct states");
+  // Hover: PICO-8's lighter green would wash out the cream label, so the fill stays and the frame lights up.
+  assert.notEqual(px(1, 16, 0), px(0, 16, 0), "hover's frame differs from normal's");
+  assert.equal(fill(1), fill(0));
+  const blue = await runTool(findTool("make_ui"), { kind: "button", width: 32, height: 15, fill: "#1d2b53", label: "Go", name: "b2" }, fake);
+  assert.ok(!blue.isError);
+  const b2 = fake.calls.filter((c) => c.method === "create_animation").at(-1).params;
+  const at = (f, x, y) => { const d = Buffer.from(b2.frames[f].rgba, "base64"); const i = (y * 32 + x) * 4; return [d[i], d[i + 1], d[i + 2]].join(); };
+  assert.notEqual(at(1, 16, 3), at(0, 16, 3), "a dark fill has room for a lighter hover fill");
+  // Disabled: the bevel rows (just inside the border) are the fill.
+  assert.equal(px(3, 16, 1), px(3, 16, 4), "disabled has no highlight row");
+  assert.equal(px(3, 16, 13), px(3, 16, 4), "disabled has no shadow row");
+  const { paletteStep } = await import("../dist/ui_tools.js");
+  const hexOf = (c) => "#" + [c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, "0")).join("");
+  const rgba = (h) => ({ r: parseInt(h.slice(1, 3), 16), g: parseInt(h.slice(3, 5), 16), b: parseInt(h.slice(5, 7), 16), a: 255 });
+  assert.equal(hexOf(paletteStep(rgba("#008751"), pico.map(rgba), 1)), "#00e436", "green steps to the lighter green");
+});
+
 test("BMFont text and XML: glyphs placed by offsets, advance and kerning", async () => {
   const { parseBMFont, bmfontInk, styleInk } = await import("../dist/ui.js");
   // A page with two 2x3 glyphs: "A" at (0,0) and "B" at (2,0), fully opaque.

@@ -166,6 +166,9 @@ for (const bench of benches) {
   const n0 = (await lua("return { n = #app.sprites }")).n;
   let seen = (await entries()).length;
   await lua(`${linesOf(bench.fixture)}\nreturn { ok = true }`);
+  // The starting sprite, so the judge scores what was made on it rather than the fixture's own design.
+  const startFrames = (await lua("return { n = #app.sprite.frames }")).n;
+  const start = savePng(await c.call("snapshot", startFrames > 1 ? { view: "filmstrip" } : { frame: 1 }), join(dir, "start.png"));
 
   const steps = [];
   const headers = [];
@@ -223,11 +226,11 @@ for (const bench of benches) {
   // Extras for what the last frame cannot show: the other sprites the request made
   // (a tile set beside its preview, a panel beside the button) and, when the benchmark
   // names them, layers alone (variants hidden under the top one).
-  const extras = [];
+  const extras = start ? [{ file: "start.png", what: `the sprite before the request, as it was given${startFrames > 1 ? `, its ${startFrames} frames side by side` : ""}, enlarged` }] : [];
   const sliceNote = (s) => (list(s?.slices).length ? `; 9-patch slices (not drawn): ${list(s.slices).join("; ")}` : "");
   for (const s of sprites.filter((s) => s.index !== home && !s.empty)) {
     await activate(s.index);
-    const file = `sprite-${extras.length + 1}.png`;
+    const file = `sprite-${extras.filter((x) => x.file.startsWith("sprite-")).length + 1}.png`;
     const shot = await c.call("snapshot", s.frames > 1 ? { view: "filmstrip" } : { frame: 1 });
     if (savePng(shot, join(dir, file))) extras.push({ file, what: `another sprite the request made, "${s.title}" (${s.width}x${s.height}${s.frames > 1 ? `, its ${s.frames} frames side by side` : ""}), enlarged${sliceNote(s)}` });
   }

@@ -24,7 +24,7 @@ Pixel text, buttons, panels, bars and icons. Cite a rule as `rule:<id>`; read on
 
 - Border: the darkest palette color. Bevel: highlight one step lighter than the fill on the top and left, shadow one step darker on the bottom and right.
 - Padding 3-4 px around a label. The 9-slice corner is the border plus the bevel (3-4 px); the middle stretches.
-- States: normal; hover (fill one step lighter); pressed (highlight and shadow swapped, label 1 px down); disabled (desaturated, lower contrast, no bevel). `make_ui` makes all four.
+- States: normal; hover (fill one step lighter, or a lit frame when the lighter fill would wash out the label); pressed (highlight and shadow swapped, label 1 px down); disabled (desaturated, lower contrast, no bevel). `make_ui` makes all four.
 
 ## Bars {#ui.bars}
 

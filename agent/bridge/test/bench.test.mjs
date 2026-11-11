@@ -73,6 +73,10 @@ test("extra judge images follow the main three, numbered on, capped", () => {
   assert.deepEqual(ims.map((im) => im.as), ims.map((_, i) => `image-${i + 1}.png`));
   const p = judgePrompt({ steps: ["/skill:recolor a", "b"], animated: false, images: ims });
   assert.ok(p.includes("image-4.png: another sprite") && !p.includes("sprite-1.png"));
+  assert.doesNotMatch(p, /starting sprite was given/);
+  const withStart = judgePrompt({ steps: ["/skill:recolor a", "b"], animated: false, images: judgeImages([{ file: "start.png", what: "the sprite before the request" }]) });
+  assert.match(withStart, /image-4\.png: the sprite before the request/);
+  assert.match(withStart, /not the starting sprite's own design/);
 });
 
 test("the judge is never the provider that drew", () => {
@@ -119,6 +123,7 @@ test("criteria decide from the facts the runner reads", () => {
   assert.ok(!ev({ type: "check" }, { text: "Error: no sprite" }));
   assert.ok(ev({ type: "skill" }, { headers: ["Agent · Animate a character or object"] }));
   assert.ok(!ev({ type: "skill" }, { headers: ["Agent"] }));
+  assert.ok(ev({ type: "skill" }, { headers: ["Claude · animate"] }), "the header may show the skill's name");
   const sprites = [{ title: "grass 47-tile set", width: 128, height: 96, frames: 1, nineSlice: false, tilemap: false }];
   assert.ok(ev({ type: "sprites", title: "47-tile", width: 128, height: 96 }, { sprites }));
   assert.ok(!ev({ type: "sprites", title: "preview" }, { sprites }));

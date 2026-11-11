@@ -152,6 +152,7 @@ const GLYPHS: Record<string, number[]> = {
   "0": [7, 5, 5, 5, 7], "1": [2, 6, 2, 2, 7], "2": [7, 1, 7, 4, 7], "3": [7, 1, 3, 1, 7], "4": [5, 5, 7, 1, 1],
   "5": [7, 4, 7, 1, 7], "6": [7, 4, 7, 5, 7], "7": [7, 1, 1, 2, 2], "8": [7, 5, 7, 5, 7], "9": [7, 5, 7, 1, 7],
   A: [2, 5, 7, 5, 5], B: [6, 5, 6, 5, 6], E: [7, 4, 6, 4, 7], F: [7, 4, 6, 4, 4], R: [6, 5, 6, 5, 5], T: [7, 2, 2, 2, 2],
+  M: [5, 7, 7, 5, 5], S: [3, 4, 2, 1, 6],
 };
 
 /** Normal "over" blending of one RGBA pixel onto an opaque background pixel. */
@@ -209,7 +210,7 @@ export function sheetGeometry(count: number, frameW: number, frameH: number, o: 
  */
 export function contactSheet(
   frames: Rgba[],
-  o: SheetOptions & { labels: string[]; background: RGBA; labelColor: RGBA },
+  o: SheetOptions & { labels: string[]; notes?: string[]; background: RGBA; labelColor: RGBA },
 ): Rgba {
   if (!frames.length) return blank(1, 1);
   const g = sheetGeometry(frames.length, frames[0].width, frames[0].height, o);
@@ -218,19 +219,24 @@ export function contactSheet(
   const out = new Uint8Array(W * H * 4);
   for (let i = 0; i < W * H; i++) out.set([o.background.r, o.background.g, o.background.b, 255], i * 4);
   const label = [o.labelColor.r, o.labelColor.g, o.labelColor.b, 255];
+  const write = (textIn: string, x0: number, y0: number) => [...textIn.toUpperCase()].forEach((ch, k) => {
+    const glyph = GLYPHS[ch];
+    if (!glyph) return;
+    for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) {
+      if (!(glyph[r] & (4 >> c))) continue;
+      for (let yy = 0; yy < ls; yy++) for (let xx = 0; xx < ls; xx++) {
+        const X = x0 + k * 4 * ls + c * ls + xx, Y = y0 + r * ls + yy;
+        if (X < W && Y < H) out.set(label, (Y * W + X) * 4);
+      }
+    }
+  });
   frames.forEach((f, n) => {
     const { x: cx, y: cy } = g.cell(n);
-    [...(o.labels[n] ?? "").toUpperCase()].forEach((ch, k) => {
-      const glyph = GLYPHS[ch];
-      if (!glyph) return;
-      for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) {
-        if (!(glyph[r] & (4 >> c))) continue;
-        for (let yy = 0; yy < ls; yy++) for (let xx = 0; xx < ls; xx++) {
-          const X = cx + k * 4 * ls + c * ls + xx, Y = cy + r * ls + yy;
-          if (X < W && Y < H) out.set(label, (Y * W + X) * 4);
-        }
-      }
-    });
+    const name = o.labels[n] ?? "", note = o.notes?.[n] ?? "";
+    write(name, cx, cy);
+    // A note (a frame's duration) goes right-aligned in the label strip, only when it fits beside the label.
+    const noteW = note.length * 4 * ls - ls;
+    if (note && (name.length + 1) * 4 * ls + noteW <= g.cellW) write(note, cx + g.cellW - noteW, cy);
     for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
       const j = (Math.floor(y / z) * f.width + Math.floor(x / z)) * 4;
       over(out, ((cy + labelH + y) * W + cx + x) * 4, f.data, j);

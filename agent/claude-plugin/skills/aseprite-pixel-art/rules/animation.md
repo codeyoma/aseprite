@@ -53,10 +53,25 @@ One line per animation: frames, durations, key poses. The sub-sections below giv
 - A step is contact, down, pass (and up at 8 frames). Two steps make the cycle: frames 4-6 repeat 1-3 with the near and far limbs swapped, never flipped (flipping changes facing and light).
 - Contact: legs widest, front heel down, back toe pushing, arms widest. Stride is about a third of the figure's height.
 - Down (one frame after contact): knees bend, hip lowest. Pass: support leg straight, swing foot by the knee, hip highest.
-- Hip bob: 1 px at 16 px, 2 px at 32, 3 px at 64. Arms swing opposite the legs.
+- Hip bob: 1 px at 16 px, 2 px at 32, 3 px at 64. Arms swing opposite the legs: `rule:anim.walk.limbs` lists every frame.
 - Contacts 20 ms longer than the rest: 6 frames at 120 100 100 120 100 100 (640 ms); 8 frames at 100-140 ms (0.8-1 s a cycle).
 - The planted foot slides back at the speed the game moves the character: px moved per frame / frame time = px/s. Tell the user that speed.
 - Shrinking: 8 -> 6 by dropping `up`, 6 -> 4 by dropping `down`. Keep the contacts.
+
+### Walk limbs per frame, 6 frames facing right {#anim.walk.limbs}
+
+Near = the side toward the viewer (drawn over the body); far = behind it. Forward = toward the facing direction. Hip is in px from the contact height (+ is lower).
+
+| Frame | Pose | Near leg | Far leg | Near arm | Far arm | Hip |
+|---|---|---|---|---|---|---|
+| 1 | contact | forward, heel down | back, toe pushing | back | forward (shows past the chest) | 0 |
+| 2 | down | forward, knee bent, foot flat | lifting off behind | back, less | forward, less | +1 |
+| 3 | pass | straight under the hip | knee forward, foot off the ground | at the side | at the side | -1 |
+| 4 | contact | back, toe pushing | forward, heel down | forward | back (hidden by the body) | 0 |
+| 5 | down | lifting off behind | forward, knee bent, foot flat | forward, less | back, less | +1 |
+| 6 | pass | knee forward, foot off the ground | straight under the hip | at the side | at the side | -1 |
+
+The rule in one line: the near arm is forward exactly when the near leg is back.
 
 ### Run {#anim.timing.run}
 

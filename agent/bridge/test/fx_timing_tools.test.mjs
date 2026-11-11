@@ -201,3 +201,30 @@ test("hit_stop without shake only lengthens the contact frame; a second hit move
   assert.equal(sum(st.frames.map((f) => f.durationMs)), 600 + 80 + 60);
   assert.deepEqual(st.fxHits.map((h) => h.frame), [7, 2], "the first hit moved past the inserted shake frames");
 });
+
+test("fx_overlay with a recipe: timed on the tag, extended past it, the recipe stored; id xor recipe", async () => {
+  const recipe = {
+    name: "frost-test", size: [48, 48], origin: [24, 24], duration: 0.5, anchor: "center",
+    palette: ["#1f4f8a", "#3f8fd0", "#9fdcff", "#ffffff"],
+    phases: [
+      { name: "flash", start: 0, end: 0.1, shapes: [{ type: "disc", radius: 8 }] },
+      { name: "burst", start: 0.05, end: 0.4, rings: [{ radius: [4, 20], width: 2 }] },
+    ],
+  };
+  const fake = attackSprite();
+  const r = await runTool(findTool("fx_overlay"), { recipe, tag: "attack", x: 40, y: 36, hit_frame: 4, overflow: "extend" }, fake);
+  assert.ok(!r.isError, textOf(r));
+  assert.deepEqual(writes(fake), ["put_images"], "one undo step");
+  const st = await state(fake);
+  assert.ok(st.frames.length > 6, "the effect outlasts the tag, so frames were added");
+  assert.equal(st.tags[0].to, st.frames.length, "the tag grows");
+  const l = layerOf(st, "AI: fx recipe:frost-test");
+  assert.ok(l, st.layers.map((x) => x.name).join());
+  assert.equal(JSON.parse(l.fx.recipe).name, "frost-test", "the recipe is stored for check_fx and tuning");
+  assert.ok(lit(fake.image("AI: fx recipe:frost-test", 4)) > 0, "it shows on the hit frame");
+  assert.equal(fake.image("AI: fx recipe:frost-test", 3), undefined, "and not before it");
+  const none = await runTool(findTool("fx_overlay"), { tag: "attack" }, attackSprite());
+  assert.match(textOf(none), /Give id .* or recipe/);
+  const both = await runTool(findTool("fx_overlay"), { id: "hit-spark", recipe, tag: "attack" }, attackSprite());
+  assert.equal(both.isError, true);
+});

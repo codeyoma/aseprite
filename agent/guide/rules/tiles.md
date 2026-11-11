@@ -64,6 +64,8 @@ Seamless terrain, transitions and autotile sets. Cite a rule as `rule:<id>`; rea
 | You see | Cause | Fix |
 |---|---|---|
 | A visible grid | One big feature, a gradient, or detail on the edge | Spread small clusters through the middle (`rule:tile.seamless`) |
+| Tufts or pebbles in a row like a pattern | One shape at even steps along the edge | 2-3 shapes, uneven gaps, some skipped |
+| Flat terrain, no height | The edge is a plain color change | A 1 px lit lip on the upper terrain and a 1 px shadow on the ground below it |
 | Seams between variants | Variant edges changed | Keep the outer 1-2 px of the fill (`rule:tile.variants`) |
 | Steps along a transition | Boundary offset differs at the tile's ends | Same offset at both ends (`rule:tile.edges`) |
 | Characters vanish on the ground | Tiles as contrasty as sprites | Lower tile contrast (`rule:tile.palette`) |

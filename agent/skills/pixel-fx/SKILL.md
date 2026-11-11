@@ -23,14 +23,21 @@ tools: [read_guide, list_fx, preview_fx, fx_from_recipe, add_fx, fx_overlay, hit
        { "name": "decay", "start": 0.15, "end": 0.5,
          "emitters": [{ "kind": "vapour", "count": 12, "speed": [5, 15], "life": [0.2, 0.35], "over": 0.1, "radius": 10, "y": -6 }] } ] }
    ```
-   Keep every particle's delay + life inside `duration` so a one-shot ends empty.
+   Keep every particle's delay + life inside `duration` so a one-shot ends empty. On an attack, give the recipe to `fx_overlay` (`recipe` instead of `id`, below) so it lands on the hit frame.
+
+## Size it before you place it
+Measure the character first (`snapshot` or its layer bounds), then set the recipe or options so that:
+- **Reach** matches `rule:vfx.scale`. A nova or area burst spreads to 1.5-2 times the character's height; a ring that stays inside the staff's length reads as a spark.
+- **Length** matches `rule:vfx.timing` at the sprite's own frame durations. Count the frames it will show on: at 100 ms frames, a 0.3 s effect is 3 frames (flash, one ring, gone). A burst needs at least 4-6 frames after the hit, so use `overflow: "extend"` when the tag ends sooner.
+- **Weight** reads at 1x: the impact frame has a solid bright core, and rings are at least 2 px thick until they break up. A 1 px ring and scattered dots look faint from the first frame.
+- **Ramp** reads as the element (`rule:vfx.color`). Most pixels sit on the bright and middle steps; the darkest step is only the rim of the fading parts. A ramp that starts at navy and fills the body reads as a dark blob.
 
 ## Variations
 When the user wants options, offer 2-3 that differ in seed or palette. Quick: show `preview_fx` sheets and ask. In the sprite: `add_fx` each one (`glow: "baked"`), then in `execute_lua` move each `AI: fx` layer into the group `variationLayer(task, i)` makes (give it that layer's name, delete the empty one), set the frame to the impact and call `propose_variations(task)`. The user picks; don't pick for them.
 
 ## Apply
 - **Onto the sprite:** `add_fx` puts the effect on `AI: fx <id>` layers (glow on an Addition layer above). Anchor `center` for hits, sparks, slashes and bolts (x, y is the impact point); `ground` for pillars, fires, circles and floor explosions (x, y is the floor under it).
-- **On an attack:** `fx_overlay` with the attack's `tag`, `anchor_layer` (the character) and `hit_frame` (the contact frame) lands the effect's impact on that frame. `flip: true` when the character faces left. Then `hit_stop` on the frame it reports, with the freeze it suggests or one from the table.
+- **On an attack:** `fx_overlay` with the attack's `tag`, `anchor_layer` (the character) or `x, y` (a staff tip, a fist), and `hit_frame` (the contact frame) lands the effect's impact on that frame. It takes a library `id` or your `recipe`. `overflow: "extend"` adds frames when the effect outlasts the tag (the character holds its last pose); the default `cut` chops the fade off. `flip: true` when the character faces left. Then `hit_stop` on the frame it reports, with the freeze it suggests or one from the table.
 - **As its own sprite** (a reusable effect sheet): `new_fx_sprite`.
 
 Timing: `rule:vfx.timing` for frame counts and durations, `rule:vfx.hitstop` for freeze and shake (`read_guide("rules/vfx")`).
@@ -44,10 +51,12 @@ Shapes, ramps and scale: `rule:vfx.shape`, `rule:vfx.color`, `rule:vfx.scale`.
 | Speckle: lone pixels everywhere | Fewer, larger particles; a shorter life for sparks; snap with `palette: "sprite"` |
 | Floaty: no weight, drifts forever | Shorter duration, more drag or gravity, the impact earlier (`hit_frame`), add a `hit_stop` |
 | Washed out: the glow eats the art | `light` 0.5-0.8, a darker palette, or `glow: "layer"` and lower that layer's opacity |
+| Tiny: a spark where a burst was asked | Recipe radius and ring reach up to `rule:vfx.scale`; more frames after the hit |
+| Lingering: particles left on the last frame | Shorter particle life, or `overflow: "extend"` so the fade finishes; the tag's last frame holds no effect pixels |
 | Loop seam: a jump when it wraps | Recipe: rings and shapes gone or matching at the end; sprite: frame timings that fit whole cycles (`check_fx` loop-seam) |
 
 ## Finish
-1. `snapshot` the impact frame and one after it.
+1. `snapshot` with `view: "filmstrip"` over the attack: the effect grows on the hit frame, travels for several frames and is gone on the last one.
 2. `check_fx` (spill, one-shot-end, loop-seam, colors) and fix what it reports; then `check` for the sprite as a whole (glow layers are skipped there).
 3. When the user wants it in a game: `export_for_engine` with `pivot` left out (the effect's origin is the pivot) and `glow: "sheet"`, so the light ships as `<name>_glow.png` for additive drawing; `meta.fx` carries fps, windup and hit-stops.
 4. Reply with the effect (id or recipe), where and on which frames it sits, the hit frame and freeze, and what the checks said.

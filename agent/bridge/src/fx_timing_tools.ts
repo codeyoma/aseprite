@@ -8,6 +8,7 @@ import * as z from "zod/v4";
 import { documentOf, type Document, type FrameInsert, type PutImagesItem, type SpriteInfo, type TagInfo } from "./document.js";
 import { renderFx } from "./fx/index.js";
 import type { FxAnchor, FxEntry } from "./fx/library.js";
+import { RECIPE_LIMITS, parseRecipe, recipeEntry } from "./fx/recipe.js";
 import {
   anchorInput, effectOptions, freeLayerName, fxAnchorPoint, fxCanvas, fxImpact, fxPalette, hexList, isFailure, lookup, optionsInput, placed,
 } from "./fx_tools.js";
@@ -201,7 +202,7 @@ export const FX_TIMING_TOOLS: Tool[] = [
     name: "fx_overlay",
     title: "Effect on an animation",
     description:
-      "Put an effect from the FX library onto a character's animation (a tag, or the frames from start_frame), in one " +
+      "Put an effect from the FX library (id) or a recipe (as fx_from_recipe takes) onto a character's animation (a tag, or the frames from start_frame), in one " +
       "undo step, timed to the action: hit_frame puts the effect's impact (its act hit for melee effects, else its " +
       "busiest frame) on that frame's first moment. timing 'resample' (default) shows the effect at each frame's start " +
       "time and adds no frames. A one-shot that runs past the range: overflow 'cut' (default with a tag: the tag is " +
@@ -216,7 +217,9 @@ export const FX_TIMING_TOOLS: Tool[] = [
       "character facing left. Layers, glow and palette work as in add_fx. The reply gives the impact frame and the " +
       "hit-stop the effect's act data suggests (for hit_stop).",
     input: z.object({
-      id: z.string().describe("Effect id from list_fx, e.g. 'sword-slash'."),
+      id: z.string().optional().describe("Effect id from list_fx, e.g. 'sword-slash'. Or recipe."),
+      recipe: z.union([z.string(), z.record(z.string(), z.unknown())]).optional()
+        .describe("A recipe (fx_from_recipe's format, object or JSON text) instead of id, for effects the library lacks; stored on the layer."),
       x: z.number().int().optional().describe("Where the effect's anchor goes (with y). Or use anchor_layer. Default: the sprite's centre."),
       y: z.number().int().optional(),
       anchor_layer: z.string().optional().describe("Put the effect at this layer's opaque bounds (the character), at hit_frame or the range's first frame."),
@@ -236,10 +239,21 @@ export const FX_TIMING_TOOLS: Tool[] = [
       options: optionsInput,
     }),
     kind: "edit",
-    label: (a) => (a?.id ? `Effect ${a.id} on the animation` : "Effect on the animation"),
+    label: (a) => (a?.id ? `Effect ${a.id} on the animation` : a?.recipe ? "Recipe effect on the animation" : "Effect on the animation"),
     async run(input, ctx) {
-      const e = lookup(input.id);
-      if (isFailure(e)) return e;
+      if ((input.id === undefined) === (input.recipe === undefined)) return failure("Give id (a library effect) or recipe, one of them.");
+      let e: FxEntry, recipeJson: string | undefined;
+      if (input.recipe !== undefined) {
+        try { e = recipeEntry(parseRecipe(input.recipe)); } catch (err) { return failure((err as Error).message); }
+        recipeJson = JSON.stringify(parseRecipe(input.recipe));
+        if (recipeJson.length > RECIPE_LIMITS.recipeChars) {
+          return failure(`The recipe is ${recipeJson.length} characters as JSON; at most ${RECIPE_LIMITS.recipeChars} can be stored with the effect. Use fewer items.`);
+        }
+      } else {
+        const found = lookup(input.id!);
+        if (isFailure(found)) return found;
+        e = found;
+      }
       const doc = documentOf(ctx);
       const info = await doc.info();
       let opts: Record<string, unknown>;
@@ -299,7 +313,7 @@ export const FX_TIMING_TOOLS: Tool[] = [
         insert: plan.inserts, durations: plan.durations, label: `Effect ${e.id} on the animation`, prompt: `fx_overlay ${e.id}`, palette: append,
         fx: {
           layer: colorItems.length ? `AI: ${main}` : `AI: ${main} glow`, id: e.id, x: ax - at.x + canvas.x, y: ay - at.y + canvas.y,
-          fps, loop: e.loop, windupMs: impact.ms,
+          fps, loop: e.loop, windupMs: impact.ms, ...(recipeJson ? { recipe: recipeJson } : {}),
         },
       });
       const after = await doc.info();

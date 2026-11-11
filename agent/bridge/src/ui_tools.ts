@@ -2,7 +2,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as z from "zod/v4";
-import { adjust, parseHex, type RGBA } from "./color.js";
+import { adjust, hex, parseHex, toOklab, toOklch, type RGBA } from "./color.js";
 import { documentOf, type AnimationFrame } from "./document.js";
 import { blank, readPng, snapToPalette, stamp, type Rgba } from "./image.js";
 import { NOT_PNG_SHEET } from "./sheet_tools.js";
@@ -15,6 +15,37 @@ const rgb = (h: string | undefined): [number, number, number] | undefined => {
   return c ? [c.r, c.g, c.b] : undefined;
 };
 const asRgb = (c: RGBA): [number, number, number] => [c.r, c.g, c.b];
+
+/**
+ * The palette color one visible step lighter (dir 1) or darker (dir -1) than c, keeping its hue: among the
+ * colors at least minDL lighter (or darker) in Oklab L, the one closest in hue and chroma (keeping some color), then in L.
+ * Undefined when there is none. Used for UI states, which must differ after snapping to a small palette.
+ */
+export function paletteStep(c: RGBA, pal: RGBA[], dir: 1 | -1, minDL = 0.05): RGBA | undefined {
+  const a = toOklab(c);
+  let best: RGBA | undefined, bestD = Infinity;
+  for (const p of pal) {
+    const b = toOklab(p);
+    const dL = (b.L - a.L) * dir;
+    if (dL < minDL) continue;
+    // A step that drops most of the color (a green's shadow going gray) reads muddy: prefer one that keeps some.
+    const grayer = Math.hypot(b.a, b.b) < Math.hypot(a.a, a.b) * 0.4 ? 0.3 : 0;
+    const d = Math.hypot(b.a - a.a, b.b - a.b) * 3 + dL + grayer;
+    if (d < bestD) { bestD = d; best = p; }
+  }
+  return best;
+}
+
+/** A disabled state's fill and label from the palette: the grayest color near c's lightness, and a gray far enough from it to read. */
+export function paletteDisabled(c: RGBA, pal: RGBA[]): { fill: RGBA; label: RGBA } {
+  const L = toOklab(c).L;
+  const score = (p: RGBA, target: number) => toOklch(p).C * 4 + Math.abs(toOklab(p).L - target);
+  const fill = [...pal].sort((x, y) => score(x, L) - score(y, L))[0];
+  const fL = toOklab(fill).L;
+  const target = fL < 0.6 ? fL + 0.3 : fL - 0.3;
+  const label = pal.filter((p) => Math.abs(toOklab(p).L - fL) >= 0.2).sort((x, y) => score(x, target) - score(y, target))[0] ?? fill;
+  return { fill, label };
+}
 
 export const UI_TOOLS: Tool[] = [
   {
@@ -91,22 +122,36 @@ export const UI_TOOLS: Tool[] = [
     async run(input, aseprite) {
       const fillC = parseHex(input.fill);
       if (!fillC) return failure(`Not a color: ${input.fill}`);
+      const doc = documentOf(aseprite);
+      // With a palette to snap to, state shades step along the palette (so hover never snaps back onto the
+      // normal fill); without one they are computed.
+      const pal = input.snap_to_palette === false ? [] : ((await resolvePalette("sprite", doc).catch(() => undefined)) ?? []);
+      const snapping = pal.length >= 2;
+      const lighter = (c: RGBA, amount: number) => (snapping ? paletteStep(c, pal, 1) : undefined) ?? adjust(c, { lightness: amount });
+      const darker = (c: RGBA, amount: number) => (snapping ? paletteStep(c, pal, -1) : undefined) ?? adjust(c, { lightness: -amount });
       const style = (fill: RGBA): PanelStyle => ({
         fill: asRgb(fill),
         border: rgb(input.border) ?? asRgb(adjust(fill, { lightness: -0.45, chroma: -0.3 })),
-        highlight: rgb(input.highlight) ?? asRgb(adjust(fill, { lightness: 0.12 })),
-        shadow: rgb(input.shadow) ?? asRgb(adjust(fill, { lightness: -0.12 })),
+        highlight: rgb(input.highlight) ?? asRgb(lighter(fill, 0.12)),
+        shadow: rgb(input.shadow) ?? asRgb(darker(fill, 0.12)),
         radius: input.radius ?? 1,
       });
       const font = loadFont(input.font ?? "aseprite");
       const labelColor = rgb(input.label_color) ?? [255, 241, 232];
-      const face = (fill: RGBA, opts: { pressed?: boolean; disabled?: boolean } = {}): { image: Rgba; center: { x: number; y: number; w: number; h: number } } => {
+      type FaceOpts = { pressed?: boolean; litFrame?: boolean; disabled?: { label: [number, number, number] } };
+      const face = (fill: RGBA, opts: FaceOpts = {}): { image: Rgba; center: { x: number; y: number; w: number; h: number } } => {
         const st = style(fill);
+        // The label's drop shadow is always the darker step, also when the pressed bevel swaps.
+        const labelShadow = st.shadow;
         if (opts.pressed) [st.highlight, st.shadow] = [st.shadow, st.highlight];
+        // Disabled: no bevel (rule:ui.panels), a low-contrast label without shadow.
+        if (opts.disabled) st.highlight = st.shadow = st.fill;
+        // Hover without a lighter fill: the frame lights up instead.
+        if (opts.litFrame && st.highlight) st.border = st.highlight;
         const p = panel(input.width, input.height, st);
         if (!input.label) return p;
-        const tc: [number, number, number] = opts.disabled ? [150, 150, 158] : labelColor;
-        const t = renderText(input.label, font, { color: tc, shadow: opts.disabled ? undefined : st.shadow });
+        const tc = opts.disabled ? opts.disabled.label : labelColor;
+        const t = renderText(input.label, font, { color: tc, shadow: opts.disabled ? undefined : labelShadow });
         const m = measureText(input.label, font);
         const x = Math.floor((input.width - m.width) / 2), y = Math.floor((input.height - m.height) / 2) + (opts.pressed ? 1 : 0);
         return { image: stamp(p.image, t, x, y), center: p.center };
@@ -118,23 +163,26 @@ export const UI_TOOLS: Tool[] = [
         frames = [{ image: p.image, duration: 100 }];
         center = p.center;
       } else {
+        const off = snapping ? paletteDisabled(fillC, pal) : { fill: adjust(fillC, { chroma: -0.85, lightness: -0.05 }), label: { r: 150, g: 150, b: 158, a: 255 } };
+        // Hover is the fill one step lighter (rule:ui.panels) unless that step washes the label out
+        // (rule:ui.text: text and background far apart); then the fill stays and the frame lights up.
+        const hoverFill = lighter(fillC, 0.08);
+        const labelL = toOklab({ r: labelColor[0], g: labelColor[1], b: labelColor[2], a: 255 }).L;
+        const readable = !input.label || Math.abs(labelL - toOklab(hoverFill).L) >= 0.25;
         const states = [
           face(fillC),
-          face(adjust(fillC, { lightness: 0.08 })),
-          face(adjust(fillC, { lightness: -0.06 }), { pressed: true }),
-          face(adjust(fillC, { chroma: -0.85, lightness: -0.05 }), { disabled: true }),
+          readable ? face(hoverFill) : face(fillC, { litFrame: true }),
+          // Pressed keeps the fill (snapping a slightly darker one may land on another hue); the bevel and label say it.
+          face(snapping ? fillC : adjust(fillC, { lightness: -0.06 }), { pressed: true }),
+          face(off.fill, { disabled: { label: asRgb(off.label) } }),
         ];
         frames = states.map((s) => ({ image: s.image, duration: 100 }));
         tags = ["normal", "hover", "pressed", "disabled"].map((n, i) => ({ name: n, from: i + 1, to: i + 1 }));
         center = states[0].center;
       }
-      const doc = documentOf(aseprite);
-      if (input.snap_to_palette !== false) {
-        // No sprite open: nothing to snap to.
-        const pal = (await resolvePalette("sprite", doc).catch(() => undefined)) ?? [];
-        if (pal.length >= 2) frames = frames.map((f) => ({ ...f, image: snapToPalette(f.image, pal) }));
-      }
-      const made = await doc.createAnimation(input.width, input.height, frames, { title: name, tags });
+      if (snapping) frames = frames.map((f) => ({ ...f, image: snapToPalette(f.image, pal) }));
+      // The new sprite gets the palette it was snapped to, so check judges it against the same colors.
+      const made = await doc.createAnimation(input.width, input.height, frames, { title: name, tags, ...(snapping ? { palette: pal.map(hex) } : {}) });
       await doc.setSlice({ name, x: 0, y: 0, w: input.width, h: input.height, center });
       return { content: [text(`Made "${made.title}": a ${input.width}x${input.height} ${input.kind}${input.kind === "button" ? " with normal, hover, pressed and disabled frames" : ""}, ` +
         `and a 9-patch slice '${name}' (stretchable center ${center.w}x${center.h} at ${center.x},${center.y}).`)] };

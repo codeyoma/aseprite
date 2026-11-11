@@ -16,6 +16,7 @@ tools: [read_guide, make_autotile, seamless_check, make_seamless, execute_lua, s
    4. **fill**: the middle of the terrain, no edges; it must wrap seamlessly (`rule:tile.seamless`; `seamless_check` on it; `make_seamless` fixes a few clashing edge pixels, a wider seam needs redrawing);
    5. **inner**: the fill with an inner corner in each of the four corners (where the terrain turns around a notch).
    Keep the fill texture the same in all five so quarters join without seams.
+   Edges carry the look: give the top terrain a 1 px lit lip and drop a 1 px shadow onto the ground below it, so the layer reads raised (`rule:tile.edges`). Tufts, cracks and pebbles along an edge come in 2-3 shapes at uneven gaps; one shape repeated at even steps reads as a pattern once the set is tiled.
    A 6-tile template in the RPG Maker layout also works (2 tiles wide, 3 high: a lone-tile preview and the inner corners on top, a 2x2 block of terrain with its border below); `make_autotile` tells them apart by shape. Use it when the user already has one.
 3. Call `make_autotile` (`kind: 47` for full blob terrain, `16` for simpler side-only sets). It opens the set and a preview map on a tilemap layer whose tileset is the set, so the user can paint more terrain with it.
 4. Look at the preview (`snapshot`) and go through `rule:tile.review`: seams in the middle mean the fill doesn't match between pieces; broken corners mean the island or inner tile's corners are off. Fix the template and run it again.

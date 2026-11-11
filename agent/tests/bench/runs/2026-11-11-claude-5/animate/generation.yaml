@@ -1,0 +1,128 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: "3c579d07d"
+date: "2026-11-11T02:02:48.889Z"
+seconds: 110
+passed: 8
+total: 8
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check: no repeated frames, feet stay on the ground"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 85
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: basics"
+        status: failed
+      - tool: "Read guide: rules/animation"
+        status: failed
+      - tool: Inspect pixels
+        status: failed
+      - tool: "Read guide: basics"
+        status: ok
+      - tool: "Read guide: anim.timing.walk"
+        status: ok
+      - tool: "Read guide: anim.walk.limbs"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw 6-frame walk on part layers
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Fix knee-forward leg in passing frames
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Run Lua
+        status: ok
+    reply: "Walk drawn on 5 part layers; fixing passing-pose far knee hidden behind support leg.\nThe 6-frame `walk` tag is done: the character walks facing right, and the near arm swings forward exactly when the near leg is back.\n\nI drew the walk on 5 new part layers (from back to front): [far arm](aseprite://layer/L1485), far leg, torso, near leg and near arm. Your original [Hero](aseprite://layer/L1410) layer is hidden, not edited.\n\n| Frame | Pose | Near leg | Near arm | Hip | ms |\n|---|---|---|---|---|---|\n| 1 | contact | forward | back | 0 | 120 |\n| 2 | down | forward, flat | back, less | +1 | 100 |\n| 3 | pass | straight | at the side | −1 | 100 |\n| 4 | contact | back | forward | 0 | 120 |\n| 5 | down | lifting | forward, less | +1 | 100 |\n| 6 | pass | knee forward | at the side | −1 | 100 |\n\nOne c"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 25
+    header: Claude
+    tools:
+      - tool: "Read guide: anim.timing.idle"
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw 4-frame idle breathing
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "The 4-frame `idle` tag is on frames 7–10, and the `walk` tag is still frames 1–6, unchanged. The character stands with both legs straight and arms at the sides.\n\n- **Frame 7 (300 ms):** rest pose.\n- **Frame 8 (150 ms):** head and chest move up 1 px (in-breath).\n- **Frame 9 (300 ms):** arms follow up 1 px.\n- **Frame 10 (150 ms):** head and chest settle back down while the arms stay up. Frame 7 then brings the arms down to close the loop.\n\nThe body stretches by 1 px instead of shifting, so no gap opens at the hips. Feet stay on the ground row. One idle loop is 900 ms. `check` found no duplicate frames and no foot jitter."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 58
+  scores:
+    readability: 2
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 3
+  overall: 2
+  note: "Clean pixels and distinct poses support the six-frame right-facing walk and four-frame breathing idle. The walk feels stiff, with limbs merging in passing poses and limited weight or follow-through."
