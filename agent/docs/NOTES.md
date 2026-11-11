@@ -2,6 +2,10 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Walk check: near leg lighter than the far leg (#99)
+- **How:** at each contact, `legLightness` takes the near leg's mean OKLab L (its mask, from the hip down) and the mean L of every other opaque composite pixel under the hip (the far leg). `judgeWalk` makes it an error when the near leg is less than `MIN_DEPTH` (0.12) lighter. It's skipped when there are fewer than 3 far-leg pixels (the far leg hidden). `walk_check` prints both values.
+- **Why:** every benchmark run so far drew the legs in #3c3c5a (near) and #1d2b53 (far), ΔL 0.07. The judge read the arm against those legs as same-side in some runs and opposite in others (run 12 opposite, run 13 same-side, with the same leg colors). A pairing a judge gets right by chance isn't readable. A measured threshold turns that into a fix with a number. 0.12 lets a mid grey-violet near leg (#6a6a90, ΔL 0.24) against the navy pass.
+
 ## Motion review: does the walk read the way it is drawn (#99)
 - **How:**
   - `motion_review` (`critic.ts`) measures the walk's contacts with `measureWalk`, the code `walk_check` uses, which now sits in `walk_check.ts` and is shared.
@@ -23,8 +27,8 @@ One short entry per change: how it works, why it was done this way, and where it
 - **Architecture:** a pure measurement module (`limbMask`, `fromTop`, `readLimb`, `judgeWalk`) behind one tool; `pixel_spec` storage is reused; the benchmark adds a criterion type and calls the tool.
 
 ## Mascot: a digging shovel that doesn't read as a gesture
-- **How:** the `shovel` icon is tilted (blade down-left, handle up-right), and the digging mood's second frame swaps to `shovel_dirt` (the blade in a mound) instead of moving the same icon up and down.
-- **Why:** the upright 5x5 shovel (a vertical line on a block) bobbing up and down read as a raised middle finger.
+- **How:** digging alternates two diagonal icons: `shovel` (a scoop, blade down-left) and `shovel_toss` (blade up-right with a clod flying). Neither has an upright stick.
+- **Why:** the upright 5x5 shovel (a vertical line on a block) read as a raised middle finger. The first fix kept a "blade in a mound" frame, a short upright stick on a block, which still read as a finger raised from a fist.
 - **Architecture:** icons stay 5x5 grids in `mascot.lua` `ICONS`; a frame can change its icon (`i`) like any other field.
 
 ## Image generator for art from scratch (#102)
