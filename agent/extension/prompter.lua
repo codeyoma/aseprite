@@ -15,10 +15,53 @@
 
 local Prompter = {}
 
+-- Alert text wrapped to lines of at most `width` characters (UTF-8 aware, at spaces; a longer word is cut), so a
+-- long message makes the alert taller, not wider. At most `maxLines` lines; the rest becomes "…". text is a string
+-- (its newlines kept) or a list of lines. Returns a list of lines (app.alert's text accepts one).
+function Prompter.wrap(text, width, maxLines)
+  width, maxLines = width or 72, maxLines or 30
+  local src = type(text) == "table" and text or {}
+  if type(text) ~= "table" then
+    for line in (tostring(text or "") .. "\n"):gmatch("(.-)\r?\n") do src[#src + 1] = line end
+  end
+  local out = {}
+  local function push(line)
+    if #out < maxLines then out[#out + 1] = line elseif #out == maxLines then out[maxLines] = "…" end
+  end
+  local len = utf8.len
+  for _, para in ipairs(src) do
+    para = tostring(para)
+    if (len(para) or #para) <= width then push(para)
+    else
+      local line = ""
+      for word in para:gmatch("%S+") do
+        while (len(word) or #word) > width do
+          if line ~= "" then push(line); line = "" end
+          local cut = utf8.offset(word, width + 1) or (width + 1)
+          push(word:sub(1, cut - 1)); word = word:sub(cut)
+        end
+        if line == "" then line = word
+        elseif (len(line) or #line) + 1 + (len(word) or #word) <= width then line = line .. " " .. word
+        else push(line); line = word end
+      end
+      if line ~= "" then push(line) end
+    end
+  end
+  return out
+end
+
+-- app.alert with its text wrapped (Prompter.wrap). Takes app.alert's table.
+function Prompter.alert(a)
+  local copy = {}
+  for k, v in pairs(a) do copy[k] = v end
+  if copy.text ~= nil then copy.text = Prompter.wrap(copy.text) end
+  return app.alert(copy)
+end
+
 -- Asks with a modal alert and shows tips in the status bar.
 function Prompter.app()
   return {
-    ask = function(q) return app.alert{ title = q.title, text = q.text, buttons = q.buttons } end,
+    ask = function(q) return Prompter.alert{ title = q.title, text = q.text, buttons = q.buttons } end,
     tip = function(text) app.tip(text) end,
   }
 end

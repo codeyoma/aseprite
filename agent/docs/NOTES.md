@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Long alerts wrap instead of widening
+- **How:** `Prompter.wrap` breaks alert text at spaces into lines of at most 72 characters (UTF-8 aware; a longer word is cut), keeps given newlines, and stops at 30 lines with "…". `Prompter.alert` is app.alert with that wrapping; the panel's questions, the bridge connection's alerts and saved-command errors all use it.
+- **Why:** a long permission text or error made the alert as wide as its longest line, sometimes wider than the screen.
+- **Architecture:** one alert adapter in `prompter.lua`, passed to `bridge_connection.lua` and `saved_commands.lua` as `alert` (they fall back to app.alert).
+
 ## Two Aseprite windows no longer fight over the bridge
 - **How:**
   - A newer Aseprite connection still replaces the older one, but the bridge first sends it `replaced` (protocol.json handshake). The extension then closes without its automatic reconnect and waits until its user uses the agent again.

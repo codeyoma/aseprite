@@ -71,5 +71,21 @@ do
   check("notice", n.buttons[1] == "OK" and n.text == "failed")
 end
 
+-- Long alert text wraps down instead of widening the alert
+do
+  local long = string.rep("word ", 40) .. "end"
+  local w = Prompter.wrap(long, 20)
+  local widest = 0
+  for _, l in ipairs(w) do widest = math.max(widest, utf8.len(l)) end
+  check("wrap: no line wider than 20", widest <= 20, widest)
+  check("wrap: nothing lost", table.concat(w, " ") == long)
+  check("wrap: newlines kept", #Prompter.wrap("a\nb") == 2)
+  check("wrap: a long word is cut", #Prompter.wrap(string.rep("x", 50), 20) == 3)
+  check("wrap: korean counts characters", #Prompter.wrap(string.rep("가", 30), 20) == 2)
+  check("wrap: lists of lines", #Prompter.wrap({ "short", string.rep("y ", 30) }, 20) == 4)
+  local many = Prompter.wrap(string.rep("line\n", 50), 72, 5)
+  check("wrap: at most maxLines, then an ellipsis", #many == 5 and many[5] == "…", #many)
+end
+
 print(failures == 0 and "ALL PROMPTER TESTS PASS" or (failures .. " FAILED"))
 if failures > 0 then error(failures .. " prompter tests failed") end

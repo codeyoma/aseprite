@@ -19,6 +19,7 @@ function M.new(opts)
     readFile = assert(opts.readFile, "readFile required"),
     plugin = opts.plugin,
     executeLua = assert(opts.executeLua, "executeLua required"),
+    alert = opts.alert or function(a) return app.alert(a) end,
     list = {},
     registered = {},
   }, M)
@@ -104,7 +105,7 @@ function M:reload(dir)
         onenabled = function() return app.sprite ~= nil end,
         onclick = function()
           local r = self:run(c.name, {})
-          if not r.ok then app.alert{ title = c.title, text = tostring(r.error) } end
+          if not r.ok then self.alert{ title = c.title, text = tostring(r.error) } end
         end,
       }
       self.registered[id] = true

@@ -35,6 +35,7 @@ function M.new(opts)
   -- done by agent.lua (already trusted) instead of this module.
   local readFile = assert(opts.readFile, "readFile required")
   local runShell = assert(opts.runShell, "runShell required")
+  local alert = opts.alert or function(a) return app.alert(a) end
   local openSocket = assert(opts.openSocket, "openSocket required")
 
 local ws = nil
@@ -199,7 +200,7 @@ local function onReceive(mt, data, err)
       if ws then ws:close(); ws = nil end
       connected = false
       local text = msg.params and msg.params.message or "The bridge speaks a different protocol version."
-      app.alert{ title = "AI Agent", text = text }
+      alert{ title = "AI Agent", text = text }
       startReconnectTimer()
     elseif msg.method == "replaced" then
       -- Another Aseprite window took the bridge. Stay off it (no automatic reconnect) until this window uses the
@@ -249,7 +250,7 @@ connect = function(quiet)
   session = readSession()
   if not session then
     if not quiet then
-      app.alert{
+      alert{
         title = "AI Agent",
         text = {
           "The aseprite-agent bridge is not running.",

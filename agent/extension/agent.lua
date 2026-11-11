@@ -91,13 +91,15 @@ function init(plugin)
     onCommandsChanged = function(dir) if saved then saved:reload(dir) end end,
     -- Writing files stays in this script (Aseprite asks permission per script file).
     writePalette = function(pal, path) pal:saveAs(path) end }
+  -- Alerts wrap long text (Prompter.alert), so a long message grows the alert down, not sideways.
+  local Prompter = load("prompter.lua")
   saved = load("saved_commands.lua").new{
     dir = app.fs.joinPath(agentHome(), "commands"),
-    readFile = readFile, plugin = plugin, executeLua = handlers.executeLua,
+    readFile = readFile, plugin = plugin, executeLua = handlers.executeLua, alert = Prompter.alert,
   }
 
   connection = load("bridge_connection.lua").new{
-    protocol = protocol,
+    protocol = protocol, alert = Prompter.alert,
     preferences = plugin.preferences,
     -- Through the panel, which moves the running chat to a sprite the
     -- request opens or makes; the gate holds requests while the running
@@ -165,7 +167,6 @@ function init(plugin)
   -- Scripted answers (tests): question id ("permission", "developer",
   -- "apply", "discard", "revert"; "*" for any) -> function(question) -> button
   -- index or true/false. Unanswered questions show the usual alert.
-  local Prompter = load("prompter.lua")
   local answers = {}
   local prompter = Prompter.scripted(function(q)
     local fn = answers[q.id] or answers["*"]
