@@ -18,19 +18,30 @@ test("the ask endpoint lists only read tools and refuses edits", async () => {
   const calls = [];
   const link = { request: async (method, params) => { calls.push(method); return { result: { ok: true } }; } };
   const ep = await startHttpEndpoint(link, "t0k");
+  // Every tool listed (ASEPRITE_AGENT_TOOLS=all), as before the core set (#88).
+  process.env.ASEPRITE_AGENT_TOOLS = "all";
   try {
     const full = await connect(ep.url, "t0k");
     const ask = await connect(ep.askUrl, "t0k");
     const fullNames = (await full.listTools()).tools.map((t) => t.name);
     const askNames = (await ask.listTools()).tools.map((t) => t.name);
     assert.ok(fullNames.includes("execute_lua"));
-    assert.deepEqual(askNames.sort(), TOOLS.filter((t) => t.kind === "read").map((t) => t.name).sort());
+    assert.deepEqual(askNames.sort(), [...TOOLS.filter((t) => t.kind === "read").map((t) => t.name), "call_tool", "find_tools"].sort());
     const forced = await ask.callTool({ name: "execute_lua", arguments: { code: "app.sprite:resize(1,1)" } }).catch((e) => ({ isError: true, error: e }));
     assert.ok(forced.isError, "edit tool refused");
+    // The core set (default): call_tool on the ask endpoint can't reach an edit tool either.
+    delete process.env.ASEPRITE_AGENT_TOOLS;
+    const core = await connect(ep.askUrl, "t0k");
+    const coreNames = (await core.listTools()).tools.map((t) => t.name);
+    assert.ok(!coreNames.includes("execute_lua") && coreNames.includes("call_tool"));
+    const via = await core.callTool({ name: "call_tool", arguments: { name: "execute_lua", input: { code: "app.sprite:resize(1,1)" } } });
+    assert.ok(via.isError, "edit tool refused through call_tool");
     assert.ok(!calls.includes("execute_lua"), "never reached Aseprite");
     await full.close();
     await ask.close();
+    await core.close();
   } finally {
+    delete process.env.ASEPRITE_AGENT_TOOLS;
     ep.server.close();
   }
 });

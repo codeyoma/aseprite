@@ -65,3 +65,13 @@ A **concept sheet** for a character or prop is the same with views instead of po
 Then: `shade-sprite` or `animate` on the drawn frames, then `review`.
 
 Adapted from aseprite-ai-artist's concept skill (MIT, https://github.com/with-pebbly/aseprite-ai-artist).
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "generate_image", input: { ... } }). Their inputs:
+- generate_image {prompt?: string, aspect?: "square"|"portrait"|"landscape", job?: string, cancel?: boolean}: Make a rough image from a prompt with the image generator (Codex's image generation, on the user's Codex plan), for a concept sheet or storyboard to trace: t…
+- concept_spec {image: string, target_size?: [integer 1-512, integer 1-512]|object, panels?: "auto"|object, method?: "snap"|"nearest"}: Read a concept sheet or storyboard image (e.g.
+- pixel_spec {spec?: string|object}: Store the pixel spec (the JSON written from a concept: canvas, frames with bounds and landmarks, palette roles, deviations) on the sprite, so later steps and…
+- storyboard_to_frames {image: string, panels?: "auto"|object, target_size?: [integer 1-512, integer 1-512]|object, frames?: integer|string|[integer], method?: "snap"|"nearest", show?: "hidden"|"faint", name?: string, spec?: string|object, draft?: integer 2-64}: Put a storyboard's panels on the sprite's frames as a locked reference layer: the background is removed, panel i is scaled to the canvas (snap or nearest) an…
+- mismatch_regions {reference?: string, layer?: string, frames?: string|integer|[integer], top?: integer 1-50}: Where the drawing departs from the reference layer, largest first: the silhouettes (alpha >= 128) are compared per frame, and each connected area that only t…
+- remap_to_palette {palette?: string, colors?: [string], file?: string, layer?: string, frames?: string|integer|[integer], preserve_ramps?: boolean, set_palette?: boolean}: Recolor a layer or the sprite so it uses only a palette's colors, by perceptual distance (OKLab).
+</skill-tools>

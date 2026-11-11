@@ -1,6 +1,7 @@
 // Guide tools: the agent guide's topics and the Skill Catalog.
 import * as z from "zod/v4";
-import { catalog, guideIndex, guideTopics, readGuide, searchCatalog } from "./guide.js";
+import { allSkills, catalog, guideIndex, guideTopics, readGuide, searchCatalog } from "./guide.js";
+import { skillToolsNote } from "./tool_sets.js";
 import { readRule, ruleChapter, ruleChapters, rulesIndex } from "./rules.js";
 import { failure, text, type Tool } from "./tool.js";
 
@@ -34,9 +35,12 @@ export const GUIDE_TOOLS: Tool[] = [
         return { content: [text(`Topics:\n${guideIndex()}\n\nRules (read_guide("rules") lists rule ids): ${chapters}`)] };
       }
       const md = readGuide(topic) ?? readRulesTopic(topic);
-      return md === undefined
-        ? failure(`Unknown topic: ${topic}. Topics: ${topics.join(", ")}; rules: ${ruleChapters().map((c) => `rules/${c.name}`).join(", ")}`)
-        : { content: [text(md)] };
+      if (md === undefined) {
+        return failure(`Unknown topic: ${topic}. Topics: ${topics.join(", ")}; rules: ${ruleChapters().map((c) => `rules/${c.name}`).join(", ")}`);
+      }
+      // A skill's deferred tools with their inputs (#88), so following it needs no find_tools call.
+      const tools = skillToolsNote(allSkills().get(topic.toLowerCase())?.tools ?? []);
+      return { content: [text(tools ? `${md.trimEnd()}\n\n${tools}` : md)] };
     },
   },
   {

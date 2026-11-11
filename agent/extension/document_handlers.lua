@@ -530,46 +530,19 @@ function M.new(opts)
   -- with-pebbly, https://github.com/with-pebbly/aseprite-ai-artist).
   local GRID_KEEP, GRID_CLEAR = {}, {}
 
-  handlers.write_pixels = function(params)
-    local sprite = app.sprite
-    local layer = params.layer and layerById(params.layer, sprite) or app.layer
-    if not layer then error("No layer to write to") end
-    if layer.isGroup or layer.isTilemap or not layer.isImage then
-      error("write_pixels writes into an image layer; " .. layer.name .. " is not one")
-    end
-    local frame = params.frame or (app.frame and app.frame.frameNumber) or 1
-    local x0, y0 = params.x or 0, params.y or 0
-    local rows = params.rows
-    if type(rows) ~= "table" or #rows == 0 then error("rows must list at least one row") end
-
-    -- Rows of keys, all the same width.
-    local grid, width = {}, 0
-    for r, row in ipairs(rows) do
-      if type(row) ~= "string" then error(string.format("Row %d is not text", r)) end
-      local cells = {}
-      for t in row:gmatch("%S+") do cells[#cells + 1] = t end
-      if r == 1 then
-        width = #cells
-        if width == 0 then error("Row 1 is empty") end
-      elseif #cells ~= width then
-        error(string.format("Row %d (y=%d) has %d pixels but row 1 has %d. Every row must be the same width; rows are never padded",
-          r, y0 + r - 1, #cells, width))
-      end
-      grid[r] = cells
-    end
-    if width * #grid > MAX_READ_PIXELS then
-      error(string.format("Grid %dx%d is too large; write at most %d pixels per call", width, #grid, MAX_READ_PIXELS))
-    end
-
+  -- Pixel values from keys for one sprite: resolve(key) -> GRID_KEEP,
+  -- GRID_CLEAR or a pixel value; nil and a reason when unknown. Shared by
+  -- write_pixels and apply (handlers_apply.lua).
+  local function gridKeys(sprite, legendParam)
     -- The legend: key -> normalized hex.
     local legend = {}
-    for k, v in pairs(params.legend or {}) do
+    for k, v in pairs(legendParam or {}) do
       k = tostring(k)
       if k == "." or k == "-" then
-        error("Legend key '" .. k .. "' is reserved: '.' is transparent and '-' leaves a pixel unchanged")
+        error("Legend key '" .. k .. "' is reserved: '.' is transparent and '-' leaves a pixel unchanged", 0)
       end
       local ok, r, g, b, a = pcall(px.parseHex, v)
-      if not ok then error(string.format("Legend key '%s': %s is not a color (use #rrggbb or #rrggbbaa)", k, tostring(v))) end
+      if not ok then error(string.format("Legend key '%s': %s is not a color (use #rrggbb or #rrggbbaa)", k, tostring(v)), 0) end
       legend[k] = px.hex(r, g, b, a)
     end
 
@@ -580,7 +553,6 @@ function M.new(opts)
     local pc = app.pixelColor
     local clearValue = indexed and sprite.transparentColor or 0
 
-    -- A key -> GRID_KEEP, GRID_CLEAR or a pixel value; nil and a reason when unknown.
     local function pixelOfHex(hex)
       local r, g, b, a = px.parseHex(hex)
       if a == 0 then return GRID_CLEAR end
@@ -620,27 +592,63 @@ function M.new(opts)
       cache[t] = v
       return v, why
     end
+    return resolve, clearValue
+  end
 
-    -- Every pixel checked before anything changes.
-    local writes, written = {}, 0
-    local bx0, by0, bx1, by1
+  -- Rows of keys at x0, y0 to a list of writes { x, y, value } (every pixel
+  -- checked before anything changes) and how many pixels they cover.
+  local function gridWrites(sprite, rows, legend, x0, y0)
+    if type(rows) ~= "table" or #rows == 0 then error("rows must list at least one row", 0) end
+    -- Rows of keys, all the same width.
+    local grid, width = {}, 0
+    for r, row in ipairs(rows) do
+      if type(row) ~= "string" then error(string.format("Row %d is not text", r), 0) end
+      local cells = {}
+      for t in row:gmatch("%S+") do cells[#cells + 1] = t end
+      if r == 1 then
+        width = #cells
+        if width == 0 then error("Row 1 is empty", 0) end
+      elseif #cells ~= width then
+        error(string.format("Row %d (y=%d) has %d pixels but row 1 has %d. Every row must be the same width; rows are never padded",
+          r, y0 + r - 1, #cells, width), 0)
+      end
+      grid[r] = cells
+    end
+    if width * #grid > MAX_READ_PIXELS then
+      error(string.format("Grid %dx%d is too large; write at most %d pixels per call", width, #grid, MAX_READ_PIXELS), 0)
+    end
+    local resolve = gridKeys(sprite, legend)
+    local writes = {}
     for r, cells in ipairs(grid) do
       for c, t in ipairs(cells) do
         local x, y = x0 + c - 1, y0 + r - 1
         local v, why = resolve(t)
-        if v == nil then error(string.format("Row %d, column %d (x=%d, y=%d): %s", r, c, x, y, why)) end
+        if v == nil then error(string.format("Row %d, column %d (x=%d, y=%d): %s", r, c, x, y, why), 0) end
         if v ~= GRID_KEEP then
           if x < 0 or y < 0 or x >= sprite.width or y >= sprite.height then
             error(string.format("Row %d, column %d (x=%d, y=%d) is outside the %dx%d canvas; write '-' there",
-              r, c, x, y, sprite.width, sprite.height))
+              r, c, x, y, sprite.width, sprite.height), 0)
           end
-          written = written + 1
           writes[#writes + 1] = { x, y, v }
-          if v ~= GRID_CLEAR then
-            bx0 = bx0 and math.min(bx0, x) or x; by0 = by0 and math.min(by0, y) or y
-            bx1 = bx1 and math.max(bx1, x) or x; by1 = by1 and math.max(by1, y) or y
-          end
         end
+      end
+    end
+    return writes
+  end
+
+  -- Writes { x, y, value } (value: a pixel or GRID_CLEAR) into one layer's
+  -- cel. The cel keeps its position and grows to cover painted pixels.
+  -- Returns the result and a function that makes the change (nil when
+  -- nothing changes); the caller runs it inside its transaction.
+  local function celWrites(sprite, layer, frame, writes)
+    local cm = sprite.colorMode
+    local clearValue = cm == ColorMode.INDEXED and sprite.transparentColor or 0
+    local bx0, by0, bx1, by1
+    for _, w in ipairs(writes) do
+      if w[3] ~= GRID_CLEAR then
+        local x, y = w[1], w[2]
+        bx0 = bx0 and math.min(bx0, x) or x; by0 = by0 and math.min(by0, y) or y
+        bx1 = bx1 and math.max(bx1, x) or x; by1 = by1 and math.max(by1, y) or y
       end
     end
 
@@ -653,7 +661,7 @@ function M.new(opts)
       nx = nx and math.min(nx, bx0) or bx0; ny = ny and math.min(ny, by0) or by0
       nx1 = nx1 and math.max(nx1, bx1) or bx1; ny1 = ny1 and math.max(ny1, by1) or by1
     end
-    local result = { written = written, changed = 0, layer = "L" .. layer.id, frame = frame }
+    local result = { written = #writes, changed = 0, layer = "L" .. layer.id, frame = frame }
     if not nx then return result end   -- only clears where there is no cel
     local nw, nh = nx1 - nx + 1, ny1 - ny + 1
     local grown = not cel or nx ~= ox or ny ~= oy or nw ~= ow or nh ~= oh
@@ -683,16 +691,39 @@ function M.new(opts)
     result.changed = changed
     result.cel = { x = nx, y = ny, width = nw, height = nh }
     if changed == 0 and not grown then return result end
-
-    app.transaction("Write pixels", function()
+    return result, function()
       if cel then
         cel.image = img
         if nx ~= ox or ny ~= oy then cel.position = Point(nx, ny) end
       else
         sprite:newCel(layer, frame, img, Point(nx, ny))
       end
-    end)
-    app.refresh()
+    end
+  end
+
+  -- The image layer a pixel write goes to: params.layer (id or name) or the active layer.
+  local function pixelLayer(sprite, ref, what)
+    local layer = ref and layerById(ref, sprite) or (not ref and app.layer) or nil
+    if not layer then
+      if ref then error("Layer not found: " .. tostring(ref), 0) end
+      error("No layer to write to", 0)
+    end
+    if layer.isGroup or layer.isTilemap or not layer.isImage then
+      error(what .. " writes into an image layer; " .. layer.name .. " is not one", 0)
+    end
+    return layer
+  end
+
+  handlers.write_pixels = function(params)
+    local sprite = app.sprite
+    local layer = pixelLayer(sprite, params.layer, "write_pixels")
+    local frame = params.frame or (app.frame and app.frame.frameNumber) or 1
+    local writes = gridWrites(sprite, params.rows, params.legend, params.x or 0, params.y or 0)
+    local result, commit = celWrites(sprite, layer, frame, writes)
+    if commit then
+      app.transaction("Write pixels", commit)
+      app.refresh()
+    end
     return result
   end
 
@@ -717,11 +748,14 @@ function M.new(opts)
   local D = {
     px = px, view = view, layerById = layerById, variations = variations, wireParams = wireParams,
     framesFromParam = framesFromParam, imageLayers = imageLayers,
+    -- Pixel writes (write_pixels' grid, for apply): see gridKeys, gridWrites, celWrites.
+    GRID_CLEAR = GRID_CLEAR, gridKeys = gridKeys, gridWrites = gridWrites, celWrites = celWrites, pixelLayer = pixelLayer,
     writePalette = opts.writePalette or function() error("Saving palettes needs agent.lua (opts.writePalette)") end,
   }
   loadModule("handlers_check.lua")(handlers, D)
   loadModule("handlers_color.lua")(handlers, D)
   loadModule("handlers_sprite.lua")(handlers, D)
+  loadModule("handlers_apply.lua")(handlers, D)
 
   -------------------------------------------------------------------------
   -- Policy: how H.call runs a request

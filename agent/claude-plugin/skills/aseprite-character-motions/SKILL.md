@@ -41,3 +41,15 @@ One sprite holds one character: a **base pose**, then one **tag per motion** (id
 - If the user declines the image generator, draw the motion yourself on the same part layers: keys first, then in-betweens by moving and rotating parts (`transform_layer`, `rotate_layer`).
 
 Then: `review`, then `export-game` for a game.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "generate_character", input: { ... } }). Their inputs:
+- generate_character {subject?: string, view?: string, poses?: [string], frames?: [integer], tag?: string, target_size?: [integer 1-512, integer 1-512]|object, layers?: [object], colors?: integer 4-64, name?: string, reference?: boolean, base_frame?: integer, inbetweens?: boolean, job?: string}: A new character as body-part layers from the image generator (#103): first a master sheet with the whole character in every key pose, then one image per laye…
+- apply_timeline_text {text: string, plan?: boolean}: Change the timeline to match the text, in one undo step.
+- get_timeline_text {}: The active sprite's timeline as compact text: frame count, frame durations, tags (range, direction, repeats) and linked cels.
+- motion_stage {action?: "keys"|"advance"|"done", tag?: string, keys?: [integer], walk?: boolean}: Draw an animation in stages (#99).
+- walk_check {tag?: string, facing?: "right"|"left", contacts?: [integer, integer], near_arm?: object, near_leg?: object}: Check a side-view walk's arms against its legs on the two contact frames: the near arm must swing opposite the near leg, and each must change sides between t…
+- motion_review {tag?: string}: A fresh critic looks at a walk's two contact frames (enlarged, no measurements, no brief) and says which arm it notices, which leg it pairs with that arm, an…
+- transform_layer {layer: string, from_frame: integer, to_frame: integer, move: object, arc?: number, easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out"}: Animate a rigid part (a layer: an arm, a sword, a whole small sprite) from its drawing in from_frame through to_frame: each frame gets the drawing moved/rota…
+- rotate_layer {layer: string, frames: [integer], angle: number, pivot_x?: number, pivot_y?: number}: Rotate a layer's drawing in some frames by an angle around a pivot, RotSprite-style (clean edges, no new colors).
+</skill-tools>

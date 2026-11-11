@@ -19,3 +19,11 @@ tools: [color_stats, adjust_tone, remap_to_palette, palette_from_image]
 5. Run `color_stats` again with `compare_to`. If it still reports a clear difference (e.g. more than 30% in saturation), apply `adjust_tone` once more. Report what's left of the difference and `snapshot` the result.
 
 Then: `check-sprite`.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "color_stats", input: { ... } }). Their inputs:
+- color_stats {source?: "sprite"|"layer"|"selection"|"file", path?: string, layer?: string, frames?: string|integer|[integer], frame?: integer, compare_to?: object}: Tone statistics of a source (mean lightness, saturation, contrast, warmth, color count, darkest/lightest), its hue histogram, its outline color (the color ar…
+- adjust_tone {layer?: string, frames?: string|integer|[integer], lightness?: number -1-1, saturation?: number -1-3, contrast?: number -1-3, hue?: number -180-180, match_to?: object, strength?: number 0-1, snap_to_palette?: boolean}: Shift a layer's or the sprite's tone in OKLCH: lightness (-1..1, small values like 0.05), saturation and contrast (relative, e.g.
+- remap_to_palette {palette?: string, colors?: [string], file?: string, layer?: string, frames?: string|integer|[integer], preserve_ramps?: boolean, set_palette?: boolean}: Recolor a layer or the sprite so it uses only a palette's colors, by perceptual distance (OKLab).
+- palette_from_image {source?: "sprite"|"layer"|"selection"|"file", path?: string, layer?: string, frames?: string|integer|[integer], frame?: integer, max_colors?: integer 2-256, method?: "exact"|"median-cut"|"k-means", set_palette?: boolean, swatches?: boolean, save?: string, save_gpl?: string, ignore_alpha_below?: integer 1-255, min_share?: number 0-0.5, compare_with?: [string]}: The colors an image, layer, selection or the whole sprite uses: counts and shares, grouped into ramps (dark to light), near-duplicate colors, and the closest…
+</skill-tools>

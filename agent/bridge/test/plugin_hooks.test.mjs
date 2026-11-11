@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TOOLS } from "../dist/tools.js";
 import { LOOK_NUDGE } from "../dist/look.js";
-import { SYSTEM_PROMPT } from "../dist/chat.js";
+import { systemPrompt } from "../dist/chat.js";
 import { AsepriteLink } from "../dist/aseprite.js";
 
 const hooksDir = fileURLToPath(new URL("../../claude-plugin/hooks/", import.meta.url));
@@ -44,13 +44,15 @@ test("the PostToolUse matcher covers exactly the edit tools of the Tool table", 
   const [entry] = hooksJson.hooks.PostToolUse;
   const matcher = new RegExp(entry.matcher);
   for (const t of TOOLS) assert.equal(matcher.test(PREFIX + t.name), t.kind === "edit", t.name);
+  // call_tool (#88) can run an edit tool.
+  assert.ok(matcher.test(PREFIX + "call_tool"));
   assert.ok(matcher.test(PREFIX + "execute_lua"));
   assert.ok(!matcher.test("mcp__other__execute_lua"));
   assert.ok(!matcher.test(PREFIX + "execute_lua_x"));
   assert.match(entry.hooks[0].command, /\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/look-nudge\.mjs/);
   assert.match(hooksJson.hooks.SessionStart[0].hooks[0].command, /session-status\.mjs/);
   const list = JSON.parse(readFileSync(join(hooksDir, "edit-tools.json"), "utf8"));
-  assert.deepEqual(list.tools, TOOLS.filter((t) => t.kind === "edit").map((t) => t.name).sort());
+  assert.deepEqual(list.tools, [...TOOLS.filter((t) => t.kind === "edit").map((t) => t.name), "call_tool"].sort());
   assert.equal(list.nudge, LOOK_NUDGE);
 });
 
@@ -172,5 +174,5 @@ test("the bridge answers GET /status on its WebSocket port", async () => {
 });
 
 test("the in-app chat's system prompt carries the same reminder", () => {
-  assert.ok(SYSTEM_PROMPT.includes(LOOK_NUDGE));
+  assert.ok(systemPrompt().includes(LOOK_NUDGE));
 });

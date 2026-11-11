@@ -19,7 +19,13 @@ if (!existsSync(join(root, "dist", "tools.js"))) {
 }
 const { TOOLS } = await import(new URL("../dist/tools.js", import.meta.url).href);
 const { LOOK_NUDGE } = await import(new URL("../dist/look.js", import.meta.url).href);
-const editTools = TOOLS.filter((t) => t.kind === "edit").map((t) => t.name).sort();
+// The default (core) tool set decides which skill tools need a note; the generated files must not depend on the
+// developer's own ASEPRITE_AGENT_TOOLS.
+process.env.ASEPRITE_AGENT_TOOLS = "core";
+const { skillToolsNote } = await import(new URL("../dist/tool_sets.js", import.meta.url).href);
+const { parseSkill } = await import(new URL("../dist/guide.js", import.meta.url).href);
+// call_tool (#88) runs deferred tools, edit ones among them.
+const editTools = [...TOOLS.filter((t) => t.kind === "edit").map((t) => t.name), "call_tool"].sort();
 const plugin = join(root, "..", "claude-plugin");
 const guide = join(root, "..", "guide");
 
@@ -63,7 +69,10 @@ function pluginFiles() {
   for (const name of existsSync(builtin) ? readdirSync(builtin) : []) {
     const file = join(builtin, name, "SKILL.md");
     if (!existsSync(file)) continue;
-    const text = readFileSync(file, "utf8").replace(/^name: .*$/m, `name: aseprite-${name}`);
+    const raw = readFileSync(file, "utf8");
+    // The skill's deferred tools with their inputs (#88), as the bridge adds them to the skill's prompt.
+    const note = skillToolsNote(parseSkill(raw, name, "built-in").tools);
+    const text = raw.replace(/^name: .*$/m, `name: aseprite-${name}`) + (note ? `\n${note}\n` : "");
     files.set(join(plugin, "skills", `aseprite-${name}`, "SKILL.md"), text);
   }
 

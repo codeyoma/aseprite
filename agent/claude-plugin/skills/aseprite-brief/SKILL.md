@@ -37,3 +37,8 @@ For an animation, add the frame count and timing from `rule:anim.budget` and the
 Then: draw it following `pixel-art` (a new sprite: `recipes`), then `shade-sprite`, or `studio` for the whole chain.
 
 Adapted from aseprite-ai-artist's brief skill (MIT, https://github.com/with-pebbly/aseprite-ai-artist).
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "list_palettes", input: { ... } }). Their inputs:
+- list_palettes {source?: "all"|"user"|"aseprite"|"lospec", search?: string}: The palettes available by name: the user's, Aseprite's, and Lospec palettes already fetched (each with its author and URL), plus the aliases for common ones …
+</skill-tools>

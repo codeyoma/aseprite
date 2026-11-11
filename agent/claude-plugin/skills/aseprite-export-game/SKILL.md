@@ -16,3 +16,10 @@ tools: [export_for_engine, get_timeline_text, apply_timeline_text, check]
 5. Tell the user the files and the short import steps from HOW_TO_IMPORT.txt (e.g. Godot: Default Texture Filter = Nearest; Unity: copy the PNG and .meta together).
 
 Then: `normal-map` when the game lights its sprites; otherwise the asset is done.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "export_for_engine", input: { ... } }). Their inputs:
+- export_for_engine {engine: "godot"|"unity"|"phaser"|"tiled"|"json", dir: string, name?: string, trim?: boolean, padding?: integer 0-16, extrude?: integer 0-8, scale?: integer 1-8, power_of_two?: boolean, columns?: integer 1-64, pivot?: "bottom-center"|"center"|"top-left", glow?: "sheet"|"baked", pixels_per_unit?: integer 1-512}: Export the sprite's frames as a sheet with metadata for an engine: 'godot' (SpriteFrames .tres with an animation per tag), 'unity' (.png.meta with sliced spr…
+- get_timeline_text {}: The active sprite's timeline as compact text: frame count, frame durations, tags (range, direction, repeats) and linked cels.
+- apply_timeline_text {text: string, plan?: boolean}: Change the timeline to match the text, in one undo step.
+</skill-tools>

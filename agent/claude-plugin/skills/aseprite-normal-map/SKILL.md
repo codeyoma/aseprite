@@ -21,3 +21,11 @@ tools: [normal_map, make_masks, light_preview, export_normal_sheet, snapshot]
 5. Export with `export_normal_sheet` (<name>.png and <name>_n.png in the same layout, plus <name>_e.png and <name>_s.png when the masks exist) and tell the user how to assign it: in Godot, a CanvasTexture with the normal map on the Sprite2D; in Unity, a secondary texture `_NormalMap` on the sprite.
 
 Then: `export-game` for the color sheet and its animations.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "normal_map", input: { ... } }). Their inputs:
+- normal_map {layer?: string, frames?: string|integer|[integer], source?: "bevel"|"luminance"|"height", height_layer?: string, bevel?: number 1-64, strength?: number 0.1-5, levels?: integer 0-8, convention?: "opengl"|"directx"}: Make a tangent-space normal map for a layer, for engines with 2D lights (Godot, Unity): height from a rounded bevel of the silhouette (default), from the col…
+- make_masks {layer?: string, frames?: string|integer|[integer], kind?: "emission"|"specular"|"both", emission?: object, specular?: object}: Make grayscale material masks for a layer, beside its normal map, for engines with 2D lights.
+- light_preview {layer?: string, normal_layer?: string, frame?: integer, light?: object, convention?: "opengl"|"directx", masks?: boolean}: Render a layer lit through its normal map ('AI: normal <layer>' by default) by a directional or point light, and return the image.
+- export_normal_sheet {layer?: string, normal_layer?: string, frames?: string|integer|[integer], dir: string, name?: string}: Write <name>.png (the layer's frames side by side) and <name>_n.png (its normal map frames, same layout) for an engine's 2D lights, plus <name>_e.png / <name…
+</skill-tools>

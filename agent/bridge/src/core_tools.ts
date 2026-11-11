@@ -316,7 +316,7 @@ export const CORE_TOOLS: Tool[] = [
 
 /** An execute_lua result: output, value or error. */
 /** snapshot's result: one frame as a PNG, or a review view. */
-async function snapshotContent(ctx: ToolContext, input: any): Promise<ToolResult> {
+export async function snapshotContent(ctx: ToolContext, input: any): Promise<ToolResult> {
   if (input.view) return snapshotView(ctx, input);
   const { frame, layer, scale, background } = input;
   const { result, binary } = await ctx.request("snapshot", { frame, layer });
@@ -334,7 +334,7 @@ async function snapshotContent(ctx: ToolContext, input: any): Promise<ToolResult
 }
 
 /** check's result as text. */
-async function checkContent(ctx: ToolContext, args: any): Promise<ToolResult> {
+export async function checkContent(ctx: ToolContext, args: any): Promise<ToolResult> {
   const { result } = await ctx.request("check", args);
   return { content: [text(formatCheck(result))] };
 }

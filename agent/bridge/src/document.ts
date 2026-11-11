@@ -217,6 +217,18 @@ export interface SetSlice {
   center?: { x: number; y: number; w: number; h: number };
 }
 
+/** apply's result (protocol.json "apply"). */
+export interface ApplyResult {
+  ok: boolean;
+  applied: boolean;
+  dryRun: boolean;
+  errors: { op: number; path: string; type?: string; message: string }[];
+  changes: string[];
+  /** Layers added, when applied. */
+  layers: { name: string; id: string }[];
+  frames: number;
+}
+
 export interface Document {
   /** The active sprite (read once per document; writes invalidate it). */
   info(): Promise<SpriteInfo>;
@@ -255,6 +267,11 @@ export interface Document {
   splitByColors(groups: { name: string; colors: string[] }[], o?: { layer?: string }): Promise<{ layers: string[] }>;
   /** Adds a slice, replacing one of the same name. */
   setSlice(o: SetSlice): Promise<{ slices: number }>;
+  /**
+   * Runs apply ops (apply.ts; the wire method apply) in one undo step. With dryRun nothing changes. ok is false
+   * (and nothing changed) when any op failed; errors name each op by its path.
+   */
+  apply(ops: Record<string, unknown>[], o?: { dryRun?: boolean; label?: string }): Promise<ApplyResult>;
   /** Draws a swatch strip of colors on a new 'AI: <name>' layer (default 'palette'). One undo step. */
   drawSwatches(colors: RGBA[], o?: { name?: string; size?: number }): Promise<{ layer?: string }>;
 }
@@ -464,6 +481,10 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       // The wire wants every bound: the sprite size fills in w and h.
       const size = o.w === undefined || o.h === undefined ? await info() : undefined;
       return write("set_slice", { name: o.name, x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? size!.width, h: o.h ?? size!.height, center: o.center });
+    },
+    async apply(ops, o = {}) {
+      const r = await write("apply", { ops, dry_run: !!o.dryRun, label: o.label });
+      return { ...r, errors: r.errors ?? [], changes: r.changes ?? [], layers: r.layers ?? [] };
     },
     drawSwatches(colors, o = {}) {
       return write("draw_swatches", { colors: colors.map(hex), name: o.name, size: o.size });

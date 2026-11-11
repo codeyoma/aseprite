@@ -15,3 +15,8 @@ tools: [spawn_agents, snapshot]
 4. Reply with what was done and how long it took.
 
 Then: `check-sprite`, then `review`.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "spawn_agents", input: { ... } }). Their inputs:
+- spawn_agents {instruction?: string, tasks: [object], parallel?: integer 1-4}: Split a multi-frame job into sub-tasks and run them in parallel, one sub-agent each (up to 4 at once).
+</skill-tools>

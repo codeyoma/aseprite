@@ -19,3 +19,14 @@ tools: [read_guide, direction_plan, mirror_direction, spawn_agents, execute_lua,
 Isometric: the 4 directions are the diagonals (`rule:iso.characters`). `iso_project` turns a top-down tile into a 2:1 diamond and `iso_grid` adds a guide layer; redraw the edges as clean 2:1 lines (`rule:iso.line`, `rule:iso.convert`).
 
 Then: `animate` each direction, or `export-game`.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "direction_plan", input: { ... } }). Their inputs:
+- direction_plan {count?: 4|8}: Which of the 4 or 8 directions the sprite's tags cover (tags named like 'walk_E', 'SE', 'idle-north'), which missing ones can be made by mirroring (E<->W, NE…
+- mirror_direction {tag: string, to?: string, new_tag?: string, keep_layers?: [string]}: Make a direction by mirroring another: copies a tag's frames to the end, flipped horizontally, as a new tag named for the new direction (walk_E -> walk_W).
+- spawn_agents {instruction?: string, tasks: [object], parallel?: integer 1-4}: Split a multi-frame job into sub-tasks and run them in parallel, one sub-agent each (up to 4 at once).
+- apply_timeline_text {text: string, plan?: boolean}: Change the timeline to match the text, in one undo step.
+- rotate_layer {layer: string, frames: [integer], angle: number, pivot_x?: number, pivot_y?: number}: Rotate a layer's drawing in some frames by an angle around a pivot, RotSprite-style (clean edges, no new colors).
+- iso_project {layer?: string, frame?: integer}: Turn a top-down square tile or shape (a layer, active frame) into a 2:1 isometric diamond, pixel-exact, opened as a new sprite.
+- iso_grid {tile?: integer 4-256}: Add a 2:1 isometric grid (tiles `tile` px wide) on an 'AI: iso grid' layer, as a drawing guide.
+</skill-tools>

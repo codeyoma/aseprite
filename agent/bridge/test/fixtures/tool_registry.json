@@ -80,6 +80,19 @@
     ]
   },
   {
+    "name": "apply",
+    "title": "Apply a change",
+    "kind": "edit",
+    "label": "Apply a change",
+    "input": [
+      "check",
+      "dry_run",
+      "label",
+      "look",
+      "ops"
+    ]
+  },
+  {
     "name": "apply_timeline_text",
     "title": "Apply timeline text",
     "kind": "edit",
