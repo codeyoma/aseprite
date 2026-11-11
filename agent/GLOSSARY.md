@@ -160,6 +160,8 @@ Domain terms for Aseprite Agent. Code, docs and architecture reviews use these n
 
 **Juice**: the `juice` tool (`agent/bridge/src/juice_tools.ts`, plan in `sprite_fx/juice.ts`, curves in `sprite_fx/curves.ts`): squash, stretch (area kept: sx = 1 / sy), wobble (rows shifted more the higher they are, on a damped spring), bounce (decaying arcs, squash on landings), shake (decaying integer offsets), flash (the flash color on every other frame), pulse, spin, lean, pop_in and pop_out, as a Sprite effect.
 
+**Smear**: the `smear` tool (`agent/bridge/src/smear_tools.ts`, pure functions in `sprite_fx/smear.ts`): smear frames and motion trails from a layer's motion, as a Sprite effect. The motion of a frame is its content's centroid minus the previous frame's (optionally refined per 4 px block by block matching, for a part that moves on a still body). Modes: sweep (the mask stamped along the motion, tapered), stretch, afterimage (darker, checker-dithered copies at past positions) and multiples (sharp copies along the path). It only uses colors of the art and the sprite palette and never blends alpha.
+
 **Light layer**: a shown image layer that does not blend Normal (an Addition glow), or an `AI: fx … glow` layer. `check` skips the per-pixel rules on them; `export_for_engine` puts them on the **glow sheet**.
 
 **Pixel FX skill**: the built-in skill that ties the FX tools together (`agent/skills/pixel-fx/SKILL.md`): pick from the FX library (`list_fx`, `preview_fx`) or write an FX recipe when nothing fits, place with `add_fx` or time to an attack with `fx_overlay` and `hit_stop`, then `check_fx`, `check` and FX export. Its timing and "you see / fix" tables are the house rules for effects.

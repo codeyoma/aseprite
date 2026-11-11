@@ -1019,6 +1019,31 @@
     ]
   },
   {
+    "name": "smear",
+    "title": "Smear",
+    "kind": "edit",
+    "label": "Smear: ",
+    "input": [
+      "amount",
+      "copies",
+      "duration_ms",
+      "fill",
+      "frames",
+      "insert_after",
+      "layer",
+      "length",
+      "loop",
+      "min_px",
+      "mode",
+      "preview",
+      "refine",
+      "tag",
+      "taper",
+      "thin",
+      "vector"
+    ]
+  },
+  {
     "name": "smear_frame",
     "title": "Smear frame",
     "kind": "edit",

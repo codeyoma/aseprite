@@ -49,6 +49,7 @@
     "run_saved_command",
     "save_command",
     "shade_sprite",
+    "smear",
     "smear_frame",
     "spawn_agents",
     "split_by_color",
