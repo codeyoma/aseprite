@@ -10,7 +10,7 @@ restarts the user's Aseprite. Code: `agent/tools/instances.mjs`, `dev.mjs`, `sta
 | Aseprite user folder | Aseprite's default (`~/Library/Application Support/Aseprite`, `%APPDATA%\Aseprite`) | `~/.aseprite-agent-dev/aseprite` (`ASEPRITE_USER_FOLDER`) |
 | Agent home | `~/.aseprite-agent` | `~/.aseprite-agent-dev` (`ASEPRITE_AGENT_HOME`) |
 | Extension | copied from the stable source | linked to `agent/extension` (edits apply on restart) |
-| Started by | `~/Applications/Aseprite AI.app` (macOS) or `node agent/tools/stable.mjs start` | `node agent/tools/dev.mjs start`; live tests and benchmarks |
+| Started by | `/Applications/Aseprite AI.app` (macOS) or `node agent/tools/stable.mjs start` | `node agent/tools/dev.mjs start`; live tests and benchmarks |
 
 `ASEPRITE_AGENT_HOME` is read by the bridge (`session.ts`) and the extension (`agent.lua`, `bridge_connection.lua`);
 each instance's extension finds its own bridge through `<agent home>/bridge.json`.
@@ -35,6 +35,6 @@ Xcode, CMake and Ninja on macOS; Visual Studio 2022, CMake and Ninja on Windows 
 ## First setup
 
 - Stable: `node agent/tools/stable.mjs update` (the first build takes a while), then on macOS
-  `node agent/tools/stable.mjs launcher` makes `~/Applications/Aseprite AI.app`.
+  `node agent/tools/stable.mjs launcher` makes `/Applications/Aseprite AI.app` (with the agent's logo as its icon).
 - Dev: `node agent/tools/dev.mjs restart`. On the first start Aseprite asks whether `agent.lua` may read files and
   open sockets: tick "Give full trust to this script". The answer is kept in the dev user folder.

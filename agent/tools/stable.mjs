@@ -18,7 +18,7 @@
 // the `stable` commit, with its build/ inside), app/ (the installed binary and
 // data, a copy, so a build never touches the running program), installed.json.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, constants, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { installExtension, IS_WINDOWS, REPO, STABLE } from "./instances.mjs";
@@ -114,11 +114,21 @@ export function start() {
   writeFileSync(pidFile, String(child.pid));
 }
 
-/** macOS: ~/Applications/Aseprite AI.app, a small app that starts the stable binary (its own bundle id, so it never opens the dev build). */
+/**
+ * macOS: /Applications/Aseprite AI.app (where Finder, Launchpad and Spotlight look; ~/Applications when /Applications
+ * isn't writable), a small app that starts the stable binary with its own bundle id, so it never opens the dev build.
+ */
 export function launcher() {
   if (IS_WINDOWS) return windowsShortcut();
   if (process.platform !== "darwin") throw new Error("No launcher on this platform: run `node agent/tools/stable.mjs start`");
-  const app = join(homedir(), "Applications", "Aseprite AI.app", "Contents");
+  let base = "/Applications";
+  try {
+    accessSync(base, constants.W_OK);
+  } catch {
+    base = join(homedir(), "Applications");
+  }
+  const bundle = join(base, "Aseprite AI.app");
+  const app = join(bundle, "Contents");
   mkdirSync(join(app, "MacOS"), { recursive: true });
   mkdirSync(join(app, "Resources"), { recursive: true });
   writeFileSync(join(app, "Info.plist"), `<?xml version="1.0" encoding="UTF-8"?>
@@ -133,9 +143,22 @@ export function launcher() {
 `);
   const run = join(app, "MacOS", "run");
   writeFileSync(run, `#!/bin/sh\nexport ASEPRITE_AGENT_HOME="${STABLE.home}"\nunset ASEPRITE_USER_FOLDER\nmkdir -p "${STABLE.home}"\necho $$ > "${pidFile}"\nexec "${appBin}" "$@"\n`, { mode: 0o755 });
-  const icon = join(STABLE.src, "build", "bin", "Aseprite.app", "Contents", "Resources", "Aseprite.icns");
-  if (existsSync(icon)) cpSync(icon, join(app, "Resources", "Aseprite.icns"));
-  return join(homedir(), "Applications", "Aseprite AI.app");
+  // The icon: the agent's logo (tools/assets/aseprite-ai-icon.png, 1024 px) as an .icns.
+  const png = join(REPO, "agent", "tools", "assets", "aseprite-ai-icon.png");
+  if (existsSync(png)) {
+    const set = join(STABLE.root, "Aseprite.iconset");
+    rmSync(set, { recursive: true, force: true });
+    mkdirSync(set, { recursive: true });
+    for (const size of [16, 32, 128, 256, 512]) {
+      spawnSync("sips", ["-z", String(size), String(size), png, "--out", join(set, `icon_${size}x${size}.png`)], { stdio: "ignore" });
+      spawnSync("sips", ["-z", String(size * 2), String(size * 2), png, "--out", join(set, `icon_${size}x${size}@2x.png`)], { stdio: "ignore" });
+    }
+    spawnSync("iconutil", ["-c", "icns", set, "-o", join(app, "Resources", "Aseprite.icns")], { stdio: "ignore" });
+    rmSync(set, { recursive: true, force: true });
+  }
+  // Tell Launch Services and Spotlight about it now.
+  spawnSync("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f", bundle]);
+  return bundle;
 }
 
 /** Windows: a Start menu shortcut "Aseprite AI" to the installed program (it needs no environment: stable uses the defaults). */
