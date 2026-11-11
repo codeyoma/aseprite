@@ -218,6 +218,8 @@ export interface SetSlice {
 export interface Document {
   /** The active sprite (read once per document; writes invalidate it). */
   info(): Promise<SpriteInfo>;
+  /** The active sprite, or undefined when no sprite is open (#92). */
+  infoOrNone(): Promise<SpriteInfo | undefined>;
   /** Frames from a spec: 3, [1, 2], "1-4", "all"; default the active frame. */
   frames(spec?: unknown): Promise<number[]>;
   /** A layer's pixels at sprite size (or the whole sprite when no layer). */
@@ -358,6 +360,13 @@ export function documentOf(aseprite: AsepriteRequester): Document {
   };
   return {
     info,
+    async infoOrNone() {
+      const r = await aseprite.request("get_state");
+      if (!r.result?.activeSprite) return undefined;
+      const parsed = parseState(r.result);
+      cached = Promise.resolve(parsed);
+      return parsed;
+    },
     async frames(spec) {
       const i = await info();
       return resolveFrames(spec, i.durations.length, i.frame);

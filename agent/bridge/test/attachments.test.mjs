@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, utimesSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanAttachments, loadAttachments, renderFrames, shrink, sniffImage } from "../dist/attachments.js";
+import { cleanAttachments, loadAttachments, renderFrames, sniffImage } from "../dist/attachments.js";
+import { shrink } from "../dist/image.js";
 
 const dir = mkdtempSync(join(tmpdir(), "att-"));
 

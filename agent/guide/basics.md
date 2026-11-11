@@ -6,7 +6,7 @@ Read this before editing. Every rule here was checked against Aseprite 1.3.18.
 
 1. `get_state` (document) and `get_context` (what the user selected).
 2. Change things with `execute_lua` or `run_command`.
-3. `snapshot` after every visual change. Look at it. Fix what is wrong.
+3. Look after every visual change and fix what is wrong: pass `look: true` (or `"filmstrip"`) and `check: true` to `execute_lua` to get the snapshot and the check findings with the edit, or call `snapshot` and `check`.
 4. Use `read_pixels` when exact pixels matter (outlines, small sprites, palette checks). To change a few pixels, edit its rows and send them back with `write_pixels` (same layer, same legend): one undo step, and a typo is refused with its row and column. For the next animation frame, read the last frame's rows, write them into the new frame, then change only what moves, so shapes keep their size.
 
 Each `execute_lua` call is one undo step. If the code raises an error, everything it did is rolled back, so a failed attempt leaves no partial changes.

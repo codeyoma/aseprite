@@ -27,14 +27,6 @@ type Size = z.infer<typeof size>;
 const sizeOf = (s: Size): [number, number] => (Array.isArray(s) ? s : [s.width, s.height]);
 
 /** The active sprite's info, or undefined when no sprite is open. */
-async function spriteInfo(doc: Document): Promise<SpriteInfo | undefined> {
-  try {
-    return await doc.info();
-  } catch (e) {
-    if (/no active sprite/i.test((e as Error).message)) return undefined;
-    throw e;
-  }
-}
 
 /** The target size: the given one, else the sprite's; throws when there is neither. */
 function targetOf(given: Size | undefined, info: SpriteInfo | undefined): [number, number] {
@@ -91,7 +83,7 @@ export const CONCEPT_TOOLS: Tool[] = [
     kind: "read",
     label: () => "Read concept into a pixel spec",
     async run(input, aseprite) {
-      const info = await spriteInfo(documentOf(aseprite));
+      const info = await documentOf(aseprite).infoOrNone();
       let w: number, h: number, img, reading: ConceptReading;
       try {
         [w, h] = targetOf(input.target_size, info);
@@ -175,7 +167,7 @@ export const CONCEPT_TOOLS: Tool[] = [
     label: () => "Storyboard to reference frames",
     async run(input, aseprite) {
       const doc = documentOf(aseprite);
-      let info = await spriteInfo(doc);
+      let info = await doc.infoOrNone();
       let w: number, h: number, img, reading: ConceptReading, frames: number[];
       const name = input.name ?? "Reference";
       let spec: string | undefined;

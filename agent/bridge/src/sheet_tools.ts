@@ -6,7 +6,7 @@ import * as z from "zod/v4";
 import { asepriteFrames, IMAGE_EXTENSIONS, type FrameDecoder } from "./attachments.js";
 import { hex } from "./color.js";
 import { documentOf, type Document, type SpriteInfo } from "./document.js";
-import { readPng } from "./image.js";
+import { filePalette, readPng } from "./image.js";
 import {
   describeBackground, detectBackground, detectCells, findSprites, frameImages, gridFrames, parseAtlasText, removeBackground, tagsFromRows,
   type Align, type Frame, type Tag,
@@ -19,25 +19,6 @@ export const NOT_PNG_SHEET = "Only PNG sheets can be read";
 /** The decoder import_animation uses; tests swap it. */
 export const importDecoder: { decode: FrameDecoder } = { decode: asepriteFrames };
 
-async function activeSprite(doc: Document): Promise<SpriteInfo | undefined> {
-  try {
-    return await doc.info();
-  } catch (e) {
-    if (/no active sprite/i.test((e as Error).message)) return undefined;
-    throw e;
-  }
-}
-
-/** The file's colors as hex when there are at most 256 (a GIF's palette), else undefined. */
-function smallPalette(frames: { data: Uint8Array }[]): string[] | undefined {
-  const seen = new Set<string>();
-  for (const f of frames) for (let i = 0; i < f.data.length; i += 4) {
-    if (f.data[i + 3] === 0) continue;
-    seen.add(hex({ r: f.data[i], g: f.data[i + 1], b: f.data[i + 2], a: 255 }));
-    if (seen.size > 256) return undefined;
-  }
-  return [...seen];
-}
 
 export const SHEET_TOOLS: Tool[] = [
   {
@@ -81,10 +62,10 @@ export const SHEET_TOOLS: Tool[] = [
       const doc = documentOf(aseprite);
       if ((input.into ?? "new") === "new") {
         const r = await doc.createAnimation(w, h, frames.map((image, i) => ({ image, duration: durations[i] })),
-          { title: name, palette: smallPalette(frames) });
+          { title: name, palette: filePalette(frames) });
         return { content: [text(`Opened "${r.title}": ${n} frame${n === 1 ? "" : "s"} of ${w}x${h} (${timing}).`)] };
       }
-      const info = await activeSprite(doc);
+      const info = await doc.infoOrNone();
       if (!info) return failure("No sprite is open; use into 'new', or open a sprite first.");
       if (info.layers.some((l) => l.name === `AI: ${name}`)) {
         return failure(`The sprite already has a layer 'AI: ${name}'; pass another name.`);

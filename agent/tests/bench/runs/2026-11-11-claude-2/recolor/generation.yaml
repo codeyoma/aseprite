@@ -1,0 +1,101 @@
+benchmark: recolor
+skill: recolor
+title: Red and green team versions that keep the shading
+provider: claude
+model: null
+commit: b4ec85672
+date: "2026-11-11T06:22:00.944Z"
+seconds: 28
+passed: 5
+total: 5
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · recolor"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: null
+    pass: true
+    detail: "16x20"
+  - id: two-variants
+    type: layers
+    desc: "two AI: variant layers (nested ones count)"
+    pass: true
+    detail:
+      - "AI: green team"
+      - "AI: red team"
+  - id: skin-kept
+    type: lua
+    desc: every variant keeps the skin color and has a shirt that is no longer blue
+    pass: true
+    detail:
+      - "AI: green team ok"
+      - "AI: red team ok"
+  - id: check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 3 warnings"
+steps:
+  - prompt: "/skill:recolor Make a red team version of the Hero, recoloring only the blue shirt and keeping its three shades."
+    seconds: 18
+    header: "Claude · recolor"
+    tools:
+      - tool: Extract palette
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: "Make ramp from #e43b44"
+        status: ok
+      - tool: Make 1 palette swaps
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I made a red team version on a new layer, [AI: red team](aseprite://layer/L1723). Only the shirt changed, and it keeps its three shades, dark to light:\n\n- `#1d2b53` → `#6a1a32`\n- `#2978ff` → `#e43b44`\n- `#8cc8ff` → `#ff8f8f`\n\nThe skin, outline and pants are unchanged, and the shading still reads correctly in the snapshot.\n\nI picked the lightest red myself instead of using the generated ramp, because the ramp's light step (`#ffbf7d`) was too close to the skin colour.\n\nThe new layer sits above the original [Hero](aseprite://layer/L1695), which is still visible. Hide either one to compare them. The check found no errors. Its only warning is the single eye pixel at (8,4), which is meant to be there."
+    errors: []
+  - prompt: Now make a green team version the same way.
+    seconds: 10
+    header: Claude
+    tools:
+      - tool: Make 1 palette swaps
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I made a green team version on a new layer, [AI: green team](aseprite://layer/L1748), the same way as the red one. Only the shirt changed, and it keeps its three shades, dark to light:\n\n- `#1d2b53` → `#1a4a2e`\n- `#2978ff` → `#3caa50`\n- `#8cc8ff` → `#9de07a`\n\nThe skin, outline and pants are unchanged. The check found no errors; its only warning is the eye pixel again, which is meant to be there.\n\nAll three versions are stacked and visible right now, so hide the others to view one on its own."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - layer-1.png
+  - layer-2.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+    - layer-1.png
+    - layer-2.png
+  seconds: 30
+  scores:
+    readability: 3
+    form: 2
+    palette: 4
+    motion: null
+    fit: 2
+  overall: 2.75
+  note: "Both variants cleanly recolor only the shirt, preserving its three shades and the original silhouette. The final visible result remains red despite green being the last requested version."

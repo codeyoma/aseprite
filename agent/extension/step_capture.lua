@@ -11,6 +11,7 @@
 --   capture:around("execute_lua", fn, ...)   -- runs fn, records a step
 --   capture:claim(sinceSeq)                  -- the unclaimed steps after sinceSeq, as one
 --   StepCapture.diff(before, after)          -- { image, bounds, changed }
+--   StepCapture.measure(before, after)       -- { bounds, changed }: no image, fast
 --
 -- Captures live in memory only: a ring buffer of `limit` steps.
 
@@ -33,6 +34,48 @@ function M.composite()
   local img = Image(sprite.width, sprite.height, ColorMode.RGB)
   img:drawSprite(sprite, frame)
   return img, frame
+end
+
+-- How many pixels changed between two RGB images, and their bounds (#91).
+-- Rows are compared as byte strings first, so only changed rows are walked
+-- pixel by pixel. Fully transparent pixels are equal whatever their color.
+function M.measure(before, after)
+  local w, h = after.width, after.height
+  local sameSize = before and before.width == w and before.height == h
+  local ab = after.bytes
+  local bb = sameSize and before.bytes or string.rep("\0", #ab)
+  local minX, minY, maxX, maxY, changed = w, h, -1, -1, 0
+  local rowBytes = w * 4
+  local unpack = string.unpack
+  for y = 0, h - 1 do
+    local o = y * rowBytes
+    if ab:sub(o + 1, o + rowBytes) ~= bb:sub(o + 1, o + rowBytes) then
+      for x = 0, w - 1 do
+        local a = unpack("<I4", ab, o + x * 4 + 1)
+        local b = unpack("<I4", bb, o + x * 4 + 1)
+        if a ~= b and not ((a >> 24) == 0 and (b >> 24) == 0) then
+          changed = changed + 1
+          if x < minX then minX = x end
+          if y < minY then minY = y end
+          if x > maxX then maxX = x end
+          if y > maxY then maxY = y end
+        end
+      end
+    end
+  end
+  local bounds = changed > 0 and Rectangle(minX, minY, maxX - minX + 1, maxY - minY + 1) or nil
+  return { bounds = bounds, changed = changed, sizeChanged = not sameSize }
+end
+
+-- A step record whose diff image is made on first use (the panel shows it
+-- only when the step is expanded).
+local function lazyDiff(step)
+  return setmetatable(step, { __index = function(t, k)
+    if k ~= "diff" then return nil end
+    local img = M.diff(t.before, t.after).image
+    rawset(t, "diff", img)
+    return img
+  end })
 end
 
 -- Changed pixels between two RGB images: a diff image (faded "after" with
@@ -90,11 +133,11 @@ function M:around(method, fn, ...)
     if not (okBefore and before and before.width == after.width and before.height == after.height
         and before:isEqual(after)) then
       self.seqNo = self.seqNo + 1
-      local d = M.diff(okBefore and before or nil, after)
-      table.insert(self.steps, {
+      local d = M.measure(okBefore and before or nil, after)
+      table.insert(self.steps, lazyDiff{
         seq = self.seqNo, method = method, frame = frame,
         before = okBefore and before or nil, after = after,
-        diff = d.image, bounds = d.bounds, changed = d.changed,
+        bounds = d.bounds, changed = d.changed,
       })
       if #self.steps > self.limit then table.remove(self.steps, 1) end
     end
@@ -122,10 +165,10 @@ function M:claim(sinceSeq)
     if s.frame ~= last.frame then return last end
     methods[#methods + 1] = s.method
   end
-  local d = M.diff(first.before, last.after)
-  return {
+  local d = M.measure(first.before, last.after)
+  return lazyDiff{
     seq = last.seq, method = table.concat(methods, "+"), frame = last.frame, claimed = true, merged = #open,
-    before = first.before, after = last.after, diff = d.image, bounds = d.bounds, changed = d.changed,
+    before = first.before, after = last.after, bounds = d.bounds, changed = d.changed,
   }
 end
 

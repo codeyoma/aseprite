@@ -400,10 +400,23 @@ export function formatGuard(g: GuardResult, checkpoint: string): string {
   return [head, ...(touched.length || g.added.length ? lines : ["- nothing changed"])].join("\n");
 }
 
-/** Runs the guard for a named checkpoint. */
-export async function runFixGuard(aseprite: AsepriteRequester, name: string): Promise<GuardResult> {
+/**
+ * A named checkpoint of the active sprite (#92): with chats per sprite, the same name can be saved on another
+ * sprite, and comparing across sprites would guard the wrong pixels.
+ */
+async function checkpointOfActive(aseprite: AsepriteRequester, name: string): Promise<ReviewCheckpoint> {
   const cp = checkpoints.get(name);
   if (!cp) throw new Error(`No checkpoint named "${name}" in the bridge: save one with diff_visual { save: "${name}" } before the fix.`);
+  const title = (await documentOf(aseprite).infoOrNone())?.title;
+  if (title !== undefined && title !== cp.title) {
+    throw new Error(`Checkpoint "${name}" was saved on sprite "${cp.title}", not "${title}"; save one on this sprite first.`);
+  }
+  return cp;
+}
+
+/** Runs the guard for a named checkpoint. */
+export async function runFixGuard(aseprite: AsepriteRequester, name: string): Promise<GuardResult> {
+  const cp = await checkpointOfActive(aseprite, name);
   return fixGuard(cp, await layersNow(aseprite, cp));
 }
 
@@ -603,8 +616,12 @@ export const CRITIC_TOOLS: Tool[] = [
       let A: Rgba[], B: Rgba[], nameA: string, nameB: string, guardText = "";
       if (input.checkpoint !== undefined) {
         if (input.a || input.b) return failure("Pass checkpoint, or a and b, not both.");
-        const cp = checkpoints.get(input.checkpoint);
-        if (!cp) return failure(`No checkpoint named "${input.checkpoint}" in the bridge: save one with diff_visual { save: "${input.checkpoint}" } before the fix.`);
+        let cp: ReviewCheckpoint;
+        try {
+          cp = await checkpointOfActive(ctx, input.checkpoint);
+        } catch (e) {
+          return failure((e as Error).message);
+        }
         const g = fixGuard(cp, await layersNow(ctx, cp));
         guardText = formatGuard(g, input.checkpoint);
         if (!g.ok) return { content: [text(`${guardText}\nNo comparison was run for this round.`)] };

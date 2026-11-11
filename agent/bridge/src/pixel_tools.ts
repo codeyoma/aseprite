@@ -3,7 +3,7 @@
 import * as z from "zod/v4";
 import { hex, kMeans, mergeNear, tally, type Counted } from "./color.js";
 import { documentOf } from "./document.js";
-import { trim, type Rgba } from "./image.js";
+import { countColors, recolor, trim, type Rgba } from "./image.js";
 import { detectGrid, resample, type Grid } from "./pixel_grid.js";
 import { encodeSnapshot } from "./png.js";
 import { imageSource, readSource } from "./tool_inputs.js";
@@ -13,32 +13,6 @@ function describe(g: Grid): string {
   if (g.cellX <= 1 && g.cellY <= 1) return "no grid: this already looks like native-resolution pixel art (or a photo)";
   const cell = g.cellX === g.cellY ? `${g.cellX}` : `${g.cellX}x${g.cellY}`;
   return `cells of ${cell} px starting at (${g.offsetX}, ${g.offsetY}), confidence ${(g.confidence * 100).toFixed(0)}%`;
-}
-
-function countColors(img: Rgba): Counted[] {
-  const counts = new Map<string, Counted>();
-  for (let i = 0; i < img.data.length; i += 4) {
-    if (img.data[i + 3] < 128) continue;
-    const c = { r: img.data[i], g: img.data[i + 1], b: img.data[i + 2], a: 255 };
-    const k = hex(c);
-    const e = counts.get(k);
-    if (e) e.count++;
-    else counts.set(k, { ...c, count: 1 });
-  }
-  return [...counts.values()];
-}
-
-/** Recolors an RGBA image in place with a hex -> color map. */
-function applyMap(img: Rgba, map: Map<string, { r: number; g: number; b: number }>): void {
-  for (let i = 0; i < img.data.length; i += 4) {
-    if (img.data[i + 3] < 128) continue;
-    const to = map.get(hex({ r: img.data[i], g: img.data[i + 1], b: img.data[i + 2], a: 255 }));
-    if (to) {
-      img.data[i] = to.r;
-      img.data[i + 1] = to.g;
-      img.data[i + 2] = to.b;
-    }
-  }
 }
 
 export const PIXEL_TOOLS: Tool[] = [
@@ -88,7 +62,7 @@ export const PIXEL_TOOLS: Tool[] = [
       }
       let out: Rgba = resample(img, g);
       const before = countColors(out).length;
-      if (input.merge !== false) applyMap(out, mergeNear(countColors(out)));
+      if (input.merge !== false) out = recolor(out, mergeNear(countColors(out)));
       if (input.max_colors && countColors(out).length > input.max_colors) {
         const centers = kMeans(tally(countColors(out), 0), input.max_colors);
         const map = new Map<string, { r: number; g: number; b: number }>();
@@ -100,7 +74,7 @@ export const PIXEL_TOOLS: Tool[] = [
           }
           map.set(hex(c), best);
         }
-        applyMap(out, map);
+        out = recolor(out, map);
       }
       if (input.trim !== false) out = trim(out);
       const colors = tally(countColors(out), 0);

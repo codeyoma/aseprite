@@ -5,7 +5,7 @@
 import * as z from "zod/v4";
 import type { RGBA } from "./color.js";
 import type { Document } from "./document.js";
-import { readPng, type Rgba } from "./image.js";
+import { cropClipped, readPng, type Rgba } from "./image.js";
 import { resolveNamedPalette } from "./palettes.js";
 
 /**
@@ -92,17 +92,9 @@ export async function readSource(src: ImageSource, doc: Document): Promise<Sourc
   if (kind === "selection") {
     // Like collect_colors: no selection means the whole image.
     const sel = (await doc.info()).selection;
-    if (sel) return { ...cropTo(image, sel), description, frame };
+    if (sel) return { ...cropClipped(image, sel), description, frame };
   }
   return { image, description, x: 0, y: 0, frame };
-}
-
-function cropTo(img: Rgba, r: { x: number; y: number; w: number; h: number }): { image: Rgba; x: number; y: number } {
-  const x0 = Math.max(0, r.x), y0 = Math.max(0, r.y);
-  const w = Math.max(0, Math.min(img.width, r.x + r.w) - x0), h = Math.max(0, Math.min(img.height, r.y + r.h) - y0);
-  const data = new Uint8Array(w * h * 4);
-  for (let y = 0; y < h; y++) data.set(img.data.subarray(((y0 + y) * img.width + x0) * 4, ((y0 + y) * img.width + x0 + w) * 4), y * w * 4);
-  return { image: { width: w, height: h, data }, x: x0, y: y0 };
 }
 
 /**

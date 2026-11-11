@@ -5,7 +5,7 @@ import { encodeSnapshot } from "./png.js";
 import { parseGrid } from "./pixel_text.js";
 import { formatSubResults } from "./subagents.js";
 import { saveReviewCheckpoint } from "./critic.js";
-import { failure, text, type Content, type Tool, type ToolResult } from "./tool.js";
+import { failure, text, type Content, type Tool, type ToolContext, type ToolResult } from "./tool.js";
 import { framesSpec } from "./tool_inputs.js";
 import { snapshotView } from "./views.js";
 
@@ -57,12 +57,21 @@ export const CORE_TOOLS: Tool[] = [
         .boolean()
         .optional()
         .describe("Default true. Set false for code that must not run in a transaction, e.g. app.open, app.undo."),
+      look: z.union([z.boolean(), z.literal("filmstrip")]).optional()
+        .describe("After the edit, also return a snapshot of the active frame (true) or a filmstrip of all frames, so you see the result without another call."),
+      check: z.boolean().optional()
+        .describe("After the edit, also run check (all rules) and return its findings."),
     }),
     kind: "edit",
     label: (i) => (i?.label ? String(i.label) : "Run Lua"),
-    async run({ code, label, transaction }, ctx) {
+    async run({ code, label, transaction, look, check }, ctx) {
       const { result } = await ctx.request("execute_lua", { code, label, transaction }, 120_000);
-      return formatExecute(result);
+      const out = formatExecute(result);
+      // The result comes back with the edit (#88): one model call instead of three.
+      if (out.isError) return out;
+      if (look) out.content.push(...(await snapshotContent(ctx, look === "filmstrip" ? { view: "filmstrip" } : {})).content);
+      if (check) out.content.push(...(await checkContent(ctx, {})).content);
+      return out;
     },
   },
   {
@@ -90,22 +99,7 @@ export const CORE_TOOLS: Tool[] = [
     }),
     kind: "read",
     label: (a) => ({ filmstrip: "Look at the filmstrip", onion: "Look at the onion skin", compare: "Compare with the reference" } as Record<string, string>)[a.view] ?? "Look at the sprite",
-    async run(input, ctx) {
-      if (input.view) return snapshotView(ctx, input);
-      const { frame, layer, scale, background } = input;
-      const { result, binary } = await ctx.request("snapshot", { frame, layer });
-      if (!binary) return failure("Aseprite sent no pixel data");
-      const w = result.width as number;
-      const h = result.height as number;
-      const s = scale ?? Math.max(1, Math.floor(512 / Math.max(w, h)));
-      const png = encodeSnapshot(binary, w, h, s, background ?? "checker");
-      return {
-        content: [
-          { type: "image", data: png.toString("base64"), mimeType: "image/png" },
-          text(`${w}x${h} px, frame ${result.frame}${result.layer ? `, layer "${result.layer}"` : ""}, shown at ${s}x`),
-        ],
-      };
-    },
+    run: (input, ctx) => snapshotContent(ctx, input),
   },
   {
     name: "spawn_agents",
@@ -281,10 +275,7 @@ export const CORE_TOOLS: Tool[] = [
     }),
     kind: "read",
     label: () => "Check pixel art",
-    async run(args, ctx) {
-      const { result } = await ctx.request("check", args);
-      return { content: [text(formatCheck(result))] };
-    },
+    run: (args, ctx) => checkContent(ctx, args),
   },
   {
     name: "undo",
@@ -305,6 +296,30 @@ export const CORE_TOOLS: Tool[] = [
 ];
 
 /** An execute_lua result: output, value or error. */
+/** snapshot's result: one frame as a PNG, or a review view. */
+async function snapshotContent(ctx: ToolContext, input: any): Promise<ToolResult> {
+  if (input.view) return snapshotView(ctx, input);
+  const { frame, layer, scale, background } = input;
+  const { result, binary } = await ctx.request("snapshot", { frame, layer });
+  if (!binary) return failure("Aseprite sent no pixel data");
+  const w = result.width as number;
+  const h = result.height as number;
+  const s = scale ?? Math.max(1, Math.floor(512 / Math.max(w, h)));
+  const png = encodeSnapshot(binary, w, h, s, background ?? "checker");
+  return {
+    content: [
+      { type: "image", data: png.toString("base64"), mimeType: "image/png" },
+      text(`${w}x${h} px, frame ${result.frame}${result.layer ? `, layer "${result.layer}"` : ""}, shown at ${s}x`),
+    ],
+  };
+}
+
+/** check's result as text. */
+async function checkContent(ctx: ToolContext, args: any): Promise<ToolResult> {
+  const { result } = await ctx.request("check", args);
+  return { content: [text(formatCheck(result))] };
+}
+
 export function formatExecute(result: any): ToolResult {
   const content: Content[] = [];
   if (result.output?.length) content.push(text("Output:\n" + result.output.join("\n")));

@@ -1,0 +1,131 @@
+benchmark: make-tileset
+skill: make-tileset
+title: A 16x16 grass-on-dirt autotile set with a preview map
+provider: claude
+model: null
+commit: b4ec85672
+date: "2026-11-11T06:30:05.952Z"
+seconds: 115
+passed: 6
+total: 6
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · make-tileset"
+      - Claude
+  - id: set
+    type: sprites
+    desc: a 47-tile set sprite
+    pass: true
+    detail:
+      - grass_dirt preview 192x112 1f
+      - grass_dirt 47-tile set 128x96 1f
+      - grass_dirt_template 80x16 1f
+      - Sprite 16x16 1f
+  - id: set-size
+    type: sprites
+    desc: "16 px tiles in an 8x6 grid (128x96)"
+    pass: true
+    detail:
+      - grass_dirt preview 192x112 1f
+      - grass_dirt 47-tile set 128x96 1f
+      - grass_dirt_template 80x16 1f
+      - Sprite 16x16 1f
+  - id: preview
+    type: sprites
+    desc: a preview map on a tilemap layer
+    pass: true
+    detail:
+      - grass_dirt preview 192x112 1f
+      - grass_dirt 47-tile set 128x96 1f
+      - grass_dirt_template 80x16 1f
+      - Sprite 16x16 1f
+  - id: set-palette
+    type: palette
+    desc: "the set uses only the palette's colors"
+    pass: true
+    detail: "8 colors"
+  - id: set-check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 1 warnings"
+steps:
+  - prompt: "/skill:make-tileset Make a 16x16 grass-on-dirt autotile set (47 tiles) in this sprite's palette, with a preview map. Don't export files."
+    seconds: 60
+    header: "Claude · make-tileset"
+    tools:
+      - tool: Run Lua
+        status: failed
+      - tool: Run Lua
+        status: ok
+      - tool: Make 47-tile set
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I'm giving the preview and set sprites the source palette. The check flagged every color as off-palette only because those new sprites opened with a default palette.\nI made the grass-on-dirt template and turned it into the 47-tile set with a preview map. No files were exported.\n\nThe template is five 16x16 tiles in a row (island, vertical strip, horizontal strip, fill, inner corners), drawn in your 9-color palette. The grass has a light green lip along its top, a dark green underside and a dark dirt shadow below it, so it reads as raised. There are two small grass blades along the top edge, and the speckle texture repeats every 16 px, so it lines up from one tile to the next.\n\nThree sprites are now open:\n- **grass_dirt_template**: the 5-tile template.\n- **grass_dirt 47-tile set**: the full "
+    errors: []
+  - prompt: "Make the grass edge more irregular, with a few grass tufts hanging over the dirt, and update the set and the preview."
+    seconds: 55
+    header: Claude
+    tools:
+      - tool: Run Lua
+        status: ok
+      - tool: Make 47-tile set
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Make 47-tile set
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I closed the wrong copies, the new ones instead of the old ones. I'm rebuilding the set from the updated template.\nThe grass edge is now irregular, and I rebuilt the 47-tile set and the preview map from it. On the new preview, tufts and notches show along every edge, the corners and the hole still join cleanly, and every color comes from your palette.\n\n- **Edges:** grass tufts now poke 1 px out over the dirt on all four sides, with a few 1 px notches cut into the grass between them. The spacing is uneven, so the edge doesn't repeat in an obvious pattern when tiled. Tufts on the bottom edge get the same dark dirt shadow underneath, so the grass still reads as raised.\n- **Corners:** I kept the tufts and notches away from the tile corners, so outer and inner corners still meet without breaks."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - sprite-1.png
+  - sprite-2.png
+  - result.aseprite
+  - extra-1.aseprite
+  - extra-2.aseprite
+  - extra-3.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+    - sprite-1.png
+    - sprite-2.png
+  seconds: 33
+  scores:
+    readability: 3
+    form: 1
+    palette: 3
+    motion: null
+    fit: 3
+  overall: 2.5
+  note: "The terrain reads clearly at 1x, with cohesive colors, irregular tufted borders, and a useful preview accompanying the 47-tile set. Mostly uniform edge darkening and repetitive speckles leave the grass and dirt looking flat."

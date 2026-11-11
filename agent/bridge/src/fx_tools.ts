@@ -5,7 +5,7 @@ import { parseHex, quantize, type Counted, type RGBA } from "./color.js";
 import { documentOf, type Document, type PutImagesItem, type SpriteInfo } from "./document.js";
 import { renderFx, visualCenter, type RenderedFx } from "./fx/index.js";
 import { FX_CATEGORIES, FX_LIBRARY, findFx, searchFx, type FxAnchor, type FxEntry } from "./fx/library.js";
-import { bounds, contactSheet, encodePng, snapToPalette, type Rect, type Rgba } from "./image.js";
+import { bounds, contactSheet, crop, encodePng, snapToPalette, type Rect, type Rgba } from "./image.js";
 import { failure, text, type Tool, type ToolContext, type ToolResult } from "./tool.js";
 
 export const hexList = z.array(z.string()).min(1);
@@ -229,12 +229,6 @@ function unionBounds(frames: Rgba[]): Rect | undefined {
   const W = frames[0].width, H = frames[0].height;
   x0 = Math.max(0, x0 - 1); y0 = Math.max(0, y0 - 1); x1 = Math.min(W, x1 + 1); y1 = Math.min(H, y1 + 1);
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-
-function crop(img: Rgba, r: Rect): Rgba {
-  const data = new Uint8Array(r.w * r.h * 4);
-  for (let y = 0; y < r.h; y++) data.set(img.data.subarray(((r.y + y) * img.width + r.x) * 4, ((r.y + y) * img.width + r.x + r.w) * 4), y * r.w * 4);
-  return { width: r.w, height: r.h, data };
 }
 
 const BACKDROP: RGBA = { r: 30, g: 30, b: 40, a: 255 };

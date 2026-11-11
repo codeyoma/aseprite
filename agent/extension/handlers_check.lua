@@ -10,6 +10,7 @@ return function(handlers, D)
   local CHECK_RULES = { "off-palette", "orphan", "semi-transparent", "empty-cel", "frame-duration", "outside-canvas",
                         "duplicate-frame", "ground-jitter" }
   local CHECK_MAX_PIXELS = 20            -- coordinates listed per finding
+  local CHECK_MAX_OFF_PALETTE = 32       -- off-palette colors with a finding each (#91)
   local CHECK_PIXEL_BUDGET = 1000000     -- skip pixel rules on huge documents
 
   -- Palette entries as { index, r, g, b } (opaque entries only).
@@ -214,50 +215,67 @@ return function(handlers, D)
 
     -- Light layers (#69): a layer that does not blend Normal (an Addition glow, a Multiply shadow) is light
     -- or shade over the art, not pixels of it, so the per-pixel rules skip it.
+    -- A layer that doesn't blend Normal. Export (export_tools.ts isLightLayer) also counts an 'AI: fx ... glow'
+    -- layer set to Normal as light; here such a layer draws pixels, so they are judged.
+    local function isLight(layer) return layer.blendMode ~= BlendMode.NORMAL end
     local lightLayers = {}
     for _, layer in ipairs(layers) do
-      if layer.blendMode ~= BlendMode.NORMAL then lightLayers[#lightLayers + 1] = layer.name end
+      if isLight(layer) then lightLayers[#lightLayers + 1] = layer.name end
     end
 
+    -- Palette colors as a set of packed RGB (#91): one lookup per pixel
+    -- instead of a scan of the palette.
+    local inPalette = {}
+    for _, e in ipairs(entries) do inPalette[e.r | (e.g << 8) | (e.b << 16)] = true end
+
     for _, layer in ipairs(layers) do
-      local pixelRulesHere = pixelRules and layer.blendMode == BlendMode.NORMAL
+      local pixelRulesHere = pixelRules and not isLight(layer)
       for _, f in ipairs(frames) do
         local cel = layer:cel(f)
         if cel and pixelRulesHere then
           local offPalette = {}   -- hex -> { pixels, count, r, g, b }
           local semi = { pixels = {}, count = 0 }
-          local color = {}        -- "x,y" -> hex, for the orphan rule
+          -- The orphan rule's grid: packed RGBA by position (x and y kept
+          -- non-negative with an offset, so one integer is the key).
+          local color = {}
+          local OFF = 1 << 15
+          local function key(x, y) return (y + OFF) * (1 << 17) + (x + OFF) end
           px.eachPixel(cel, palette, function(x, y, r, g, b, a)
             if a == 0 then return end
-            local hex = px.hex(r, g, b)
-            if enabled["orphan"] then color[x .. "," .. y] = hex .. ":" .. a end
+            local rgb = r | (g << 8) | (b << 16)
+            if enabled["orphan"] then color[key(x, y)] = rgb | (a << 24) end
             if enabled["semi-transparent"] and a < 255 then
               semi.count = semi.count + 1
               if #semi.pixels < CHECK_MAX_PIXELS then semi.pixels[#semi.pixels + 1] = { x, y } end
             end
             if enabled["off-palette"] and sprite.colorMode == ColorMode.RGB and #entries > 0 then
-              local inPalette = false
-              for _, e in ipairs(entries) do
-                if e.r == r and e.g == g and e.b == b then inPalette = true; break end
-              end
-              if not inPalette then
-                local o = offPalette[hex]
-                if not o then o = { pixels = {}, count = 0, r = r, g = g, b = b }; offPalette[hex] = o end
+              if not inPalette[rgb] then
+                local o = offPalette[rgb]
+                if not o then o = { pixels = {}, count = 0, r = r, g = g, b = b }; offPalette[rgb] = o end
                 o.count = o.count + 1
                 if #o.pixels < CHECK_MAX_PIXELS then o.pixels[#o.pixels + 1] = { x, y } end
               end
             end
           end)
 
-          local hexes = {}
-          for hex in pairs(offPalette) do hexes[#hexes + 1] = hex end
-          table.sort(hexes)
-          for _, hex in ipairs(hexes) do
-            local o = offPalette[hex]
+          -- The most used off-palette colors get a finding each (with the
+          -- nearest palette entry); the rest are summed up in one (#91).
+          local offList = {}
+          for _, o in pairs(offPalette) do o.hex = px.hex(o.r, o.g, o.b); offList[#offList + 1] = o end
+          table.sort(offList, function(a, b) if a.count ~= b.count then return a.count > b.count end return a.hex < b.hex end)
+          for i = 1, math.min(#offList, CHECK_MAX_OFF_PALETTE) do
+            local o = offList[i]
             local e = nearestEntry(entries, o.r, o.g, o.b)
             add{ rule = "off-palette", severity = "error", layer = layer.name, layerId = layerId(layer), frame = f,
-                 color = hex, count = o.count, pixels = o.pixels,
+                 color = o.hex, count = o.count, pixels = o.pixels,
                  fix = string.format("Use palette index %d (%s), the nearest color", e.i, px.hex(e.r, e.g, e.b)) }
+          end
+          if #offList > CHECK_MAX_OFF_PALETTE then
+            local rest = 0
+            for i = CHECK_MAX_OFF_PALETTE + 1, #offList do rest = rest + offList[i].count end
+            add{ rule = "off-palette", severity = "error", layer = layer.name, layerId = layerId(layer), frame = f,
+                 color = "+" .. (#offList - CHECK_MAX_OFF_PALETTE) .. " more", count = rest, pixels = {},
+                 fix = "Many colors are off the palette: map the layer onto the palette with remap_to_palette instead of fixing colors one by one" }
           end
 
           if semi.count > 0 then
@@ -270,14 +288,13 @@ return function(handlers, D)
             local orphans, count = {}, 0
             local keys = {}
             for k in pairs(color) do keys[#keys + 1] = k end
-            table.sort(keys)
+            table.sort(keys)   -- row by row, left to right
             for _, k in ipairs(keys) do
-              local x, y = k:match("^(%-?%d+),(%-?%d+)$")
-              x, y = tonumber(x), tonumber(y)
+              local x, y = k % (1 << 17) - OFF, k // (1 << 17) - OFF
               local c, lonely = color[k], true
               for dy = -1, 1 do
                 for dx = -1, 1 do
-                  if (dx ~= 0 or dy ~= 0) and color[(x + dx) .. "," .. (y + dy)] == c then lonely = false end
+                  if (dx ~= 0 or dy ~= 0) and color[key(x + dx, y + dy)] == c then lonely = false end
                 end
               end
               if lonely then

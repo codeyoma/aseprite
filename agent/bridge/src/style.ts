@@ -13,19 +13,8 @@ const colorAt = (img: Rgba, x: number, y: number): RGBA => {
   return { r: img.data[i], g: img.data[i + 1], b: img.data[i + 2], a: 255 };
 };
 
-export function countColors(img: Rgba): Counted[] {
-  const m = new Map<string, Counted>();
-  for (let y = 0; y < img.height; y++) {
-    for (let x = 0; x < img.width; x++) {
-      if (!isOpaque(img, x, y)) continue;
-      const c = colorAt(img, x, y), k = hex(c);
-      const e = m.get(k);
-      if (e) e.count++;
-      else m.set(k, { ...c, count: 1 });
-    }
-  }
-  return [...m.values()].sort((a, b) => b.count - a.count);
-}
+export { countColors } from "./image.js";
+import { countColors } from "./image.js";
 
 export interface Outline {
   present: boolean;

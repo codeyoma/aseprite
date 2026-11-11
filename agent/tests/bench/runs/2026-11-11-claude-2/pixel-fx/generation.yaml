@@ -1,0 +1,180 @@
+benchmark: pixel-fx
+skill: pixel-fx
+title: "Frost nova timed to a mage's staff attack"
+provider: claude
+model: null
+commit: b4ec85672
+date: "2026-11-11T06:26:08.743Z"
+seconds: 183
+passed: 8
+total: 8
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · pixel-fx"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: null
+    pass: true
+    detail: "160x112"
+  - id: frames-kept
+    type: frames
+    desc: null
+    pass: true
+    detail: 9
+  - id: attack-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: attack 1-9
+  - id: fx-layer
+    type: layers
+    desc: "an AI: fx layer holds the effect"
+    pass: true
+    detail:
+      - "AI: fx recipe:frost-nova"
+      - "AI: fx recipe:frost-nova glow"
+  - id: hit-recorded
+    type: lua
+    desc: a hit stop is recorded on the sprite (fx.hits)
+    pass: true
+    detail: 1
+  - id: fx-check-clean
+    type: check_fx
+    desc: null
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 8 warnings"
+steps:
+  - prompt: "/skill:pixel-fx Add a frost nova to my mage's attack, bursting from the staff tip when it thrusts forward."
+    seconds: 173
+    header: "Claude · pixel-fx"
+    tools:
+      - tool: Look at the filmstrip
+        status: failed
+      - tool: Run Lua
+        status: failed
+      - tool: Read sprite state
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Preview recipe
+        status: ok
+      - tool: Recipe effect on the animation
+        status: ok
+      - tool: Undo
+        status: ok
+      - tool: Recipe effect on the animation
+        status: ok
+      - tool: Check effects
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Undo
+        status: ok
+      - tool: Recipe effect on the animation
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Check effects
+        status: ok
+      - tool: Ask a fresh critic
+        status: ok
+      - tool: "[critic] Check pixel art"
+        status: ok
+      - tool: "[critic] Look at the filmstrip"
+        status: ok
+      - tool: "[critic] Read guide: vfx.mistakes"
+        status: ok
+      - tool: "[critic] Look at the onion skin"
+        status: ok
+      - tool: "[critic] Read guide: anim.timing.attack"
+        status: ok
+      - tool: Undo
+        status: ok
+      - tool: Recipe effect on the animation
+        status: ok
+      - tool: Hit-stop
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Check effects
+        status: ok
+      - tool: Ask a fresh critic
+        status: ok
+      - tool: "[critic] Look at the filmstrip"
+        status: ok
+      - tool: "[critic] Check pixel art"
+        status: ok
+      - tool: "[critic] Check effects"
+        status: ok
+      - tool: "[critic] Read guide: rules/vfx"
+        status: ok
+      - tool: "[critic] Inspect pixels"
+        status: ok
+      - tool: "[critic] Look at the sprite"
+        status: ok
+      - tool: "[critic] Look at the onion skin"
+        status: ok
+      - tool: Undo
+        status: ok
+      - tool: Preview recipe
+        status: ok
+      - tool: Recipe effect on the animation
+        status: ok
+      - tool: Hit-stop
+        status: ok
+      - tool: Check effects
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Working on it: I found the thrust on frame 4, with the staff tip at (92, 60), and I'm now putting the nova there.\nThe effect started on frame 2, before the thrust, because the tool lines up the recipe's busiest moment rather than its start. I'm undoing it and starting it on frame 4.\nThis version fades by breaking the ring into dots instead of popping off. Applying it:\nI added a frost nova to the [attack](aseprite://tag/attack) tag. It bursts from the staff tip at (92, 60) on frame 4, the thrust frame where the mage lunges forward.\n\n**How it plays:**\n- **Frame 4:** a white flash at the tip, held 60 ms longer as a hit-stop (now 160 ms).\n- **Frames 5–7:** a 4 px ice-blue ring grows to about 46 px across, with ice shards flying out.\n- **Frames 7–8:** the ring breaks into dots as it fades.\n- **"
+    errors: []
+  - prompt: "Add a short hit stop on the impact frame, and make sure the effect ends cleanly."
+    seconds: 10
+    header: Claude
+    tools:
+      - tool: Read the timeline
+        status: ok
+      - tool: Check effects
+        status: ok
+    reply: "Both were already in place from the last step, so I left them as they are:\n\n- **Hit-stop:** frame 4 is the impact frame, where the staff thrusts and the white flash appears. It lasts 160 ms instead of 100, a 60 ms freeze recorded on the sprite for export. Adding another would make it 120 ms, which starts to feel like a stall at 100 ms frames.\n- **Clean ending:** the effect check found no problems and no leftover pixels when it ends. The ring breaks into dots on frames 7–8 and is gone by frame 9, which is empty on both [effect](aseprite://layer/L2766) layers. The [glow](aseprite://layer/L2777) is already gone after frame 6.\n\nIf you want more punch, I can add a 2 px shake inside that freeze, or make the freeze longer (about 100 ms)."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 54
+  scores:
+    readability: 2
+    form: 1
+    palette: 2
+    motion: 2
+    fit: 2
+  overall: 1.8
+  note: "The expanding ring starts at the staff tip, includes a 160 ms impact hold, and clears completely. The dark core and noisy flecks weaken the frost read, while the thrust and follow-through barely register."

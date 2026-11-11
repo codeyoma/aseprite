@@ -5,7 +5,8 @@ import { mkdtempSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hex, parseHex } from "../dist/color.js";
-import { applyLut, applyMap, ditherGradient, ditherRamp, ditherToPalette, paletteLut, rampMap } from "../dist/dither.js";
+import { applyLut, ditherGradient, ditherRamp, ditherToPalette, paletteLut, rampMap } from "../dist/dither.js";
+import { recolor as applyMap } from "../dist/image.js";
 import { findTool, runTool } from "../dist/tools.js";
 
 const A = parseHex("#1d2b53"), B = parseHex("#29adff");

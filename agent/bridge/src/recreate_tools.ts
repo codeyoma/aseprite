@@ -4,7 +4,7 @@
 import * as z from "zod/v4";
 import { hex, mergeNear, tally } from "./color.js";
 import { documentOf, type Document } from "./document.js";
-import { readPng, trim, writePng, type Rgba } from "./image.js";
+import { filePalette, readPng, recolor, trim, writePng, type Rgba } from "./image.js";
 import { detectGrid, resample } from "./pixel_grid.js";
 import { imageSource, readSource, sourceKind, type ImageSource } from "./tool_inputs.js";
 import {
@@ -18,14 +18,6 @@ import { failure, text, type Tool } from "./tool.js";
 export const RIGHTS_NOTE =
   "Recreated art from other games is for study and personal use; publishing it needs the rights holder's permission.";
 
-function applyMap(img: Rgba, map: Map<string, { r: number; g: number; b: number }>) {
-  for (let i = 0; i < img.data.length; i += 4) {
-    if (img.data[i + 3] < 128) continue;
-    const to = map.get(hex({ r: img.data[i], g: img.data[i + 1], b: img.data[i + 2], a: 255 }));
-    if (to) img.data.set([to.r, to.g, to.b], i);
-  }
-}
-
 /** Sprites cut out as same-size frames, bottom-aligned; several rows (or row names) become tags. */
 function poseFrames(img: Rgba, sprites: Frame[], rowTags?: string[]): { width: number; height: number; images: Uint8Array[]; tags: Tag[] } {
   const { width, height, images } = frameImages(img, sprites, "bottom-center");
@@ -35,7 +27,7 @@ function poseFrames(img: Rgba, sprites: Frame[], rowTags?: string[]): { width: n
 
 /** A new animated sprite from same-size images, with their colors as its palette (when 256 or fewer). */
 async function openAnimation(doc: Document, width: number, height: number, images: Uint8Array[], title: string, tags: Tag[]) {
-  const palette = tally(images.flatMap((d) => countColors({ width, height, data: d })), 0).map(hex);
+  const palette = filePalette(images.map((d) => ({ width, height, data: d })), Infinity)!;
   const result = await doc.createAnimation(width, height, images.map((d) => ({ image: { width, height, data: d }, duration: 100 })),
     { title, palette: palette.length <= 256 ? palette : undefined, tags });
   return { title: result.title, palette };
@@ -94,8 +86,7 @@ export const RECREATE_TOOLS: Tool[] = [
         : detectGrid(img);
       if (g.cellX > 1) {
         img = resample(img, g);
-        const merge = mergeNear(countColors(img));
-        applyMap(img, merge);
+        img = recolor(img, mergeNear(countColors(img)));
       }
       let sprites = input.frames === "single" ? [] : findSprites(img, input.merge_distance ?? 2);
       // Poses only when there are several of similar size; otherwise one picture.

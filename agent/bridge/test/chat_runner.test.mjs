@@ -65,13 +65,9 @@ test("the panel's sessions map picks the conversation by key; Developer mode has
   assert.deepEqual([runtime.turns[1].turn.key, runtime.turns[1].turn.conversationId], ["codex", "x1"]);
   runtime.turns[1].resolve({ stop: "end" });
   await tick();
-  // A key missing from the map starts a new conversation; older panels send sessionId.
-  chat.send({ prompt: "hi", provider: PROVIDERS.claude, sessions: { codex: "x1" }, sessionId: "ignored" });
+  // A key missing from the map starts a new conversation.
+  chat.send({ prompt: "hi", provider: PROVIDERS.claude, sessions: { codex: "x1" } });
   assert.equal(runtime.turns[2].turn.conversationId, undefined);
-  runtime.turns[2].resolve({ stop: "end" });
-  await tick();
-  chat.send({ prompt: "hi", provider: PROVIDERS.claude, sessionId: "old" });
-  assert.equal(runtime.turns[3].turn.conversationId, "old");
 });
 
 test("stop: idempotent, settles permissions, reports Stopped., ignores late events", async () => {

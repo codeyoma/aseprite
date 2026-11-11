@@ -64,7 +64,11 @@ export function shownImageLayers(info: SpriteInfo): LayerInfo[] {
     l.path.every((name, i) => groups.find((g) => g.name === name && same(g.path, l.path.slice(0, i)))?.visible !== false));
 }
 
-/** Light layers: ones that do not blend Normal (as check treats them) or an effect's 'AI: fx … glow' layer. */
+/**
+ * Light layers for export: ones that do not blend Normal, or an effect's 'AI: fx … glow' layer even when someone set
+ * it to Normal (it still exports as the glow pass). check's rule (handlers_check.lua isLight) is blend mode only on
+ * purpose: a glow set to Normal is drawn as pixels, so its pixels are judged (#92).
+ */
 export const isLightLayer = (l: LayerInfo) => (l.blendMode ?? "normal") !== "normal" || /^AI: fx .+ glow$/.test(l.name);
 
 /**

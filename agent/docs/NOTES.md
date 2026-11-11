@@ -2,6 +2,25 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Fewer round trips, Chats module, fast paths, one owner per helper (#88, #89, #91, #92, #94)
+- **How:**
+  - #88: `execute_lua` takes `look` (true or "filmstrip") and `check`; the snapshot and the findings come back with the edit (`snapshotContent`, `checkContent` in core_tools.ts). The chat system prompt includes `guide/basics.md`, so a conversation no longer starts with `read_guide("basics")`, and it tells the agent to use look/check.
+  - #89: `chats.lua` is a pure module that owns chats per sprite, queues, who runs next, the gate and rehoming. `chat_panel.lua` calls it and draws it. Developer mode moved to `panel_developer.lua`, the My Commands dialog to `commands_dialog.lua`. Tests: `chats_test.lua`, and `panel_load_test.lua`, which builds the panel with unknown globals raising errors (it catches the use-before-declaration that stopped the extension from loading).
+  - #91 (Lua part):
+    - Step capture counts changes by comparing rows of the raw bytes and walks pixels only in changed rows. The red diff image is made on first use. Capture is 0.75 → 0.07 ms per small edit at 64².
+    - `check` keeps the palette in a set of packed RGB, keys the orphan grid by integer, and gives findings only to the 32 most used off-palette colors, plus one summary. Worst case at 256² with unique colors: 2.7 s → 0.46 s; palette art 469 → 251 ms.
+  - #92:
+    - `image.ts` owns `crop`, `cropClipped`, `shrink`, `countColors`, `recolor` and `filePalette`; the copies in attachments, concept, fx_tools, tool_inputs, pixel_tools, recreate_tools, dither, style and sheet_tools are gone.
+    - `Document.infoOrNone()` replaces matching the "No active sprite" text.
+    - Light layers: check skips layers that don't blend Normal; export also counts a glow layer set to Normal as light. The difference is intended and now documented at both.
+    - Review checkpoints refuse a comparison on another sprite.
+  - #94: removed the unreachable `sessionId` (older panels) and `context` (older extensions) branches of `chat.send`.
+- **Why:**
+  - Transcripts showed read_guide → execute_lua → snapshot → check → execute_lua → check per edit, at ~2.7 s per model call.
+  - The panel was 1.8k lines with scheduling rules only testable live.
+  - check and capture were the only Lua hot spots the profiler found.
+- **Left for later:** the FX record domain module; native helpers in the fork (base64 decode for put_images, histogram and neighbor counts for check); validating bridge-method params from protocol.json.
+
 ## Lean agent sessions (#87)
 - **How:**
   - Claude sessions get `settingSources: []`, `strictMcpConfig: true` and `ENABLE_CLAUDEAI_MCP_SERVERS=false` (`providers/agent_home.ts` `LEAN_CLAUDE_OPTIONS`). So there are no user settings, hooks, plugins, skills, CLAUDE.md, other MCP servers or claude.ai connectors; only the aseprite server the session passes.

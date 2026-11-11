@@ -308,3 +308,21 @@ test("spawn_agents runs through the context's sub-agent runner", async () => {
   assert.equal(runs[0].parallel, 2);
   assert.equal((await runTool(tool, { tasks: [{ frames: 1 }] }, ctx)).isError, true, "needs an instruction or prompts");
 });
+
+test("execute_lua returns the snapshot and the check findings with the edit when asked (#88)", async () => {
+  const rgba = Buffer.from([255, 0, 0, 255, 0, 0, 255, 255]);
+  const fake = fakeAseprite({
+    execute_lua: { result: { ok: true, value: 3 } },
+    snapshot: { result: { width: 2, height: 1, frame: 1, binary: true }, binary: rgba },
+    check: { result: { errors: 0, warnings: 0, findings: [], checked: { layers: 1, frames: 1 } } },
+  });
+  const res = await runTool(findTool("execute_lua"), { code: "return 3", look: true, check: true }, fake);
+  assert.deepEqual(fake.calls.map((c) => c.method), ["execute_lua", "snapshot", "check"]);
+  assert.equal(res.content.filter((c) => c.type === "image").length, 1);
+  assert.match(textOf(res), /"value": ?3[\s\S]*2x1 px, frame 1[\s\S]*No problems found/);
+  // A failed edit returns only the error: nothing to look at.
+  const failed = fakeAseprite({ execute_lua: { result: { ok: false, error: "boom", rolledBack: true } } });
+  const r2 = await runTool(findTool("execute_lua"), { code: "error()", look: true, check: true }, failed);
+  assert.equal(r2.isError, true);
+  assert.deepEqual(failed.calls.map((c) => c.method), ["execute_lua"]);
+});

@@ -114,16 +114,6 @@ export function rampMap(from: RGBA[], to: RGBA[]): Map<string, RGBA> {
   return map;
 }
 
-export function applyMap(img: Rgba, map: Map<string, RGBA>): Rgba {
-  const out = new Uint8Array(img.data);
-  for (let i = 0; i < out.length; i += 4) {
-    if (out[i + 3] < 128) continue;
-    const to = map.get(hex({ r: out[i], g: out[i + 1], b: out[i + 2], a: 255 }));
-    if (to) out.set([to.r, to.g, to.b], i);
-  }
-  return { width: img.width, height: img.height, data: out };
-}
-
 /**
  * Palette-swap data for shaders: an index map (each pixel's index into the
  * base palette in the red channel, alpha kept) and a lookup table with one

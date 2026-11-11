@@ -7,7 +7,7 @@
 // reference, comes from aseprite-ai-artist (MIT, https://github.com/with-pebbly/aseprite-ai-artist,
 // skills/concept/SKILL.md, docs/adr/0009-concept-first.md); the code is our own.
 import { hex, hueName, quantize, toOklch, type RGBA } from "./color.js";
-import { bounds, OPAQUE, type Rgba } from "./image.js";
+import { bounds, crop, OPAQUE, type Rgba } from "./image.js";
 import { resample } from "./pixel_grid.js";
 import { describeBackground, detectBackground, findSprites, removeBackground, type Rect } from "./sheet.js";
 import { countColors } from "./style.js";
@@ -61,12 +61,6 @@ export function readStoryboard(img: Rgba, layout: PanelLayout = "auto"): Storybo
 }
 
 /** A copy of a rect of the image. */
-export function crop(img: Rgba, r: Rect): Rgba {
-  const out = new Uint8Array(r.w * r.h * 4);
-  for (let y = 0; y < r.h; y++) out.set(img.data.subarray(((r.y + y) * img.width + r.x) * 4, ((r.y + y) * img.width + r.x + r.w) * 4), y * r.w * 4);
-  return { width: r.w, height: r.h, data: out };
-}
-
 /**
  * A panel scaled to fit a width x height canvas, keeping its aspect ratio: centered across, standing on the bottom
  * edge (the panel's ground line stays the canvas's). "snap" takes each target pixel's dominant color, as pixel snap

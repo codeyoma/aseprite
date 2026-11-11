@@ -1,7 +1,8 @@
 // Basic RGBA image operations shared by the bridge: the image type, a blank
 // canvas, opaque bounds and trimming, nearest-neighbor scaling, stamping one
 // image onto another, snapping to a palette, flattening onto a background,
-// labelled contact sheets (used by the FX preview and the review views) and PNG files.
+// labelled contact sheets (used by the FX preview and the review views) and PNG files,
+// cropping and shrinking, color counts, recoloring and a file's palette.
 //
 // Alpha policy: a pixel is opaque (counts as content) when its alpha is at
 // least OPAQUE (128). bounds, trim and stamp use that rule by default; a
@@ -9,7 +10,7 @@
 // trimming passes 1, so any pixel with non-zero alpha counts).
 import { readFileSync, writeFileSync } from "node:fs";
 import { PNG } from "pngjs";
-import { nearest, type RGBA } from "./color.js";
+import { hex, nearest, type Counted, type RGBA } from "./color.js";
 
 export interface Rgba {
   width: number;
@@ -243,4 +244,71 @@ export function contactSheet(
     }
   });
   return { width: W, height: H, data: out };
+}
+
+/** The pixels of rectangle r (inside the image). */
+export function crop(img: Rgba, r: { x: number; y: number; w: number; h: number }): Rgba {
+  const data = new Uint8Array(r.w * r.h * 4);
+  for (let y = 0; y < r.h; y++) data.set(img.data.subarray(((r.y + y) * img.width + r.x) * 4, ((r.y + y) * img.width + r.x + r.w) * 4), y * r.w * 4);
+  return { width: r.w, height: r.h, data };
+}
+
+/** The part of rectangle r inside the image, and where it starts. */
+export function cropClipped(img: Rgba, r: { x: number; y: number; w: number; h: number }): { image: Rgba; x: number; y: number } {
+  const x0 = Math.max(0, r.x), y0 = Math.max(0, r.y);
+  const w = Math.max(0, Math.min(img.width, r.x + r.w) - x0), h = Math.max(0, Math.min(img.height, r.y + r.h) - y0);
+  return { image: crop(img, { x: x0, y: y0, w, h }), x: x0, y: y0 };
+}
+
+/** Box-filter shrink so the longer side is at most `side` (alpha-weighted colors). */
+export function shrink(img: Rgba, side: number): Rgba {
+  const f = Math.max(img.width, img.height) / side;
+  if (f <= 1) return img;
+  const w = Math.max(1, Math.round(img.width / f)), h = Math.max(1, Math.round(img.height / f));
+  const out = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const x0 = Math.floor(x * img.width / w), x1 = Math.max(x0 + 1, Math.floor((x + 1) * img.width / w));
+    const y0 = Math.floor(y * img.height / h), y1 = Math.max(y0 + 1, Math.floor((y + 1) * img.height / h));
+    const sum = [0, 0, 0, 0];
+    for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) {
+      const i = (yy * img.width + xx) * 4, a = img.data[i + 3];
+      sum[0] += img.data[i] * a; sum[1] += img.data[i + 1] * a; sum[2] += img.data[i + 2] * a; sum[3] += a;
+    }
+    const n = (x1 - x0) * (y1 - y0), o = (y * w + x) * 4;
+    if (sum[3] > 0) out.set([sum[0] / sum[3], sum[1] / sum[3], sum[2] / sum[3], sum[3] / n].map(Math.round), o);
+  }
+  return { width: w, height: h, data: out };
+}
+
+/** The opaque colors of an image with their pixel counts, most used first. */
+export function countColors(img: Rgba, minAlpha = OPAQUE): Counted[] {
+  const m = new Map<string, Counted>();
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (img.data[i + 3] < minAlpha) continue;
+    const c = { r: img.data[i], g: img.data[i + 1], b: img.data[i + 2], a: 255 };
+    const k = hex(c);
+    const e = m.get(k);
+    if (e) e.count++;
+    else m.set(k, { ...c, count: 1 });
+  }
+  return [...m.values()].sort((a, b) => b.count - a.count);
+}
+
+/** A copy with opaque pixels recolored by a hex -> color map (alpha kept). */
+export function recolor(img: Rgba, map: Map<string, { r: number; g: number; b: number }>): Rgba {
+  const out = new Uint8Array(img.data);
+  for (let i = 0; i < out.length; i += 4) {
+    if (out[i + 3] < OPAQUE) continue;
+    const to = map.get(hex({ r: out[i], g: out[i + 1], b: out[i + 2], a: 255 }));
+    if (to) out.set([to.r, to.g, to.b], i);
+  }
+  return { width: img.width, height: img.height, data: out };
+}
+
+/** The colors of a set of images as hex, most used first, when there are at most `max` (a file's palette), else undefined. */
+export function filePalette(images: Rgba[], max = 256): string[] | undefined {
+  const total = new Map<string, number>();
+  for (const img of images) for (const c of countColors(img, 1)) total.set(hex(c), (total.get(hex(c)) ?? 0) + c.count);
+  if (total.size > max) return undefined;
+  return [...total.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
 }

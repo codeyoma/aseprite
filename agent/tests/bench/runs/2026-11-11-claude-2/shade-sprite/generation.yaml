@@ -1,0 +1,103 @@
+benchmark: shade-sprite
+skill: shade-sprite
+title: "Shade a flat green ball, then outline it"
+provider: claude
+model: null
+commit: b4ec85672
+date: "2026-11-11T06:19:42.255Z"
+seconds: 30
+passed: 7
+total: 7
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · shade-sprite"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: null
+    pass: true
+    detail: "32x32"
+  - id: one-frame
+    type: frames
+    desc: still a single frame
+    pass: true
+    detail: 1
+  - id: ai-layer
+    type: layers
+    desc: "the result is on AI: layers"
+    pass: true
+    detail:
+      - "AI: shaded Body"
+      - "AI: outline"
+  - id: outline-pixel
+    type: lua
+    desc: an opaque pixel just outside the original circle (the outline)
+    pass: true
+    detail: 255
+  - id: lit-top-left
+    type: lua
+    desc: the top-left of the ball is brighter than the bottom-right
+    pass: true
+    detail:
+      br: 68.69999999999999
+      tl: 183.89999999999998
+  - id: check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 0 warnings"
+steps:
+  - prompt: "/skill:shade-sprite Shade this flat ball with light from the top left, 3 bands, using the palette's greens."
+    seconds: 15
+    header: "Claude · shade-sprite"
+    tools:
+      - tool: Look at the sprite
+        status: failed
+      - tool: Compare tone
+        status: ok
+      - tool: Shade from top-left
+        status: ok
+      - tool: Run Lua
+        status: ok
+    reply: "I shaded the ball with light from the top left in 3 bands, using only greens from the palette: #8cdc6e for the lit side, #3caa50 for the midtone and #1e5a3c for the shadow toward the bottom right. The result is on a new layer, [AI: shaded Body](aseprite://layer), and your original [Body](aseprite://layer/L1410) is hidden, not changed. I looked at the result and ran `check`, which found no problems.\n\nThe edges between the bands have a few small notches, mostly where the light band meets the midtone on the left. Smoothing them by hand would make it cleaner. I didn't add an outline because you didn't ask for one; I can add one in the darkest green (#14281e), and I can put a small #e6fab4 highlight near the top left."
+    errors: []
+  - prompt: "Now add a selout outline around it, darker than the shading."
+    seconds: 15
+    header: Claude
+    tools:
+      - tool: Outline (selout)
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Darken selout outline one step
+        status: ok
+    reply: "The outline colors it picked are only one step darker, so on the lit side they blend into the shading. I'll push each one a step darker.\nI added a 1 px colored outline around the ball on a new layer, [AI: outline](aseprite://layer), above the shading. The colors it picked first were only one step darker than the band next to them, so on the lit side they nearly matched the midtone. I made each outline pixel one more step darker:\n\n- **Next to the lit band:** #1e5a3c\n- **Next to the midtone:** #14281e\n- **Next to the shadow:** #181425\n\nEvery outline pixel is now darker than the shading beside it, so the edge is clear and still goes from green to dark around the ball. `check` found no problems."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 33
+  scores:
+    readability: 4
+    form: 3
+    palette: 2
+    motion: null
+    fit: 3
+  overall: 3
+  note: "Three green bands clearly establish top-left lighting and spherical volume, with a darker selective outline. Small teeth along the highlight boundary and a heavy lower-right outline need cleanup."

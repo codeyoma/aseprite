@@ -3,10 +3,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as z from "zod/v4";
 import { hex, parseHex, type RGBA } from "./color.js";
-import { applyLut, applyMap, ditherGradient, ditherToPalette, paletteLut, rampMap, type Pattern } from "./dither.js";
+import { applyLut, ditherGradient, ditherToPalette, paletteLut, rampMap, type Pattern } from "./dither.js";
 import { documentOf } from "./document.js";
 import { framesInput, resolvePalette } from "./tool_inputs.js";
-import { writePng, type Rgba } from "./image.js";
+import { recolor, writePng, type Rgba } from "./image.js";
 import { failure, text, type Tool } from "./tool.js";
 
 const colorsOf = (list: string[]) => list.map((h) => parseHex(h)).filter((c): c is RGBA => !!c);
@@ -121,7 +121,7 @@ export const DITHER_TOOLS: Tool[] = [
       const items = [];
       for (const f of frames) {
         const img = await doc.pixels(layer, f);
-        for (const [i, v] of input.variants.entries()) items.push({ image: applyMap(img, maps[i]), frame: f, newLayer: v.name, above: layer });
+        for (const [i, v] of input.variants.entries()) items.push({ image: recolor(img, maps[i]), frame: f, newLayer: v.name, above: layer });
       }
       const palette: string[] = [...new Set<string>(maps.flatMap((m: Map<string, RGBA>) => [...m.values()].map((c) => hex({ ...c, a: 255 }))))];
       await doc.putImages(items, { palette, label: "Palette swap" });
