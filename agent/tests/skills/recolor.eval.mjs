@@ -31,7 +31,8 @@ export default {
     assert.equal("#" + [...red.subarray((2 * 8 + 2) * 4, (2 * 8 + 2) * 4 + 3)].map((v) => v.toString(16).padStart(2, "0")).join(""), "#ff004d");
     for (const f of ["hero_index.png", "hero_lut.png", "hero_swap.gdshader"]) assert.ok(existsSync(join(dir, f)), f);
     const lut = PNG.sync.read(readFileSync(join(dir, "hero_lut.png")));
-    assert.deepEqual([lut.width, lut.height], [2, 2], "2 colors x (base + 1 variant)");
+    // palette_swap added the 2 red shades to the sprite palette, so the base palette has 4 colors.
+    assert.deepEqual([lut.width, lut.height], [4, 2], "4 palette colors x (base + 1 variant)");
     assert.match(textOf(results[2]), /Row 0 reproduces the sprite exactly/);
   },
 };

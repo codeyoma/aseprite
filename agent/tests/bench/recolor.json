@@ -1,6 +1,7 @@
 {
   "skill": "recolor",
   "title": "Red and green team versions that keep the shading",
+  "showLayers": "^AI: ",
   "animated": false,
   "fixture": [
     "local s = Sprite(16, 20, ColorMode.RGB) s.layers[1].name = \"Hero\"",

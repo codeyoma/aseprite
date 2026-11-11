@@ -1,0 +1,107 @@
+benchmark: recolor
+skill: recolor
+title: Red and green team versions that keep the shading
+provider: claude
+model: null
+commit: "7c63985fa"
+date: "2026-11-11T01:15:56.826Z"
+seconds: 46
+passed: 5
+total: 5
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Recolor and team colors"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: null
+    pass: true
+    detail: "16x20"
+  - id: two-variants
+    type: layers
+    desc: "two AI: variant layers (nested ones count)"
+    pass: true
+    detail:
+      - "AI: green team"
+      - "AI: red team"
+  - id: skin-kept
+    type: lua
+    desc: every variant keeps the skin color and has a shirt that is no longer blue
+    pass: true
+    detail:
+      - "AI: green team ok"
+      - "AI: red team ok"
+  - id: check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 0 warnings"
+steps:
+  - prompt: "/skill:recolor Make a red team version of the Hero, recoloring only the blue shirt and keeping its three shades."
+    seconds: 33
+    header: "Claude · Recolor and team colors"
+    tools:
+      - tool: Extract palette
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: "Make ramp from #ff004d"
+        status: ok
+      - tool: Use red ramp distinct from skin
+        status: ok
+      - tool: Make 1 palette swaps
+        status: ok
+      - tool: Hide Hero to view red team
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Shirt ramp is #1d2b53, #2978ff, #8cc8ff (outline #181425 stays).\nI added the red team version on [AI: red team](aseprite://layer/L3915). Only the shirt changed, and it keeps its three shades. Skin and the #181425 outline are the same as before.\n\n- Shirt colors, dark to light: #1d2b53 / #2978ff / #8cc8ff became **#7e1f2e / #e8303d / #ff8a8a**.\n- The light shade from `make_ramp` came out orange and was too close to the skin. I swapped it for a pink-red.\n- All three reds are in the palette now.\n- [Hero](aseprite://layer/L3876) is hidden so you can see the red version. Show it again to compare the two.\n\nThe check found no errors or warnings."
+    errors: []
+  - prompt: Now make a green team version the same way.
+    seconds: 13
+    header: Claude
+    tools:
+      - tool: Add green ramp to palette
+        status: ok
+      - tool: Make 1 palette swaps
+        status: ok
+      - tool: Show only green team
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added the green team version on [AI: green team](aseprite://layer/L3947). As with the red team, only the shirt changed and it keeps its three shades.\n\n- Shirt colors, dark to light: #1d2b53 / #2978ff / #8cc8ff became **#1a5e34 / #38b764 / #a7f070**.\n- I picked the greens by hand and added all three to the palette.\n- Only the green layer is visible now. Red team and Hero are hidden, so show them to compare.\n\nThe check found no errors or warnings."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - layer-1.png
+  - layer-2.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - layer-1.png
+    - layer-2.png
+  seconds: 26
+  scores:
+    readability: 1
+    form: 1
+    palette: 4
+    motion: null
+    fit: 4
+  overall: 2.5
+  note: "Both team variants preserve three distinct shirt shades, clean outlines, and matching skin colors. The rectangular silhouette limits character recognition at 1x, while the flat head weakens volume."

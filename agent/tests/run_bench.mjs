@@ -24,7 +24,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  BENCH_DIR, JUDGE_IMAGES, benchNames, evaluate, isoDate, judgeCommand, judgeFor, judgePrompt, linesOf, list,
+  BENCH_DIR, IMAGES_FILE, JUDGE_IMAGES, benchNames, judgeImages, evaluate, isoDate, judgeCommand, judgeFor, judgePrompt, linesOf, list,
   loadBench, parseScores, runDirName, selectSprites, toYaml, withJudge,
 } from "./bench/bench.mjs";
 
@@ -55,7 +55,9 @@ function runJudge(judge, { dir, bench, model }) {
   const tmp = mkdtempSync(join(tmpdir(), "bench-judge-"));
   const t0 = Date.now();
   try {
-    const images = JUDGE_IMAGES.filter((im) => existsSync(join(dir, im.file)));
+    // The runner's list (main images plus extras), else the three main ones for older runs.
+    const listed = existsSync(join(dir, IMAGES_FILE)) ? JSON.parse(readFileSync(join(dir, IMAGES_FILE), "utf8")) : JUDGE_IMAGES;
+    const images = listed.filter((im) => existsSync(join(dir, im.file)));
     if (!images.length) throw new Error("no images to judge");
     for (const im of images) copyFileSync(join(dir, im.file), join(tmp, im.as));
     const prompt = judgePrompt({ steps: bench.steps, animated: bench.animated, images });
@@ -116,10 +118,15 @@ const activate = (i) => lua(`app.sprite = app.sprites[${i}] return { ok = true }
 /** Sprites opened since the benchmark started (index > n0). */
 const spritesSince = async (n0) => list(await lua(`local o = {}
   for i = ${n0} + 1, #app.sprites do local s = app.sprites[i]
-    local nine, tm = false, false
-    for _, sl in ipairs(s.slices) do if sl.center then nine = true end end
+    local nine, tm, empty, slices = false, false, true, {}
+    for _, sl in ipairs(s.slices) do if sl.center then
+      nine = true
+      local b, c = sl.bounds, sl.center
+      slices[#slices + 1] = string.format("%s %dx%d at %d,%d, center %dx%d at %d,%d", sl.name, b.width, b.height, b.x, b.y, c.width, c.height, c.x, c.y)
+    end end
     for _, l in ipairs(s.layers) do if l.isTilemap then tm = true end end
-    o[#o + 1] = { index = i, title = app.fs.fileTitle(s.filename), width = s.width, height = s.height, frames = #s.frames, nineSlice = nine, tilemap = tm }
+    for _, cel in ipairs(s.cels) do if not cel.image:isEmpty() then empty = false break end end
+    o[#o + 1] = { index = i, title = app.fs.fileTitle(s.filename), width = s.width, height = s.height, frames = #s.frames, nineSlice = nine, tilemap = tm, empty = empty, slices = slices }
   end return o`));
 
 /** Facts about the active sprite: size, frames, tags, layer names, repeated frames, opaque colors (first 512). */
@@ -213,6 +220,32 @@ for (const bench of benches) {
   files.push(savePng(await c.call("snapshot", { view: "filmstrip" }), join(dir, "filmstrip.png")));
   files.push(savePng(await c.call("snapshot", { frame: frames }), join(dir, "final.png")));
   files.push(savePng(await c.call("snapshot", { frame: frames, scale: 1 }), join(dir, "final-1x.png")));
+  // Extras for what the last frame cannot show: the other sprites the request made
+  // (a tile set beside its preview, a panel beside the button) and, when the benchmark
+  // names them, layers alone (variants hidden under the top one).
+  const extras = [];
+  const sliceNote = (s) => (list(s?.slices).length ? `; 9-patch slices (not drawn): ${list(s.slices).join("; ")}` : "");
+  for (const s of sprites.filter((s) => s.index !== home && !s.empty)) {
+    await activate(s.index);
+    const file = `sprite-${extras.length + 1}.png`;
+    const shot = await c.call("snapshot", s.frames > 1 ? { view: "filmstrip" } : { frame: 1 });
+    if (savePng(shot, join(dir, file))) extras.push({ file, what: `another sprite the request made, "${s.title}" (${s.width}x${s.height}${s.frames > 1 ? `, its ${s.frames} frames side by side` : ""}), enlarged${sliceNote(s)}` });
+  }
+  await activate(home);
+  if (bench.showLayers) {
+    const leaves = list(await lua(`local o = {}
+      local function walk(ls) for _, l in ipairs(ls) do if l.isGroup then walk(l.layers) else o[#o + 1] = l.name end end end
+      walk(app.sprite.layers) return o`)).filter((n) => new RegExp(bench.showLayers).test(n));
+    for (const [i, name] of leaves.entries()) {
+      const file = `layer-${i + 1}.png`;
+      if (savePng(await c.call("snapshot", { frame: frames, layer: name }), join(dir, file))) extras.push({ file, what: `the layer "${name}" alone, last frame, enlarged (variants are layers of one sprite, so the last frame shows only the top visible one)` });
+    }
+  }
+  const main = sprites.find((s) => s.index === home);
+  const judged = judgeImages(extras).map((im) => (im.file === "final.png" ? { ...im, what: im.what + sliceNote(main) } : im));
+  writeFileSync(join(dir, IMAGES_FILE), `${JSON.stringify(judged, null, 2)}\n`);
+  files.push(...extras.map((x) => x.file));
+
   let extra = 0;
   for (const s of [{ index: home }, ...sprites.filter((s) => s.index !== home)]) {
     const name = s.index === home ? "result.aseprite" : `extra-${++extra}.aseprite`;

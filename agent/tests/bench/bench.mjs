@@ -33,7 +33,7 @@ export const CRITERIA = {
   lua: { code: "required" },
 };
 const COMMON = ["id", "type", "desc", "sprite"];
-const BENCH_KEYS = ["skill", "title", "fixture", "steps", "target", "animated", "criteria"];
+const BENCH_KEYS = ["skill", "title", "fixture", "steps", "target", "showLayers", "animated", "criteria"];
 const SELECTOR_KEYS = ["title", "minFrames"];
 
 const isInt = (v) => Number.isInteger(v) && v >= 0;
@@ -63,6 +63,7 @@ export function validateBench(b, { skills = builtInSkills() } = {}) {
   else if (!b.steps[0].startsWith(`/skill:${b.skill} `)) errors.push(`steps[0]: must start with /skill:${b.skill}`);
   if (typeof b.animated !== "boolean") errors.push("animated: true when the motion axis is scored");
   if (b.target !== undefined) checkSelector(b.target, "target", errors);
+  if (b.showLayers !== undefined && !isRegex(b.showLayers)) errors.push("showLayers: a regular expression for layers the judge also sees alone");
   if (!Array.isArray(b.criteria) || !b.criteria.length) errors.push("criteria: a non-empty list");
   else {
     const ids = new Set();
@@ -232,6 +233,22 @@ export const JUDGE_IMAGES = [
   { file: "final.png", as: "image-2.png", what: "the last frame, enlarged so single pixels are visible" },
   { file: "final-1x.png", as: "image-3.png", what: "the last frame at its real size (1x)" },
 ];
+
+/** Most extra images (other sprites, layers alone) a judge gets, so the prompt stays small. */
+export const MAX_EXTRA_IMAGES = 6;
+
+/**
+ * The judge's image list: the three main images, then extras ({ file, what }) for
+ * what the main sprite's last frame cannot show (other sprites the request made,
+ * variant layers hidden under the top one), numbered on from image-4.png.
+ */
+export function judgeImages(extras = []) {
+  const more = extras.slice(0, MAX_EXTRA_IMAGES).map((x, i) => ({ file: x.file, as: `image-${JUDGE_IMAGES.length + i + 1}.png`, what: x.what }));
+  return [...JUDGE_IMAGES, ...more];
+}
+
+/** The file the runner writes with the judge's image list, so --rejudge shows the same images. */
+export const IMAGES_FILE = "judge-images.json";
 
 /**
  * The judge prompt. It names no provider, model or run: only the request, the

@@ -1,0 +1,91 @@
+benchmark: recolor
+skill: recolor
+title: Red and green team versions that keep the shading
+provider: claude
+model: null
+commit: "7c63985fa"
+date: "2026-11-11T01:07:42.840Z"
+seconds: 40
+passed: 4
+total: 5
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Recolor and team colors"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: null
+    pass: true
+    detail: "16x20"
+  - id: two-variants
+    type: layers
+    desc: "two AI: variant layers (nested ones count)"
+    pass: true
+    detail:
+      - "AI: green team"
+      - "AI: red team"
+  - id: skin-kept
+    type: lua
+    desc: every variant keeps the skin color and has a shirt that is no longer blue
+    pass: true
+    detail:
+      - "AI: green team ok"
+      - "AI: red team ok"
+  - id: check-clean
+    type: check
+    desc: null
+    pass: false
+    detail: "6 errors, 0 warnings"
+steps:
+  - prompt: "/skill:recolor Make a red team version of the Hero, recoloring only the blue shirt and keeping its three shades."
+    seconds: 30
+    header: "Claude · Recolor and team colors"
+    tools:
+      - tool: Extract palette
+        status: ok
+      - tool: Make 1 palette swaps
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+    reply: "I made the red team version on [AI: red team](aseprite://layer/L2788). Only the three shirt shades changed:\n\n- `#1d2b53` became `#5a1128` (shadow)\n- `#2978ff` became `#e8283c` (base)\n- `#8cc8ff` became `#ff9a8c` (highlight)\n\nThe skin and the `#181425` outline are unchanged. In the snapshot, the shirt still reads with its shadow, base and highlight. The original [Hero](aseprite://layer/L2756) layer is still visible. Hide it to compare the two versions."
+    errors: []
+  - prompt: Now make a green team version the same way.
+    seconds: 10
+    header: Claude
+    tools:
+      - tool: Make 1 palette swaps
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+    reply: "I made the green team version on a new layer named \"AI: green team\". As with the red team, only the three shirt shades changed:\n\n- `#1d2b53` became `#134a2c` (shadow)\n- `#2978ff` became `#2fb84a` (base)\n- `#8cc8ff` became `#a8f08c` (highlight)\n\nThe skin and outline are unchanged, and the snapshot shows the shirt still reads with its three shades. [Hero](aseprite://layer/L2756), [AI: red team](aseprite://layer/L2788) and the green layer are all visible now, so the top layer covers the others in the canvas. Show one at a time to compare them."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - layer-1.png
+  - layer-2.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - layer-1.png
+    - layer-2.png
+  seconds: 42
+  scores:
+    readability: 1
+    form: 1
+    palette: 4
+    motion: null
+    fit: 4
+  overall: 2.5
+  note: "Both team variants use clean, distinct three-shade shirt ramps while preserving matching skin and outline geometry. The rectangular silhouette barely reads as a character at 1x, and strip shading gives little volume."

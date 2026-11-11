@@ -1,0 +1,107 @@
+benchmark: make-ui
+skill: make-ui
+title: A three-state Play button and a 9-patch panel in a fixed palette
+provider: claude
+model: null
+commit: "7c63985fa"
+date: "2026-11-11T01:09:04.968Z"
+seconds: 58
+passed: 5
+total: 5
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Pixel text and UI"
+      - Claude
+  - id: button
+    type: sprites
+    desc: a button sprite with 3 or more state frames and a 9-patch slice
+    pass: true
+    detail:
+      - panel 48x32 1f
+      - play_button 32x15 4f
+      - Sprite 64x64 1f
+  - id: panel
+    type: sprites
+    desc: a second sprite with a 9-patch slice (the panel)
+    pass: true
+    detail:
+      - panel 48x32 1f
+      - play_button 32x15 4f
+      - Sprite 64x64 1f
+  - id: button-palette
+    type: palette
+    desc: "the button uses only the palette's colors"
+    pass: true
+    detail: "8 colors"
+  - id: button-check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 3 warnings"
+steps:
+  - prompt: "/skill:make-ui Make a 'Play' button with normal, hover and pressed states, using this sprite's palette."
+    seconds: 45
+    header: "Claude · Pixel text and UI"
+    tools:
+      - tool: "Read guide: basics"
+        status: ok
+      - tool: Make button
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Set PICO-8 palette on button sprite
+        status: ok
+      - tool: Make hover frame distinct
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Hover frame came out identical to normal; recoloring it now.\nI made a 32x15 \"Play\" button as a new sprite, `play_button`, using your PICO-8 palette. It has four frames, each with a tag:\n\n- **normal**: dark green (#008751) with a bright green (#00e436) highlight, a navy (#1d2b53) shadow and cream (#fff1e8) text.\n- **hover**: a cream highlight and yellow (#ffec27) text. The generator first made it identical to normal, so I recolored it.\n- **pressed**: the bevel is flipped and the text sits 1 px lower.\n- **disabled**: gray. It came with the tool; delete it if you don't need it.\n\nThe 9-patch slice is also named `play_button`. Its 28x11 center starts at (2,2) and stretches.\n\nI also gave the new sprite your 16 colors. It didn't have them, which made `check` report every color as off-palette. `ch"
+    errors: []
+  - prompt: "Now make a small 48x32 panel in the same style, with 9-patch slices, in the same palette."
+    seconds: 13
+    header: Claude
+    tools:
+      - tool: Make panel
+        status: ok
+      - tool: Set PICO-8 palette on panel sprite
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I made the 48x32 panel as a new sprite, `panel`, in the same style as the button. It uses the same colors: a #008751 fill, a bright green (#00e436) top-left highlight, a navy (#1d2b53) bottom-right shadow, a black border and 1 px rounded corners. I gave it your 16-color palette, and `check` found no problems.\n\nIt has one 9-patch slice, also named `panel`. The 2 px border and corners stay fixed, and the 44x28 center at (2,2) stretches, so the engine can draw it at any size."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - sprite-1.png
+  - result.aseprite
+  - extra-1.aseprite
+  - extra-2.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - sprite-1.png
+  seconds: 33
+  scores:
+    readability: 2
+    form: 2
+    palette: 3
+    motion: null
+    fit: 3
+  overall: 2.5
+  note: "Clean pixel clusters and consistent bevels tie the button states and correctly sized 9-patch panel together. The final state's low-contrast lettering becomes muddy at 1x."

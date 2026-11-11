@@ -1,0 +1,145 @@
+benchmark: make-tileset
+skill: make-tileset
+title: A 16x16 grass-on-dirt autotile set with a preview map
+provider: claude
+model: null
+commit: "7c63985fa"
+date: "2026-11-11T01:10:36.460Z"
+seconds: 173
+passed: 6
+total: 6
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: null
+    pass: true
+    detail:
+      - "Claude · Make a terrain tileset"
+      - Claude
+  - id: set
+    type: sprites
+    desc: a 47-tile set sprite
+    pass: true
+    detail:
+      - grass_dirt preview 192x112 1f
+      - grass_dirt 47-tile set 128x96 1f
+      - grass_dirt_template 80x16 1f
+      - Sprite 16x16 1f
+  - id: set-size
+    type: sprites
+    desc: "16 px tiles in an 8x6 grid (128x96)"
+    pass: true
+    detail:
+      - grass_dirt preview 192x112 1f
+      - grass_dirt 47-tile set 128x96 1f
+      - grass_dirt_template 80x16 1f
+      - Sprite 16x16 1f
+  - id: preview
+    type: sprites
+    desc: a preview map on a tilemap layer
+    pass: true
+    detail:
+      - grass_dirt preview 192x112 1f
+      - grass_dirt 47-tile set 128x96 1f
+      - grass_dirt_template 80x16 1f
+      - Sprite 16x16 1f
+  - id: set-palette
+    type: palette
+    desc: "the set uses only the palette's colors"
+    pass: true
+    detail: "8 colors"
+  - id: set-check-clean
+    type: check
+    desc: null
+    pass: true
+    detail: "0 errors, 1 warnings"
+steps:
+  - prompt: "/skill:make-tileset Make a 16x16 grass-on-dirt autotile set (47 tiles) in this sprite's palette, with a preview map. Don't export files."
+    seconds: 98
+    header: "Claude · Make a terrain tileset"
+    tools:
+      - tool: "Read guide: basics"
+        status: ok
+      - tool: "Read guide: rules/tiles"
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Make 47-tile set
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Preview built; checking seams up close, then adding a dirt ground layer under the map so empty cells read as dirt.\nPalettes synced; re-checking the preview sprite.\nI built the 47-tile grass-on-dirt set at 16×16 in your palette. Nothing was exported. Three new sprites are open:\n\n- **grass_dirt_template**: the 5-tile source strip on a `Template` layer (island, vertical, horizontal, fill, inner). The grass has a light rim on its top and left edges, darker edges on the bottom and right, and a shadow on the dirt below it. The grass and dirt textures are the same in all five tiles.\n- **grass_dirt 47-tile set**: the full blob set, 8 columns wide.\n- **grass_dirt preview**: a sample map on a tilemap layer that uses the set, so you can paint more terrain with it. I added a tiled `Dirt ground` layer "
+    errors: []
+  - prompt: "Make the grass edge more irregular, with a few grass tufts hanging over the dirt, and update the set and the preview."
+    seconds: 75
+    header: Claude
+    tools:
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Make 47-tile set
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Make 47-tile set
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Wrong sprites closed — the old preview survived. Rebuilding and replacing correctly.\nThe grass edge is now irregular on every side, and the 47-tile set and the preview are rebuilt from it.\n\n- **Template:** the edge line moves in and out by up to 2 px. Grass tips poke up along the top edge, and small tufts hang 1–2 px over the dirt along the bottom and sides. The light rim and dark underside follow the new outline.\n- **Set and preview:** both are rebuilt from the updated template, and the old copies are closed. The preview has the `Dirt ground` layer again, and both sprites use your palette.\n\nThere was a slip on the way. My first replacement attempt closed the newly built set and preview by mistake, so I built them again. Those discarded copies were generated output only; your work was not "
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - sprite-1.png
+  - sprite-2.png
+  - result.aseprite
+  - extra-1.aseprite
+  - extra-2.aseprite
+  - extra-3.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - sprite-1.png
+    - sprite-2.png
+  seconds: 39
+  scores:
+    readability: 3
+    form: 2
+    palette: 3
+    motion: null
+    fit: 3
+  overall: 2.75
+  note: "Grass boundaries, openings, and narrow connections read clearly at 1×, with a cohesive palette across the tileset and preview. Edge shadows give shallow volume, but repeated tuft shapes and evenly scattered texture make the grass feel patterned rather than naturally irregular."

@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import {
-  AXES, BENCH_DIR, JUDGE_IMAGES, benchNames, evaluate, judgeCommand, judgeFor, judgePrompt, loadBench, parseCheck,
+  AXES, BENCH_DIR, JUDGE_IMAGES, MAX_EXTRA_IMAGES, benchNames, judgeImages, evaluate, judgeCommand, judgeFor, judgePrompt, loadBench, parseCheck,
   parseScores, rubricAxes, runDirName, toYaml, validateBench, withJudge,
 } from "../../tests/bench/bench.mjs";
 
@@ -32,6 +32,7 @@ test("the validator rejects bad benchmarks", () => {
   assert.match(bad({ steps: ["/skill:animate only one"] }).join(), /two or more/);
   assert.match(bad({ steps: ["walk please", "more"] }).join(), /must start with \/skill:animate/);
   assert.match(bad({ extra: 1 }).join(), /unknown key extra/);
+  assert.match(bad({ showLayers: "(" }).join(), /showLayers/);
   assert.match(bad({ criteria: [{ id: "a", type: "frames", min: -1 }] }).join(), /non-negative/);
   assert.match(bad({ criteria: [{ id: "a", type: "size", width: 4 }] }).join(), /height: required/);
   assert.match(bad({ criteria: [{ id: "a", type: "tag", name: "(" }] }).join(), /regular expression/);
@@ -63,6 +64,16 @@ test("the judge prompt is blind: request, neutral image names and the rubric onl
   assert.deepEqual(judgeCommand("claude", { dir: "/tmp/x", images: [] }).args.slice(0, 3), ["-p", "--tools", "Read"]);
 });
 const animated = (b) => b.animated;
+
+test("extra judge images follow the main three, numbered on, capped", () => {
+  const extras = Array.from({ length: 9 }, (_, i) => ({ file: `sprite-${i + 1}.png`, what: `another sprite "set ${i}"` }));
+  const ims = judgeImages(extras);
+  assert.equal(ims.length, JUDGE_IMAGES.length + MAX_EXTRA_IMAGES);
+  assert.deepEqual(ims.slice(0, 3), JUDGE_IMAGES);
+  assert.deepEqual(ims.map((im) => im.as), ims.map((_, i) => `image-${i + 1}.png`));
+  const p = judgePrompt({ steps: ["/skill:recolor a", "b"], animated: false, images: ims });
+  assert.ok(p.includes("image-4.png: another sprite") && !p.includes("sprite-1.png"));
+});
 
 test("the judge is never the provider that drew", () => {
   assert.equal(judgeFor("claude"), "codex");

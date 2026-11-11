@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Benchmark judge sees the whole result; palette_swap adds its colors (#82 follow-up)
+- **How:** `run_bench.mjs` now also saves `sprite-<n>.png` for each other non-empty sprite the benchmark made (a filmstrip when it has frames) and, when a benchmark sets `showLayers` (a regex; recolor uses `^AI: `), `layer-<n>.png` for each matching leaf layer alone. Each extra has a neutral description; 9-patch slices are listed as text (name, bounds, center), because snapshots don't draw slices. `bench.judgeImages` numbers the extras on from `image-4.png`, up to `MAX_EXTRA_IMAGES` (6). The list goes into `judge-images.json`, so `--rejudge` shows the judge the same images. `palette_swap` writes every variant and frame in one `putImages` call and passes the variants' target colors as its `palette`, so they are appended to the sprite palette.
+- **Why:** the baseline judge saw only the main sprite's last frame. It marked the tile set and the panel missing (they were other sprites), and the green recolor wrong (only the top variant layer shows in the composite). That made the scores measure the camera, not the art. With the extras the judge's notes are about the art (recolor 1.25 to 2.5, make-ui 1.5 to 2.5, make-tileset 2.0 to 2.75). A rerun also showed `palette_swap` left new colors off the palette, so `check` reported off-palette errors whenever the model chose colors the palette lacked.
+- **Architecture:** no wire change; the runner and `bench.mjs` gained the extras, and benchmarks gained the optional `showLayers` key. `palette_swap` uses the existing `put_images` palette append, so a swap is now one undo step. As a result, `export_palette_lut`'s base row includes the appended colors (the recolor eval expects 4 columns). Tests: `bench.test.mjs` (extras numbering and cap, `showLayers` validation), `palette_swap.test.mjs`.
+
 ## Claude gets TodoWrite in Agent mode (#78 live)
 - **How:** Claude's Agent-mode tools are now `["Bash", "TodoWrite"]` (`providers/claude.ts`). Its to-do list reaches the panel as the ACP Plan.
 - **Why:** the studio skill writes its chain as the plan. With only Bash, Claude had no to-do tool, so live runs never showed a plan.

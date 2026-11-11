@@ -115,13 +115,16 @@ export const DITHER_TOOLS: Tool[] = [
       const info = await doc.info();
       const layer = input.layer ?? info.layer;
       const frames = await doc.frames(input.frames ?? "all");
+      // One undo step; the variants' new colors join the sprite palette, so check
+      // does not flag the swapped pixels as off-palette.
+      const maps = input.variants.map((v: Variant) => variantMap(v));
+      const items = [];
       for (const f of frames) {
         const img = await doc.pixels(layer, f);
-        for (const v of input.variants) {
-          const out = applyMap(img, variantMap(v));
-          await doc.putImage(out, { newLayer: v.name, above: layer, frame: f });
-        }
+        for (const [i, v] of input.variants.entries()) items.push({ image: applyMap(img, maps[i]), frame: f, newLayer: v.name, above: layer });
       }
+      const palette: string[] = [...new Set<string>(maps.flatMap((m: Map<string, RGBA>) => [...m.values()].map((c) => hex({ ...c, a: 255 }))))];
+      await doc.putImages(items, { palette, label: "Palette swap" });
       return { content: [text(`Made ${input.variants.length} variant(s) of ${layer} over ${frames.length} frame(s): ${input.variants.map((v: Variant) => `'AI: ${v.name}'`).join(", ")}. Show one at a time to compare.`)] };
     },
   },

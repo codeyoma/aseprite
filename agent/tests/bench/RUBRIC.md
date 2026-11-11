@@ -6,7 +6,7 @@ A benchmark's criteria are pass/fail: they say whether the run did what the prom
 
 ## How the judge works
 
-- **Blind.** The judge gets the request (the prompts without the `/skill:` prefix) and three images under neutral names: the filmstrip, the last frame enlarged and the last frame at 1x. It is not told which provider or model drew the art, and the files it sees do not say.
+- **Blind.** The judge gets the request (the prompts without the `/skill:` prefix) and images under neutral names: the filmstrip, the last frame enlarged and the last frame at 1x, then up to six extras for what the last frame cannot show: each other sprite the request made (a tile set beside its preview, a panel beside its button) and, when the benchmark sets `showLayers`, each matching layer alone (variants hidden under the top one). It is not told which provider or model drew the art, and the files it sees do not say.
 - **Never the artist.** The judge is the other provider by default (`--judge`); the runner refuses the provider that drew. Each judge is a one-shot CLI call (`claude -p` or `codex exec`) run in an empty temporary folder, so it cannot read the repository or earlier runs.
 - **Lower anchor when unsure.** A result between two anchors gets the lower score unless every part of the higher one holds.
 - **Motion only for animations.** A benchmark marked `animated: false` gets `motion: null`, and the mean leaves it out.
