@@ -363,6 +363,38 @@
     ]
   },
   {
+    "name": "fluid_fx",
+    "title": "Fluid effect",
+    "kind": "edit",
+    "label": "Fluid effect",
+    "input": [
+      "apply",
+      "buoyancy",
+      "colors",
+      "dissipation",
+      "duration_ms",
+      "emit_layer",
+      "emitter",
+      "fps",
+      "frames",
+      "gravity",
+      "height",
+      "level",
+      "loop",
+      "preset",
+      "resolution",
+      "seed",
+      "start_frame",
+      "strength",
+      "threshold",
+      "vorticity",
+      "width",
+      "wind",
+      "x",
+      "y"
+    ]
+  },
+  {
     "name": "fx_from_recipe",
     "title": "Effect from recipe",
     "kind": "edit",
