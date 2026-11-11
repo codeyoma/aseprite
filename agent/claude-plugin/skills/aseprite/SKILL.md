@@ -18,12 +18,14 @@ Each `execute_lua` call is one undo step. If the code raises an error, everythin
 
 ## New art from words: an image draft first
 
-When the user asks for new art that doesn't exist yet (a character, creature, prop, item or scene, "draw a...", "make a sprite of..."), start from an image draft, not from pixels written in code:
-1. `generate_image` with an English prompt for the design: the subject, the view they asked for (side, front, three-quarter), full body, flat colors, a clear silhouette, a plain white background, no text. The panel asks the user first; don't also ask in chat. It takes a minute or two: call it again with the job id while it says "Still generating".
-2. `storyboard_to_frames` with the image, `target_size` (the size they asked for, else one that fits the subject: 32x32 for a character, 16x16 for an item) and `draft` (the palette size, about 8-16). It opens the sprite if none is open and puts the image on a hidden `AI: Reference` layer and a pixel draft on `AI: Draft`.
-3. Rework the draft into pixel art, as the concept skill says (`read_guide("concept")`, step 6): the palette, a clean 1 px outline, shading ramps with one light direction, no stray pixels, and details that read at 1x. Then `check` and look.
+When the user asks for new art that doesn't exist yet ("draw a...", "make a sprite of..."), start from the image generator, not from pixels written in code. The panel asks the user first; don't also ask in chat. Generation takes minutes: while a tool says "Still generating", call it again with the job id.
 
-Skip the draft for edits of existing art, patterns, tiles, UI and icons under 16 px, or when the user says to draw it by hand. If the user declines or the generator fails, draw it yourself.
+- **A character or creature: layered.** `generate_character` with the subject in English, the view, and the key poses (a still sprite: one pose; an animation: its keys, e.g. a 6-frame walk's contact, passing, contact, passing on frames 1, 3, 4, 6, with `tag`). Say the layer list in one line before calling. The default is 8 rough layers: far arm, far leg, torso, near leg, head, eyes, hair, near arm. Use finer `layers` (chest, hips, hands, fingers, nose, mouth...) only when the user asks for detail. It makes a master sheet, then one image per layer drawn from it, and puts the parts in a group `AI: <name>` on the key frames, with one palette and the master as a hidden reference.
+- **An item, prop or scene: one image.** `generate_image`, then `storyboard_to_frames` with `target_size` and `draft` (8-16 colors). It puts the image on a hidden `AI: Reference` and a pixel draft on `AI: Draft`.
+
+Then rework every draft layer into pixel art: the palette, a clean 1 px outline, ramps with one light direction, no stray pixels, joints that meet, details that read at 1x (`read_guide("concept")`, step 6). Then `check` and look.
+
+Skip the generator for edits of existing art, patterns, tiles, UI and icons under 16 px, or when the user says to draw it by hand. If the user declines or the generator fails, draw it yourself.
 
 ## The state block
 

@@ -235,3 +235,102 @@ test("the Codex image instruction asks for one image, no other tools, and the pa
   assert.equal(inside(dir, join(dir, "a.png")), true);
   assert.equal(inside(dir, join(tmpdir())), false);
 });
+
+// Layered characters (#103) -------------------------------------------------------------------------------------
+
+/** A 200x200 sheet on white, a 2x2 grid of 100 px panels: per pose, a blue torso and (optionally) a red arm. */
+function sheet({ torso = true, arm = true, armShift = 0 } = {}) {
+  const W = 200, data = new Uint8Array(W * W * 4).fill(255);
+  const rect = (x0, y0, x1, y1, c) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) data.set([...c, 255], (y * W + x) * 4); };
+  for (const [px, armX] of [[0, 60], [100, 25]]) {           // pose 1 arm right of the torso, pose 2 left
+    if (torso) rect(px + 35, 30, px + 64, 95, [40, 90, 220]);
+    if (arm) rect(px + armX + armShift, 40, px + armX + armShift + 9, 70, [220, 40, 40]);
+  }
+  return writePng({ width: W, height: W, data });
+}
+
+test("layered: grids, prompts, and the master-then-layers pool (3 at a time, one retry) (#103)", async () => {
+  const { gridFor, masterPrompt, layerPrompt, generateLayered, DEFAULT_LAYERS } = await import("../dist/layered.js");
+  assert.deepEqual([1, 2, 4, 6, 9].map((n) => { const g = gridFor(n); return `${g.cols}x${g.rows} ${g.aspect}`; }),
+    ["1x1 square", "2x2 square", "2x2 square", "3x2 landscape", "3x3 square"]);
+  assert.throws(() => gridFor(10), /1 to 9 poses/);
+  const req = { subject: "a knight with a red plume", view: "Side view, facing right", poses: ["contact", "passing"] };
+  const mp = masterPrompt(req, gridFor(2));
+  assert.match(mp, /exactly 4 equal square panels in a 2 x 2 grid/);
+  assert.match(mp, /Only the first 2 panels/);
+  assert.match(mp, /1\. contact\n2\. passing/);
+  assert.match(layerPrompt(DEFAULT_LAYERS[7], gridFor(2), 2), /ONLY the near arm .* same position, size, angle and colors/);
+  assert.deepEqual(DEFAULT_LAYERS.map((l) => l.name), ["far arm", "far leg", "torso", "near leg", "head", "eyes", "hair", "near arm"]);
+
+  let live = 0, peak = 0;
+  const calls = [];
+  const failOnce = new Set(["eyes"]);
+  const gen = {
+    async generate(prompt, aspect, signal, refs = []) {
+      calls.push({ prompt, refs });
+      live++; peak = Math.max(peak, live);
+      await new Promise((r) => setTimeout(r, 5));
+      live--;
+      const part = DEFAULT_LAYERS.find((l) => prompt.includes(l.part));
+      if (part && failOnce.delete(part.name)) throw new Error("flaky");
+      return { path: part ? `/x/${part.name}.png` : "/x/master.png", width: 1024, height: 1024 };
+    },
+  };
+  const progress = [];
+  const r = await generateLayered(gen, req, DEFAULT_LAYERS, new AbortController().signal, 3, (d, t) => progress.push(`${d}/${t}`));
+  assert.equal(r.master.path, "/x/master.png");
+  assert.equal(calls[0].refs.length, 0, "the master has no reference");
+  assert.ok(calls.slice(1).every((c) => c.refs[0] === "/x/master.png"), "every layer is drawn from the master");
+  assert.ok(peak <= 3, `at most 3 at a time (peak ${peak})`);
+  assert.equal(calls.length, 1 + 8 + 1, "one retry for the flaky layer");
+  assert.ok(r.layers.every((l) => l.image && !l.error), JSON.stringify(r.layers));
+  assert.equal(progress.at(-1), "9/9");
+});
+
+test("alignToMaster: finds the shift that puts a part inside the master's silhouette (#103)", async () => {
+  const { alignToMaster, shifted } = await import("../dist/layered.js");
+  const img = (w, h, pts) => { const d = new Uint8Array(w * h * 4); for (const [x, y] of pts) d.set([255, 0, 0, 255], (y * w + x) * 4); return { width: w, height: h, data: d }; };
+  const box = (x0, y0, x1, y1) => { const p = []; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) p.push([x, y]); return p; };
+  const master = img(20, 20, box(5, 5, 14, 14));
+  const part = img(20, 20, box(8, 4, 10, 6));                 // sticks out above by 1 row
+  const a = alignToMaster(part, master);
+  assert.deepEqual([a.dx, a.dy, a.outside], [0, 1, 0]);
+  const far = alignToMaster(img(20, 20, box(0, 0, 2, 2)), master, 1);
+  assert.ok(far.outside > 0.35, "too far to fix: reported as misaligned");
+  assert.equal(shifted(part, 0, 1).data[(5 * 20 + 8) * 4 + 3], 255);
+});
+
+test("generate_character: one consent, then the parts land in a group, aligned, on the key frames (#103)", async () => {
+  const { ImageJobs } = await import("../dist/image_gen.js");
+  const paths = { master: sheet(), torso: sheet({ arm: false }), "near arm": sheet({ torso: false, armShift: 5 }) };
+  const gen = { async generate(prompt) {
+    const name = prompt.includes("ONLY the torso") ? "torso" : prompt.includes("ONLY the arm") ? "near arm" : "master";
+    return { path: paths[name], width: 200, height: 200 };
+  } };
+  const lua = [];
+  const fake = fakeDocument({ width: 20, height: 20, frames: 6, tags: [{ name: "walk", from: 1, to: 6 }], layers: [{ name: "Art", frames: [] }],
+    extra: { execute_lua: (p) => { lua.push(p.code); return { ok: true }; } } });
+  const asked = [];
+  const ctx = { ...fake, images: new ImageJobs(gen), ask: async (k, t) => { asked.push(t); return true; } };
+  const r = await runTool(findTool("generate_character"), {
+    subject: "a knight", poses: ["contact", "passing"], frames: [1, 3], tag: "walk", name: "Knight",
+    layers: [{ name: "torso", part: "the torso" }, { name: "near arm", part: "the arm" }],
+  }, ctx);
+  const t = textOf(r);
+  assert.equal(r.isError, undefined, t);
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /3 images \(1 master sheet \+ 2 layers: torso, near arm/);
+  assert.match(t, /2 part layers in the group "AI: Knight" \(bottom to top: torso, near arm\) on frames 1, 3/);
+  assert.match(t, /- near arm: pose 1 moved -1,0\n/, "pose 1 sticks out past the master and is moved back; pose 2 already lies inside");
+  assert.match(t, /Motion stage "keys" for "walk" \(keys 1, 3\)/);
+  const st = (await fake.request("get_state")).result.activeSprite;
+  const names = st.layers.map((l) => l.name);
+  assert.ok(names.includes("AI: Reference") && names.includes("AI: torso") && names.includes("AI: near arm"), names.join(", "));
+  const ref = st.layers.find((l) => l.name === "AI: Reference");
+  assert.deepEqual([ref.visible, ref.editable], [false, false]);
+  const spec = JSON.parse(st.pixelSpec);
+  assert.deepEqual(spec.motion, { tag: "walk", keys: [1, 3], stage: "keys", walk: true });
+  assert.match(lua[0], /g.name = "AI: Knight"/);
+  const again = await runTool(findTool("generate_character"), { job: "img-1" }, ctx);
+  assert.match(textOf(again), /already on the sprite/);
+});

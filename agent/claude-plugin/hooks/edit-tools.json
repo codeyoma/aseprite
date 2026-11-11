@@ -18,6 +18,7 @@
     "fix_pixel_art",
     "fx_from_recipe",
     "fx_overlay",
+    "generate_character",
     "hit_stop",
     "import_animation",
     "import_sheet",

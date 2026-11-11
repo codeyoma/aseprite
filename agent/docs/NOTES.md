@@ -2,6 +2,17 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Layered characters from the image generator (#103)
+- **How:**
+  - `generate_character` (`concept_tools.ts`, `layered.ts`) asks once for the whole batch. It then runs one job, in two steps.
+  - First, a master sheet: the whole character in every key pose, one square panel per pose on a grid (`gridFor`: 1x1, 2x2, 3x2 landscape, 3x3). Frame 1 of an existing sprite goes along as the reference.
+  - Then one image per part layer (default 8: far arm, far leg, torso, near leg, head, eyes, hair, near arm), with the master attached (`codex exec --image`): only that part, whole even where covered, at the same place in every panel. Up to 3 run at a time, and a failed layer is tried once more.
+  - When the job is done, the call that sees it applies the result. Every sheet is cut with the same grid and fitted to the canvas the same way (`readConcept`), and snapped to one palette quantized from the master. Each layer panel is shifted up to ±3 px to fit inside the master panel's silhouette (`alignToMaster`); over 35% outside is reported as misaligned.
+  - Everything goes in one `putImages`: the master on a hidden, locked reference, the parts in draw order. Then `execute_lua` groups the parts under "AI: <name>" with plain part names, and the pixel spec gets the walk limbs and, with a tag, the motion stage at "keys".
+  - The image generator now takes reference images, and finds its PNG only in its own Codex thread folder (several run at once). `ImageJobs` runs a batch as one job with progress.
+- **Why:** the user wants characters built from parts: each part on its own layer, each layer generated once with all its frames. Parts keep their size across frames, which the judges' "limb lengths change" complaint asks for. The user's decisions: rough layers by default, one consent, 3 at a time, one palette, key poses only (the stage gate stays), whole hidden parts, ±3 px alignment, one retry, a group plus a hidden reference. A test showed Codex's generator, given the knight as a reference, drew "only the plume" at the same place and size.
+- **Architecture:** `layered.ts` holds the prompts, grid, pool and alignment as pure functions, tested with a fake generator. The tool reuses the concept panel fitting and the pixel spec. The live test `layered_live.mjs` uses about 9 real images and isn't in "all".
+
 ## Motion stage gate: keys first, checked, then in-betweens (#99)
 - **How:**
   - `motion_stage` (`animation_tools.ts`) writes a stage into the pixel spec (`motion`: tag, keys, stage, walk). `keys` starts it; for a 6-frame walk the keys default to 1, 3, 4, 6 of the tag.

@@ -394,6 +394,25 @@
     ]
   },
   {
+    "name": "generate_character",
+    "title": "Generate a layered character",
+    "kind": "edit",
+    "label": "Generate a layered character",
+    "input": [
+      "colors",
+      "frames",
+      "job",
+      "layers",
+      "name",
+      "poses",
+      "reference",
+      "subject",
+      "tag",
+      "target_size",
+      "view"
+    ]
+  },
+  {
     "name": "generate_image",
     "title": "Generate an image",
     "kind": "read",

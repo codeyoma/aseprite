@@ -21,14 +21,16 @@ export interface GeneratedImage {
 
 /** Makes one image for a prompt; rejects with a message for the agent. */
 export interface ImageGenerator {
-  generate(prompt: string, aspect: Aspect, signal: AbortSignal): Promise<GeneratedImage>;
+  /** refs: images the model sees as the reference (a master sheet a layer must match). */
+  generate(prompt: string, aspect: Aspect, signal: AbortSignal, refs?: string[]): Promise<GeneratedImage>;
 }
 
 /** The instruction for Codex: one image with its built-in tool, nothing else, and the path back as JSON. */
-export function codexInstruction(prompt: string, aspect: Aspect): string {
+export function codexInstruction(prompt: string, aspect: Aspect, refs = 0): string {
   const size = aspect === "portrait" ? "1024x1536" : aspect === "landscape" ? "1536x1024" : "1024x1024";
   return [
-    "Use your built-in image generation tool to make exactly one image, at " + size + ".",
+    "Use your built-in image generation tool to make exactly one image, at " + size + "." +
+      (refs ? " Use the attached image" + (refs > 1 ? "s" : "") + " as the reference, as the prompt says." : ""),
     "Don't run shell commands, read or write files, or use any other tool.",
     "Image: " + prompt,
     'Then reply only with JSON: {"path": "<the absolute path of the generated PNG>"}.',
@@ -79,7 +81,7 @@ export class CodexImageGenerator implements ImageGenerator {
     private readonly home = () => agentCodexHome(),
   ) {}
 
-  async generate(prompt: string, aspect: Aspect, signal: AbortSignal): Promise<GeneratedImage> {
+  async generate(prompt: string, aspect: Aspect, signal: AbortSignal, refs: string[] = []): Promise<GeneratedImage> {
     const bin = which("codex");
     if (!bin) throw new Error("The image generator needs the Codex CLI (codex), signed in; it isn't on PATH.");
     const home = this.home();
@@ -87,11 +89,14 @@ export class CodexImageGenerator implements ImageGenerator {
     const schema = join(work, "schema.json");
     writeFileSync(schema, JSON.stringify(SCHEMA));
     const started = Date.now() - 1000;
+    let thread = "";
     try {
       const reply = await new Promise<string>((resolve, reject) => {
-        const args = ["exec", "--json", "--skip-git-repo-check", "-s", "read-only", "-C", work, "--output-schema", schema, codexInstruction(prompt, aspect)];
+        const args = ["exec", "--json", "--skip-git-repo-check", "-s", "read-only", "-C", work, "--output-schema", schema,
+          ...(refs.length ? ["--image", refs.join(",")] : []), "--", codexInstruction(prompt, aspect, refs.length)];
         const proc = spawn(bin, args, { cwd: work, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CODEX_HOME: home } });
         let last = "", err = "", buf = "";
+        thread = "";
         proc.stdout.on("data", (d: Buffer) => {
           buf += d.toString();
           let i: number;
@@ -100,6 +105,7 @@ export class CodexImageGenerator implements ImageGenerator {
             buf = buf.slice(i + 1);
             try {
               const ev = JSON.parse(line);
+              if (ev?.type === "thread.started" && ev.thread_id) thread = String(ev.thread_id);
               if (ev?.type === "item.completed" && ev.item?.type === "agent_message") last = String(ev.item.text ?? "");
               if (ev?.type === "turn.failed" || ev?.type === "error") err = String(ev.error?.message ?? ev.message ?? "Codex failed");
             } catch { /* not JSON */ }
@@ -116,7 +122,8 @@ export class CodexImageGenerator implements ImageGenerator {
           else reject(new Error(`Codex image generation failed (exit ${code}): ${err.trim().split("\n").pop() ?? ""}`));
         });
       });
-      const generated = join(home, "generated_images");
+      // Only this run's own folder (generated_images/<thread id>): other generations may run at the same time.
+      const generated = thread ? join(home, "generated_images", thread) : join(home, "generated_images");
       let path: string | undefined;
       try {
         const p = JSON.parse(reply)?.path;
@@ -135,34 +142,47 @@ export class CodexImageGenerator implements ImageGenerator {
   }
 }
 
-interface Job {
+export interface Job<T = GeneratedImage> {
   id: string;
   prompt: string;
   started: number;
   controller: AbortController;
   done: Promise<void>;
-  result?: GeneratedImage;
+  result?: T;
   error?: string;
+  /** What a long job has done so far ("3 of 9 images"). */
+  progress?: string;
+  /** "image" (one generation) or "layered" (a master and its layers, #103). */
+  kind: string;
+  /** What the job was started with (a layered job's sprite settings), for whoever applies its result. */
+  meta?: unknown;
+  /** Set once its result was put on a sprite. */
+  applied?: boolean;
 }
 
-/** Generation jobs, one at a time; finished ones are kept for an hour so a late wait still finds them. */
+/** Generation jobs: single images one at a time, a layered batch as one job; finished ones are kept for an hour. */
 export class ImageJobs {
-  private jobs = new Map<string, Job>();
+  private jobs = new Map<string, Job<any>>();
   private next = 1;
-  constructor(private readonly generator: ImageGenerator, private readonly maxMs = 5 * 60_000) {}
+  constructor(readonly generator: ImageGenerator, private readonly maxMs = 5 * 60_000) {}
 
-  running(): Job | undefined {
+  running(): Job<any> | undefined {
     for (const j of this.jobs.values()) if (!j.result && !j.error) return j;
     return undefined;
   }
 
-  start(prompt: string, aspect: Aspect): Job {
+  start(prompt: string, aspect: Aspect): Job<GeneratedImage> {
+    return this.startTask("image", prompt, (signal) => this.generator.generate(prompt, aspect, signal), this.maxMs);
+  }
+
+  /** Any generation work as a job (one at a time), cancelled after maxMs. */
+  startTask<T>(kind: string, prompt: string, run: (signal: AbortSignal, job: Job<T>) => Promise<T>, maxMs = this.maxMs, meta?: unknown): Job<T> {
     if (this.running()) throw new Error("An image is already being generated; wait for it with its job id.");
     const controller = new AbortController();
     const id = `img-${this.next++}`;
-    const timer = setTimeout(() => controller.abort(), this.maxMs);
-    const job: Job = { id, prompt, started: Date.now(), controller, done: Promise.resolve() };
-    job.done = this.generator.generate(prompt, aspect, controller.signal).then(
+    const timer = setTimeout(() => controller.abort(), maxMs);
+    const job: Job<T> = { id, prompt, started: Date.now(), controller, done: Promise.resolve(), kind, meta };
+    job.done = run(controller.signal, job).then(
       (r) => { job.result = r; },
       (e) => { job.error = (e as Error).message; },
     ).finally(() => clearTimeout(timer));
@@ -171,12 +191,12 @@ export class ImageJobs {
     return job;
   }
 
-  get(id: string): Job | undefined {
+  get(id: string): Job<any> | undefined {
     return this.jobs.get(id);
   }
 
   /** Waits up to ms for a job; true when it finished. */
-  async wait(job: Job, ms: number): Promise<boolean> {
+  async wait(job: Job<any>, ms: number): Promise<boolean> {
     let timer: NodeJS.Timeout | undefined;
     const finished = await Promise.race([
       job.done.then(() => true),

@@ -7,9 +7,14 @@ import {
   type ConceptReading, type FitMethod, type Mismatch, type PanelLayout,
 } from "./concept.js";
 import { documentOf, resolveFrames, type Document, type SpriteInfo } from "./document.js";
-import { blank, countColors, encodePng, readPng, shrink, snapToPalette, type Rgba } from "./image.js";
+import { blank, countColors, encodePng, flatten, readPng, scale, shrink, snapToPalette, writePng, type Rgba } from "./image.js";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { quantize } from "./color.js";
-import type { Aspect } from "./image_gen.js";
+import type { Aspect, Job } from "./image_gen.js";
+import { DEFAULT_LAYERS, alignToMaster, generateLayered, gridFor, shifted, type LayeredResult, type PartLayer } from "./layered.js";
+import { hex } from "./color.js";
 import { NOT_PNG_SHEET } from "./sheet_tools.js";
 import { failure, text, type Tool } from "./tool.js";
 import { framesInput } from "./tool_inputs.js";
@@ -75,6 +80,102 @@ function imageResult(id: string, finished: boolean, job: { started: number; resu
   };
 }
 
+/** What a layered job needs to put its result on the sprite (#103). */
+interface LayeredMeta {
+  subject: string;
+  poses: string[];
+  frames?: number[];
+  size?: [number, number];
+  layers: PartLayer[];
+  colors: number;
+  character: string;
+  tag?: string;
+}
+
+/** A layer panel more than this share outside the master's silhouette, after the shift, is misaligned. */
+const MISALIGNED = 0.35;
+
+/**
+ * Puts a finished layered result on the sprite in one write: the master panels on a hidden, locked reference layer,
+ * each part layer's panels snapped to one palette (from the master) and shifted into the master's silhouette, then
+ * groups the parts under "AI: <character>" and stores the walk limbs (and the motion stage for a tag).
+ */
+async function applyLayered(ctx: any, r: LayeredResult, m: LayeredMeta): Promise<string> {
+  const doc = documentOf(ctx);
+  let info = await doc.infoOrNone();
+  const [w, h] = m.size ?? (info ? [info.width, info.height] : [32, 32]);
+  if (info && (w !== info.width || h !== info.height)) throw new Error(`The sprite is ${info.width}x${info.height}, not ${w}x${h}: open a ${w}x${h} sprite or omit target_size.`);
+  const g = gridFor(m.poses.length);
+  const layout = { cols: g.cols, rows: g.rows };
+  const read = (path: string) => readConcept(readPng(path), w, h, layout, "snap").images.slice(0, m.poses.length);
+  const masterPanels = read(r.master.path);
+  const palette = quantize(masterPanels.flatMap((img) => countColors(img)), m.colors);
+  const frames = m.frames ?? m.poses.map((_, i) => i + 1);
+  const need = Math.max(...frames);
+  let opened = "";
+  if (!info) {
+    const t = await doc.createAnimation(w, h, Array.from({ length: need }, () => ({ image: blank(w, h), duration: 100 })), { title: m.character });
+    opened = `Opened "${t.title}" (${w}x${h}, ${need} frames). `;
+    info = await doc.info();
+  }
+  const taken = new Set(info.layers.map((l) => l.name));
+  const refName = taken.has("AI: Reference") ? `${m.character} reference` : "Reference";
+  const items: any[] = masterPanels.map((image, i) => ({ image: snapToPalette(image, palette), frame: frames[i], newLayer: refName, locked: true, hide: true }));
+  const notes: string[] = [];
+  const placed: string[] = [];
+  let below = `AI: ${refName}`;
+  for (const l of r.layers) {
+    if (!l.image) { notes.push(`- ${l.name}: not generated (${l.error ?? "no image"}); draw it on a layer "${l.name}" in the group from the reference.`); continue; }
+    let panels: Rgba[];
+    try { panels = read(l.image.path); } catch (e) { notes.push(`- ${l.name}: unreadable (${(e as Error).message}); draw it from the reference.`); continue; }
+    const shifts: string[] = [];
+    let worst = 0;
+    panels.forEach((p, i) => {
+      const snapped = snapToPalette(p, palette);
+      const a = alignToMaster(snapped, masterPanels[i]);
+      worst = Math.max(worst, a.pixels ? a.outside : 0);
+      if (a.dx || a.dy) shifts.push(`pose ${i + 1} moved ${a.dx},${a.dy}`);
+      if (a.pixels) items.push({ image: shifted(snapped, a.dx, a.dy), frame: frames[i], newLayer: l.name, above: below });
+    });
+    if (!panels.some((p) => countColors(p).length)) { notes.push(`- ${l.name}: the image came back empty; draw it from the reference.`); continue; }
+    below = `AI: ${l.name}`;
+    placed.push(l.name);
+    notes.push(`- ${l.name}: ${shifts.length ? shifts.join(", ") : "in place"}` +
+      (worst > MISALIGNED ? `; ${Math.round(worst * 100)}% falls outside the master's silhouette: compare it with the reference and redraw what is off` : ""));
+  }
+  await doc.putImages(items, { frames: need, label: `Layered ${m.character}`, palette: palette.map((c) => hex(c)) });
+  // Group the parts, bottom to top, under "AI: <character>", named by part.
+  const group = `AI: ${m.character}`;
+  await ctx.request("execute_lua", { code: [
+    "local s = app.sprite",
+    "local function find(name) for _, l in ipairs(s.layers) do if l.name == name then return l end end end",
+    `local g = s:newGroup(); g.name = ${JSON.stringify(group)}`,
+    `for _, n in ipairs(${luaList(placed)}) do local l = find("AI: " .. n); if l then l.parent = g; l.name = n end end`,
+    "return true",
+  ].join("\n") });
+  // walk_check's limbs, and the motion stage for a tag.
+  info = await doc.info();
+  let spec: Record<string, any> = {};
+  try { spec = info.pixelSpec ? JSON.parse(info.pixelSpec) : {}; } catch { spec = {}; }
+  if (placed.includes("near arm") && placed.includes("near leg")) {
+    spec.walk = { ...(spec.walk ?? {}), nearArm: { layer: "near arm" }, nearLeg: { layer: "near leg" } };
+  }
+  let stage = "";
+  const tag = m.tag ? info.tags.find((t) => t.name.toLowerCase() === m.tag!.toLowerCase()) : undefined;
+  if (tag && frames.length > 1) {
+    spec.motion = { tag: tag.name, keys: frames, stage: "keys", walk: /walk|run/i.test(tag.name) };
+    spec.walk = { ...spec.walk, tag: tag.name, contacts: spec.walk?.contacts };
+    stage = ` Motion stage "keys" for "${tag.name}" (keys ${frames.join(", ")}): walk_check, then motion_stage advance for the in-betweens.`;
+  }
+  await doc.putImages([], { spec: JSON.stringify(spec), label: "Layered character spec" });
+  return `${opened}Put "${m.character}" on the sprite: the master in a hidden, locked "AI: ${refName}", and ${placed.length} part ` +
+    `layer${placed.length === 1 ? "" : "s"} in the group "${group}" (bottom to top: ${placed.join(", ")}) on frames ${frames.join(", ")}, ` +
+    `with one ${palette.length}-color palette.${stage}\n${notes.join("\n")}\n` +
+    "These are drafts at the target size: clean each part (outline, ramps, stray pixels), keep the joints joined, then snapshot.";
+}
+
+const luaList = (xs: string[]) => `{ ${xs.map((x) => JSON.stringify(x)).join(", ")} }`;
+
 /** How long one generate_image call waits for its job before handing back the job id. */
 export const IMAGE_WAIT_MS = 45_000;
 
@@ -95,6 +196,103 @@ function panelFrames(spec: unknown, n: number, count: number): number[] {
 }
 
 export const CONCEPT_TOOLS: Tool[] = [
+  {
+    name: "generate_character",
+    title: "Generate a layered character",
+    description:
+      "A new character as body-part layers from the image generator (#103): first a master sheet with the whole " +
+      "character in every key pose, then one image per layer (default 8: far arm, far leg, torso, near leg, head, eyes, " +
+      "hair, near arm) drawn from the master, each with that part in every pose. The user is asked once for the whole " +
+      "batch. It takes several minutes: while it says it is still generating, call again with the job id. When done, " +
+      "the parts land in a group 'AI: <name>' on the key frames, aligned to the master (hidden 'AI: Reference'), with " +
+      "one palette, walk_check's limbs and, with a tag, the motion stage. For items and props use generate_image.",
+    input: z.object({
+      subject: z.string().min(1).max(1500).optional().describe("The character and its style, in English (from the user's request)."),
+      view: z.string().optional().describe("Default 'side view, facing right'."),
+      poses: z.array(z.string()).min(1).max(9).optional()
+        .describe("One line per key pose in frame order (a walk: contact, passing, contact, passing). A still sprite: one pose."),
+      frames: z.array(z.number().int().min(1)).optional().describe("The sprite frame of each pose. Default: the motion stage's keys, else 1..N."),
+      tag: z.string().optional().describe("The animation's tag: its motion stage starts at keys."),
+      target_size: targetSize,
+      layers: z.array(z.object({ name: z.string(), part: z.string() })).min(1).max(16).optional()
+        .describe("The part layers, bottom to top, each with how to tell the image model which part it is. Default the 8 rough layers; finer only when the user asks."),
+      colors: z.number().int().min(4).max(64).optional().describe("Palette size. Default 16."),
+      name: z.string().optional().describe("The character's name for the group. Default 'Character'."),
+      reference: z.boolean().optional().describe("Attach a snapshot of the sprite's current frame 1, so the master keeps an existing character's design. Default: true when the sprite already has art."),
+      job: z.string().optional().describe("Wait for this job instead of starting one."),
+    }),
+    kind: "edit",
+    label: (a) => (a.job ? `Waiting for character ${a.job}` : "Generate a layered character"),
+    async run(input, ctx) {
+      const jobs = ctx.images;
+      if (!jobs || !ctx.ask) return failure("The image generator works only in the chat panel's own agent. Draw it yourself.");
+      const finish = async (job: Job<LayeredResult>) => {
+        if (!(await jobs.wait(job, IMAGE_WAIT_MS))) {
+          const s = Math.round((Date.now() - job.started) / 1000);
+          return { content: [text(`Still generating (${job.progress ?? "starting"}, ${s}s so far). Call generate_character with job "${job.id}" to keep waiting.`)] };
+        }
+        if (job.error) return failure(`The layered generation failed: ${job.error} Draw it yourself, or try generate_image for one draft.`);
+        if (job.applied) return { content: [text(`Job ${job.id} is already on the sprite.`)] };
+        job.applied = true;
+        try {
+          return { content: [text(await applyLayered(ctx, job.result!, job.meta as LayeredMeta))] };
+        } catch (e) {
+          job.applied = false;
+          return failure((e as Error).message);
+        }
+      };
+      if (input.job) {
+        const job = jobs.get(input.job);
+        if (!job || job.kind !== "layered") return failure(`No layered job ${input.job}.`);
+        return finish(job);
+      }
+      if (!input.subject || !input.poses) return failure("Give subject and poses (or a job id to wait for).");
+      const running = jobs.running();
+      if (running) return failure(`Another generation (${running.id}) is running; wait for it first.`);
+      const layers: PartLayer[] = input.layers ?? DEFAULT_LAYERS;
+      let frames = input.frames;
+      if (!frames) {
+        const info = await documentOf(ctx).infoOrNone();
+        let motion: any;
+        try { motion = info?.pixelSpec ? JSON.parse(info.pixelSpec).motion : undefined; } catch { motion = undefined; }
+        if (motion?.keys?.length === input.poses.length) frames = motion.keys;
+      }
+      if (frames && frames.length !== input.poses.length) return failure(`frames lists ${frames.length} frames for ${input.poses.length} poses.`);
+      const count = layers.length + 1;
+      const ok = await ctx.ask("image_generator",
+        `the image generator for ${count} images (1 master sheet + ${layers.length} layers: ${layers.map((l) => l.name).join(", ")}; ` +
+        `Codex image generation, it uses your Codex plan's limits, several minutes) to make a layered character: ` +
+        (input.subject.length > 200 ? input.subject.slice(0, 200) + "..." : input.subject));
+      if (!ok) return failure("The user declined the image generator. Draw the character yourself, and don't ask for it again in this turn.");
+      const meta: LayeredMeta = {
+        subject: input.subject, poses: input.poses, frames, layers, colors: input.colors ?? 16,
+        character: input.name ?? "Character", tag: input.tag,
+        size: input.target_size ? (Array.isArray(input.target_size) ? input.target_size : [input.target_size.width, input.target_size.height]) as [number, number] : undefined,
+      };
+      // An existing character: its frame 1, enlarged on white, goes along with the master's prompt.
+      let reference: string | undefined;
+      const info = await documentOf(ctx).infoOrNone();
+      if (info && input.reference !== false) {
+        const px = await documentOf(ctx).pixels(undefined, 1);
+        let opaque = 0;
+        for (let i = 3; i < px.data.length; i += 4) if (px.data[i] >= 128) opaque++;
+        if (opaque) {
+          const s = Math.max(1, Math.floor(512 / Math.max(px.width, px.height)));
+          reference = join(mkdtempSync(join(tmpdir(), "aseprite-ref-")), "character.png");
+          writePng(reference, scale(flatten(px, { r: 255, g: 255, b: 255, a: 255 }), s));
+        }
+      }
+      let job: Job<LayeredResult>;
+      try {
+        job = jobs.startTask<LayeredResult>("layered", input.subject, (signal, j) => generateLayered(jobs.generator,
+          { subject: input.subject!, view: input.view ?? "Side view, facing right", poses: input.poses!, reference }, layers, signal, 3,
+          (done, total) => { j.progress = `${done} of ${total} images`; }), 25 * 60_000, meta);
+      } catch (e) {
+        return failure((e as Error).message);
+      }
+      return finish(job);
+    },
+  },
   {
     name: "generate_image",
     title: "Generate an image",
