@@ -40,12 +40,14 @@ local ws = nil
 local session = nil      -- { port = n, token = s }
 local connected = false
 local reconnectTimer = nil
-local function homeDir()
-  return os.getenv("HOME") or os.getenv("USERPROFILE") or "."
+-- The agent's folder: the same rule as agent.lua agentHome().
+local function agentHome()
+  return os.getenv("ASEPRITE_AGENT_HOME")
+    or app.fs.joinPath(os.getenv("HOME") or os.getenv("USERPROFILE") or app.fs.userConfigPath, ".aseprite-agent")
 end
 
 local function sessionPath()
-  return app.fs.joinPath(homeDir(), ".aseprite-agent", "session.json")
+  return app.fs.joinPath(agentHome(), "session.json")
 end
 
 local function readSession()
@@ -228,11 +230,18 @@ local function ensureBridge(callback)
   if connected then return callback(true) end
 
   if not readSession() then
-    local bridgePath = preferences.bridgePath
+    -- The instance's own bridge: <agent home>/bridge.json (the stable
+    -- installer writes it; every bridge records itself there), else the
+    -- last one seen in a session file.
+    local bridgePath
+    local recorded = readFile(app.fs.joinPath(agentHome(), "bridge.json"))
+    local okJson, info = pcall(json.decode, recorded or "")
+    if okJson and type(info) == "table" and info.bridgePath and app.fs.isFile(info.bridgePath) then bridgePath = info.bridgePath end
+    bridgePath = bridgePath or preferences.bridgePath
     if not bridgePath or not app.fs.isFile(bridgePath) then
       return callback(false, "No bridge found. Run `claude` (or Codex) once with the aseprite MCP server so Aseprite learns where the bridge is.")
     end
-    local logFile = app.fs.joinPath(homeDir(), ".aseprite-agent", "daemon.log")
+    local logFile = app.fs.joinPath(agentHome(), "daemon.log")
     -- A login shell gives the bridge the user's PATH (node, claude, codex).
     local inner = "nohup node " .. shellQuote(bridgePath) .. " --daemon > " .. shellQuote(logFile) .. " 2>&1 &"
     runShell("/bin/zsh -lc " .. shellQuote(inner))
@@ -250,7 +259,7 @@ local function ensureBridge(callback)
         callback(true)
       elseif waited >= 15 then
         timer:stop()
-        callback(false, "The bridge did not start. See ~/.aseprite-agent/daemon.log")
+        callback(false, "The bridge did not start. See " .. app.fs.joinPath(agentHome(), "daemon.log"))
       elseif waited % 2 == 0 and not ws then
         connect(true)
       end

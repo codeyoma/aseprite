@@ -2,6 +2,7 @@
 // repository the bridge lives in) with its normal coding tools, in a
 // worktree of its own on a branch dev/<date>-<slug>; Apply brings the work
 // into the user's checkout, and the panel rebuilds and relaunches Aseprite.
+import { sessionDir } from "./session.js";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -50,7 +51,7 @@ export function slug(text: string): string {
 
 /** Where worktrees and their state live (ASEPRITE_AGENT_DEV_DIR overrides). */
 export function devDir(): string {
-  return process.env.ASEPRITE_AGENT_DEV_DIR ?? join(homedir(), ".aseprite-agent", "dev");
+  return process.env.ASEPRITE_AGENT_DEV_DIR ?? join(sessionDir, "dev");
 }
 
 export interface DevState {

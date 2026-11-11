@@ -410,7 +410,10 @@
     "dev.discard",
     "dev.relaunch",
     "skills.list",
-    "import.animation"
+    "import.animation",
+    "update.check",
+    "update.prepare",
+    "update.install"
   ],
   "bridgeMethodIds": "Requests the extension sends use string ids, so they never collide with the bridge's numeric ids.",
   "notifications": {

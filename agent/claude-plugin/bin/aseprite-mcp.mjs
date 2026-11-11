@@ -14,7 +14,7 @@ const VERSION = JSON.parse(readFileSync(new URL("../.claude-plugin/plugin.json",
 
 function recorded() {
   try {
-    const { bridgePath } = JSON.parse(readFileSync(join(homedir(), ".aseprite-agent", "bridge.json"), "utf8"));
+    const { bridgePath } = JSON.parse(readFileSync(join(process.env.ASEPRITE_AGENT_HOME ?? join(homedir(), ".aseprite-agent"), "bridge.json"), "utf8"));
     return bridgePath && existsSync(bridgePath) ? bridgePath : undefined;
   } catch {
     return undefined;

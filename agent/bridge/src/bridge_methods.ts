@@ -4,6 +4,7 @@ import { chatMethods, type ChatRunner } from "./chat.js";
 import { developerMethods, type DeveloperDeps } from "./developer_methods.js";
 import { catalog } from "./guide.js";
 import { commandMethods, type SavedCommands } from "./saved_commands.js";
+import { updateMethods } from "./update_methods.js";
 import type { AsepriteRequester } from "./tool.js";
 import { toolContext } from "./tool.js";
 import { findTool, runTool } from "./tools.js";
@@ -17,6 +18,7 @@ export function bridgeMethods(
     ...chatMethods(chat, version),
     ...commandMethods(opts.commands),
     ...developerMethods({ notify: (ev) => chat.notify(ev), link: opts.link }),
+    ...updateMethods(),
     // The Skill Catalog for the panel's / picker (#35).
     "skills.list": () => ({ skills: catalog() }),
     // The panel's "Import animation as frames": import_animation with no agent turn.

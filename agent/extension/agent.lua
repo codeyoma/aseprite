@@ -20,7 +20,14 @@ end
 
 -- Developer mode relaunch (#28): the conversation and open sprites survive
 -- the restart through ~/.aseprite-agent/relaunch.
-local relaunchDir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "relaunch")
+-- The agent's folder: ASEPRITE_AGENT_HOME when set (the dev instance has its
+-- own), else ~/.aseprite-agent. The bridge (session.ts sessionDir) uses the
+-- same rule, and a daemon bridge started from here inherits the variable.
+local function agentHome()
+  return os.getenv("ASEPRITE_AGENT_HOME")
+    or app.fs.joinPath(os.getenv("HOME") or os.getenv("USERPROFILE") or app.fs.userConfigPath, ".aseprite-agent")
+end
+local relaunchDir = app.fs.joinPath(agentHome(), "relaunch")
 
 local function saveForRelaunch(conversation)
   app.fs.makeAllDirectories(relaunchDir)
@@ -85,7 +92,7 @@ function init(plugin)
     -- Writing files stays in this script (Aseprite asks permission per script file).
     writePalette = function(pal, path) pal:saveAs(path) end }
   saved = load("saved_commands.lua").new{
-    dir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "commands"),
+    dir = app.fs.joinPath(agentHome(), "commands"),
     readFile = readFile, plugin = plugin, executeLua = handlers.executeLua,
   }
 
@@ -148,7 +155,7 @@ function init(plugin)
     saveForRelaunch = function(conversation) saveForRelaunch(conversation) end,
     variations = handlers.variations,
     attachments = load("attachments.lua").new{
-      dir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "attachments"),
+      dir = app.fs.joinPath(agentHome(), "attachments"),
       snapshot = handlers.snapshot, Uri = view.Uri,
       writeImage = function(img, path)
         app.fs.makeAllDirectories(app.fs.filePath(path))
@@ -299,9 +306,13 @@ function init(plugin)
     id = "AgentManageCommands", title = "Manage My Commands...", group = "ai_agent_menu",
     onclick = function() Panel.manageCommands() end,
   }
+  plugin:newCommand{
+    id = "AgentCheckUpdates", title = "Check for Updates...", group = "ai_agent_menu",
+    onclick = function() Panel.checkUpdates() end,
+  }
 
   -- User skills (#27): ~/.aseprite-agent/skills/<name>.md
-  local skillsDir = app.fs.joinPath(os.getenv("HOME") or app.fs.userConfigPath, ".aseprite-agent", "skills")
+  local skillsDir = app.fs.joinPath(agentHome(), "skills")
   local function openPath(path, textEditor)
     if app.os.macos then os.execute(string.format('open %s"%s"', textEditor and "-t " or "", path))
     elseif app.os.windows then os.execute(string.format('start "" "%s"', path))

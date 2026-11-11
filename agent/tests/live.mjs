@@ -12,6 +12,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
+import { DEV, instanceEnv } from "../tools/instances.mjs";
+
+// Live tests drive the dev instance only (tools/instances.mjs): their bridge
+// uses the dev agent home, so it never takes over the user's Aseprite.
+for (const [k, v] of Object.entries(instanceEnv(DEV))) process.env[k] ??= v;
 
 /** The repository's current branch (Developer mode turns can switch it). */
 const branch = () => spawnSync("git", ["branch", "--show-current"], { cwd: fileURLToPath(new URL("..", import.meta.url)), encoding: "utf8" }).stdout.trim();
@@ -19,7 +24,7 @@ const branch = () => spawnSync("git", ["branch", "--show-current"], { cwd: fileU
 /** Modules in agent/extension that the installed extension doesn't link (tools/link_extension.sh fixes it). */
 function unlinkedModules() {
   const src = fileURLToPath(new URL("../extension/", import.meta.url));
-  const dest = join(homedir(), "Library", "Application Support", "Aseprite", "extensions", "aseprite-agent");
+  const dest = join(DEV.userFolder, "extensions", "aseprite-agent");
   if (!existsSync(dest)) return [];
   return readdirSync(src).filter((f) => /\.(lua|json)$/.test(f) && f !== "__pref.lua" && !existsSync(join(dest, f)));
 }

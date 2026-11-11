@@ -843,6 +843,7 @@ return function(deps)
     changed()
   end
 
+  local updatesNoticed = false
   -- Has the bridge start the agent and a spare session before the next new
   -- chat's first message (#87).
   local function warm()
@@ -880,6 +881,7 @@ return function(deps)
         if result.busy then syncBusy() end
         Panel.sendQueued()
         warm()
+        if not updatesNoticed then updatesNoticed = true; Panel.noticeUpdates() end
       end)
     end
   end
@@ -1429,6 +1431,11 @@ return function(deps)
   dofile(here .. "panel_developer.lua")(Panel, {
     request = deps.request, prompter = prompter, Prompter = Prompter, changed = function() changed() end,
     conv = function() return conv end, saveForRelaunch = function(data) deps.saveForRelaunch(data) end,
+  })
+  dofile(here .. "updates.lua")(Panel, {
+    request = deps.request, prompter = prompter, Prompter = Prompter,
+    note = function(kind, text) conv:note(kind, text); changed() end,
+    saveAndQuit = function() deps.saveForRelaunch(conv:serialize()); app.exit() end,
   })
   dofile(here .. "commands_dialog.lua")(Panel, {
     savedCommands = deps.savedCommands, request = deps.request, prompter = prompter, Prompter = Prompter,

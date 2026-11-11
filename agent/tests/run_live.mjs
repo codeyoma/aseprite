@@ -28,6 +28,7 @@ import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEV, installExtension, instanceEnv, launch, stop as stopInstance } from "../tools/instances.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -81,18 +82,17 @@ function refPng() {
 }
 const expand = (a) => (a === "@tmp" ? mkdtempSync(join(tmpdir(), "live-")) : a === "@ref" ? refPng() : a);
 
+// The dev instance only (tools/instances.mjs): never the user's own Aseprite.
 async function restartAseprite() {
-  spawnSync("pkill", ["-x", "aseprite"]);
-  await new Promise((r) => setTimeout(r, 1000));
-  const bin = join(root, "build", "bin", "aseprite");
-  if (!existsSync(bin)) throw new Error(`No Aseprite at ${bin}`);
-  spawn(bin, [], { detached: true, stdio: "ignore" }).unref();
+  installExtension(DEV);
+  if (stopInstance(DEV)) await new Promise((r) => setTimeout(r, 1500));
+  launch(DEV);
   await new Promise((r) => setTimeout(r, 8000));
 }
 
 function run(script, args, env = {}, limit = minutes) {
   return new Promise((resolve) => {
-    const p = spawn(process.execPath, [script, ...args], { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...env } });
+    const p = spawn(process.execPath, [script, ...args], { cwd: root, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ...instanceEnv(DEV), ...env } });
     let out = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (out += d));

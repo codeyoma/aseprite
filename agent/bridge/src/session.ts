@@ -13,7 +13,12 @@ export interface Session {
   [key: string]: unknown;
 }
 
-export const sessionDir = join(homedir(), ".aseprite-agent");
+/**
+ * The agent's folder (bridge session, chats' workspace, attachments, commands, Codex home). ASEPRITE_AGENT_HOME
+ * gives an instance its own (the dev instance uses ~/.aseprite-agent-dev), so a test bridge never takes over the
+ * user's Aseprite.
+ */
+export const sessionDir = process.env.ASEPRITE_AGENT_HOME ?? join(homedir(), ".aseprite-agent");
 export const sessionFile = join(sessionDir, "session.json");
 
 export function newToken(): string {

@@ -15,7 +15,7 @@ const BUDGET_MS = 400;
 
 function sessionPort() {
   try {
-    const { port } = JSON.parse(readFileSync(join(homedir(), ".aseprite-agent", "session.json"), "utf8"));
+    const { port } = JSON.parse(readFileSync(join(process.env.ASEPRITE_AGENT_HOME ?? join(homedir(), ".aseprite-agent"), "session.json"), "utf8"));
     return Number.isInteger(port) && port > 0 ? port : undefined;
   } catch {
     return undefined;
