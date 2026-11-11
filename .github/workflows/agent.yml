@@ -6,10 +6,10 @@ name: agent
 on:
   push:
     branches: [agent]
-    paths: ["agent/**", ".github/workflows/agent.yml"]
+    paths: ["agent/**", ".github/workflows/agent.yml", ".gitattributes"]
     tags: ["agent-v*"]
   pull_request:
-    paths: ["agent/**", ".github/workflows/agent.yml"]
+    paths: ["agent/**", ".github/workflows/agent.yml", ".gitattributes"]
 
 permissions:
   contents: write
