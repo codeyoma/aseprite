@@ -1,6 +1,6 @@
-# Line endings: shell scripts stay LF (they run under bash on every platform),
-# Windows batch files CRLF; everything else as Git decides (text=auto).
-* text=auto
-*.sh text eol=lf
+# Line endings: LF in every checkout, also on Windows (generated files are
+# compared byte for byte, and Lua, TypeScript and JSON don't need CRLF);
+# Windows batch files keep CRLF.
+* text=auto eol=lf
 *.cmd text eol=crlf
 *.bat text eol=crlf
