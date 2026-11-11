@@ -227,3 +227,65 @@ test("walk_check finds 'near arm'/'near leg' layers, stores the limbs, and rerun
   const noTag = await runTool(findTool("walk_check"), { tag: "run" }, fake);
   assert.match(noTag.content[0].text, /No tag "run"/);
 });
+
+/** The run-6 walk on part layers 'near arm' and 'near leg', with a scripted critic (#99 motion review). */
+function walkFake() {
+  const cel = (rows, keep) => {
+    const img = asciiImage(rows.map((r, y) => [...r].map((c) => (c === "N" && keep(y) ? "N" : ".")).join("")));
+    return { x: 0, y: 0, width: img.width, height: img.height, data: img.data };
+  };
+  const frames = [1, 2, 3, 4, 5, 6].map((f) => (f === 4 ? RUN6[4] : RUN6[1]));
+  return fakeDocument({
+    width: 24, height: 32, frames: 6, tags: [{ name: "walk", from: 1, to: 6 }],
+    layers: [
+      { name: "near arm", frames: frames.map((r) => cel(r, (y) => y >= 11 && y <= 17)) },
+      { name: "near leg", frames: frames.map((r) => cel(r, (y) => y >= 21)) },
+    ],
+  });
+}
+const scripted = (reply) => {
+  const asked = [];
+  return { asked, open: () => ({ ask: async (message, images) => { asked.push({ message, images }); return reply; }, close() {} }) };
+};
+
+test("compareMotion: an arm seen with its paired leg, no pairing, or the far limbs read as near are findings (#99)", async () => {
+  const { compareMotion, parseMotion } = await import("../dist/critic.js");
+  const measured = [
+    { frame: 1, arm: { pixels: 9, offset: -2 }, leg: { pixels: 9, offset: 2 } },
+    { frame: 4, arm: { pixels: 9, offset: 2 }, leg: { pixels: 9, offset: -2 } },
+  ];
+  const seen = (a, b) => parseMotion(JSON.stringify({ frames: [{ label: "A", ...a }, { label: "B", ...b }] }));
+  assert.deepEqual(compareMotion(measured, seen(
+    { arm: "back", same_side_leg: "forward", pairing: "both light" }, { arm: "forward", same_side_leg: "back", pairing: "" })), []);
+  const f = compareMotion(measured, seen(
+    { arm: "back", same_side_leg: "back", pairing: "the dark arm and the dark leg" },
+    { arm: "unclear", same_side_leg: "forward", pairing: "" }));
+  assert.match(f[0], /frame 1: a player sees the arm swing back with the leg on its side \(paired by: the dark arm and the dark leg\). Give the near arm and the near leg the same depth cue/);
+  assert.match(f[1], /frame 4: a player can't tell which arm goes with which leg/);
+  const unsure = compareMotion(measured, seen(
+    { arm: "back", same_side_leg: "forward", pairing: "sleeve vs leg value disagree", sure: false }, { arm: "forward", same_side_leg: "back", pairing: "", sure: true }));
+  assert.equal(unsure.length, 1);
+  assert.match(unsure[0], /frame 1: a player can't tell which arm goes with which leg \(paired by: sleeve vs leg value disagree\)/);
+  const far = compareMotion(measured, seen(
+    { arm: "forward", same_side_leg: "back", pairing: "" }, { arm: "back", same_side_leg: "forward", pairing: "" }));
+  assert.match(far[0], /frame 1: a player reads the far limbs as the near ones \(arm forward, leg back; the near arm is back, the near leg forward\)/);
+  assert.throws(() => parseMotion('{"frames": [{"arm": "left", "same_side_leg": "back"}, {}]}'), /arm must be/);
+});
+
+test("motion_review: shows a fresh critic the two contacts, blind, and reports measured errors and what it sees (#99)", async () => {
+  const fake = walkFake();
+  const critic = scripted(JSON.stringify({ frames: [
+    { label: "A", arm: "back", same_side_leg: "back", pairing: "" }, { label: "B", arm: "forward", same_side_leg: "forward", pairing: "" }] }));
+  const r = await runTool(findTool("motion_review"), {}, { ...fake, critic });
+  const t = r.content[0].text;
+  assert.match(t, /^MOTION REVIEW: errors/);
+  assert.match(t, /walk_check: errors/);
+  assert.match(t, /measured: frame 1 \(contact\): the near arm and the near leg both swing back/);
+  assert.match(t, /A player sees frame 4: the arm forward, the leg on its side forward/);
+  assert.equal(critic.asked.length, 1);
+  assert.equal(critic.asked[0].images.length, 1, "one image: the two contacts side by side");
+  assert.doesNotMatch(critic.asked[0].message, /near arm" layer|offset|walk_check|measured/i, "blind to the measurement");
+  assert.match(critic.asked[0].message, /faces right/);
+  const none = await runTool(findTool("motion_review"), {}, fake);
+  assert.match(none.content[0].text, /critic is not available/);
+});

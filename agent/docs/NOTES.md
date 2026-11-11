@@ -2,6 +2,16 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Motion review: does the walk read the way it is drawn (#99)
+- **How:**
+  - `motion_review` (`critic.ts`) measures the walk's contacts with `measureWalk`, the code `walk_check` uses, which now sits in `walk_check.ts` and is shared.
+  - It shows a fresh critic only the two contact frames, side by side and enlarged on a checker, with the facing. The critic gets no measurement, layer names or brief.
+  - The critic answers, per frame, the question a player answers: which arm it notices, which leg belongs to that arm's side, which way each points, what made it pair them, and whether it is sure (`parseMotion`).
+  - `compareMotion` lists every finding with the fix (the same depth cue for the near arm and near leg). The findings are: an arm seen swinging with its paired leg; no pairing, or an unsure one; a pairing that differs from the measured near limbs.
+  - Statuses: ok, readability, or errors (walk_check's measured errors come first). Critics can't call it (`AGENT_TOOLS` in `server.ts`).
+- **Why:** after walk_check, the benchmark's walks were right by their layers, but the judge still saw the arm swing with the same-side leg: it took the dark far leg for the near one. A measurement can't see that; a viewer can. The first prompt asked which leg reads as near and said "usually the lighter one". That matched the agent's design, so Claude passed both runs that the judge failed. The prompt now asks how a player pairs the limbs, and whether every cue agrees. On run 11's contacts (dark near arm, light near leg), Claude answered same-side or unsure 3 times out of 3. With only the near arm recolored to a light step, it answered sure and correct 3 times out of 3. The animate skill now says to give the near arm and near leg the same depth cue.
+- **Architecture:** a pure prompt and parser, a pure comparison, and one tool on the existing critic session and contact-sheet helpers. The animate skill runs it after walk_check says ok.
+
 ## Walk limb check: arms opposite legs, measured (#99)
 - **How:**
   - `walk_check` (`walk_check.ts`, the tool in `animation_tools.ts`) reads the near arm and near leg on the walk's two contact frames. Each limb comes from a part layer, or from colors within rows (the arm above the hip, the leg below); layers named like "near arm" and "near leg" are found without naming them.

@@ -33,6 +33,7 @@ import { encodeSnapshot } from "./png.js";
 import { ruleIds, rulesIndex } from "./rules.js";
 import { failure, text, type AsepriteRequester, type CriticSession, type Tool, type ToolContext, type ToolResult } from "./tool.js";
 import { framesSpec } from "./tool_inputs.js";
+import { MIN_SWING, measureWalk, type ContactReading } from "./walk_check.js";
 import { SHEET_BACKDROP, SHEET_LABEL, snapshotView, VIEW_TARGET } from "./views.js";
 
 /** A fix may change at most this share of a layer's opaque pixels (against the checkpoint). */
@@ -569,7 +570,130 @@ async function sideImages(ctx: ToolContext, info: SpriteInfo, s: z.infer<typeof 
 const sideName = (s: z.infer<typeof side>, frames: number[]) =>
   `${s.layer ? `layer "${s.layer}"` : "the sprite"}, frame${frames.length > 1 ? "s" : ""} ${frames.join(",")}`;
 
+
+// ---------------------------------------------------------------------------
+// Motion review (#99): what a viewer sees on a walk's contacts, against what walk_check measured
+
+export type Side = "forward" | "back" | "unclear";
+/** What a viewer sees on one contact: the arm that stands out, and the leg that reads as on that arm's side. */
+export interface SeenContact { label: string; arm: Side; sameSideLeg: Side; pairing: string; sure: boolean }
+
+/** The motion review request: two contact frames, the facing, and only how a player pairs the limbs. */
+export function motionMessage(facing: "right" | "left"): string {
+  return [
+    `The image shows two frames of a side-view walk, labeled A (left) and B (right). The character faces ${facing} ` +
+      `(forward = toward the ${facing} edge). Both are contact poses: one foot forward, one back. The checker is transparency.`,
+    "Answer only from what you see at a glance, as a player would, for each frame:",
+    "- arm: the arm you notice first (the one that reads as an arm on the body's visible side). Is its hand forward or back " +
+      "of the shoulder? 'unclear' when no arm reads, or it hangs straight.",
+    "- same_side_leg: the leg that looks like it belongs to the same side of the body as that arm (by its color, value, " +
+      "outline or which one is drawn in front). Is its foot forward or back? 'unclear' when you can't pair them.",
+    "- pairing: what made you pair that arm with that leg.",
+    "- sure: false when another player could reasonably pair that arm with the other leg (the cues disagree: one says " +
+      "this leg, another that one); true only when every cue points to the same leg.",
+    "Don't use tools; judge the image.",
+    "Reply with only this JSON object (no prose around it, no code fence):",
+    `{"frames": [{"label": "A", "arm": "forward" | "back" | "unclear", "same_side_leg": "forward" | "back" | "unclear", "pairing": "<why>", "sure": true | false}, {"label": "B", ...}]}`,
+  ].join("\n");
+}
+
+const sideOf = (v: unknown): Side | undefined => (v === "forward" || v === "back" || v === "unclear" ? v : undefined);
+
+export function parseMotion(reply: string): SeenContact[] {
+  const o = extractJson(reply) as Record<string, unknown>;
+  if (!Array.isArray(o.frames) || o.frames.length !== 2) throw new Error("frames must be an array of two entries (A and B)");
+  return o.frames.map((f: any, i: number) => {
+    const arm = sideOf(f?.arm), sameSideLeg = sideOf(f?.same_side_leg);
+    if (!arm) throw new Error(`frames[${i}].arm must be forward, back or unclear`);
+    if (!sameSideLeg) throw new Error(`frames[${i}].same_side_leg must be forward, back or unclear`);
+    return { label: String(f?.label ?? (i ? "B" : "A")), arm, sameSideLeg, pairing: typeof f?.pairing === "string" ? f.pairing : "", sure: f?.sure !== false };
+  });
+}
+
+/**
+ * How a player pairs the limbs against what was measured, per contact. An arm seen swinging with the leg it is paired
+ * with is the error a player sees, whatever the layers say; a pairing that differs from the named near arm and near
+ * leg, or none at all, is a readability finding (the depth cue between near and far limbs doesn't read).
+ */
+export function compareMotion(measured: ContactReading[], seen: SeenContact[]): string[] {
+  const findings: string[] = [];
+  const m = (o?: number): Side => (o === undefined || Math.abs(o) < MIN_SWING ? "unclear" : o > 0 ? "forward" : "back");
+  const cue = "Give the near arm and the near leg the same depth cue: both the lighter step (or both outlined, drawn " +
+    "over the body), and the far arm and far leg both the darker step, so a player pairs them by side.";
+  measured.forEach((c, i) => {
+    const v = seen[i];
+    if (!v) return;
+    const why = v.pairing ? ` (paired by: ${v.pairing})` : "";
+    if (v.arm !== "unclear" && v.arm === v.sameSideLeg) {
+      findings.push(`frame ${c.frame}: a player sees the arm swing ${v.arm} with the leg on its side${why}. ${cue}`);
+    } else if (v.arm === "unclear" || v.sameSideLeg === "unclear" || !v.sure) {
+      findings.push(`frame ${c.frame}: a player can't tell which arm goes with which leg${why}. ${cue}`);
+    } else if (v.arm !== m(c.arm.offset) || v.sameSideLeg !== m(c.leg.offset)) {
+      findings.push(`frame ${c.frame}: a player reads the far limbs as the near ones (arm ${v.arm}, leg ${v.sameSideLeg}; ` +
+        `the near arm is ${m(c.arm.offset)}, the near leg ${m(c.leg.offset)})${why}. ${cue}`);
+    }
+  });
+  return findings;
+}
+
 export const CRITIC_TOOLS: Tool[] = [
+  {
+    name: "motion_review",
+    title: "Walk motion review",
+    description:
+      "A fresh critic looks at a walk's two contact frames (enlarged, no measurements, no brief) and says which arm it " +
+      "notices, which leg it pairs with that arm, and which way each points. An arm seen swinging with its paired leg, " +
+      "no pairing, or a pairing that differs from the near limbs walk_check measured is a finding with the fix. Use it after walk_check says ok: the poses can be right while the depth doesn't read. " +
+      "Costs a model call.",
+    input: z.object({
+      tag: z.string().optional().describe("The walk's tag. Default: the one walk_check stored, else 'walk'."),
+    }),
+    kind: "read",
+    label: () => "Ask a critic how the walk reads",
+    async run(input, ctx) {
+      if (!ctx.critic) return failure("The critic is not available in this bridge (it needs the chat's agent provider).");
+      const doc = documentOf(ctx);
+      let measure;
+      try {
+        measure = await measureWalk(doc, { tag: input.tag });
+      } catch (e) {
+        return failure(`${(e as Error).message} (motion_review uses the limbs walk_check stored.)`);
+      }
+      const { contract, readings, verdict } = measure;
+      const frames: Rgba[] = [];
+      for (const f of contract.contacts) frames.push(await doc.pixels(undefined, f));
+      const { width: w, height: h } = frames[0];
+      let zoom = Math.max(1, Math.min(16, Math.floor(320 / Math.max(w, h))));
+      for (; zoom > 1; zoom--) {
+        const g = sheetGeometry(2, w, h, { columns: 2, zoom });
+        if (g.width <= VIEW_TARGET && g.height <= VIEW_TARGET) break;
+      }
+      const cell = Math.max(1, Math.ceil(4 / zoom));
+      const sheet = contactSheet(frames.map((f) => flatten(f, "checker", cell)), {
+        labels: ["A", "B"], columns: 2, zoom, background: SHEET_BACKDROP, labelColor: SHEET_LABEL,
+      });
+      const session = await openCritic(ctx, "motion critic");
+      if (!session) return failure("The critic is not available in this bridge.");
+      let seen;
+      try {
+        seen = await askParsed(session, motionMessage(contract.facing),
+          [{ label: "contacts", mimeType: "image/png", data: encodePng(sheet).toString("base64") }], parseMotion);
+      } finally {
+        session.close();
+      }
+      const findings = [...verdict.errors.map((e) => `measured: ${e}`), ...compareMotion(readings, seen.value)];
+      const status = verdict.errors.length ? "errors" : findings.length ? "readability" : "ok";
+      return {
+        content: [text([
+          `MOTION REVIEW: ${status}`,
+          `Contacts ${contract.contacts.join(" and ")} of "${contract.tag}", facing ${contract.facing}; walk_check: ${verdict.status}.`,
+          ...seen.value.map((v, i) => `A player sees frame ${contract.contacts[i]}: the arm ${v.arm}, the leg on its side ${v.sameSideLeg}${v.pairing ? ` (paired by: ${v.pairing})` : ""}.`),
+          ...findings.map((f) => `- ${f}`),
+          status === "ok" ? "The walk reads as drawn." : "Fix these, then walk_check and motion_review again.",
+        ].join("\n"))],
+      };
+    },
+  },
   {
     name: "critique",
     title: "Fresh-eyes critique",

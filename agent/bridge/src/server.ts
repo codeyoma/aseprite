@@ -42,7 +42,7 @@ export const READ_ONLY_NOTE =
   "Do not try to change the document; describe or plan changes instead.";
 
 /** Tools that start agents, left out for critics. */
-const AGENT_TOOLS = new Set(["spawn_agents", "critique", "ab_compare"]);
+const AGENT_TOOLS = new Set(["spawn_agents", "critique", "ab_compare", "motion_review"]);
 
 /**
  * The MCP server over one ToolContext. readOnly lists (and so allows) only

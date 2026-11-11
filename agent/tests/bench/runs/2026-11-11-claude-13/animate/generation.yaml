@@ -1,0 +1,123 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: "69b4fb04b"
+date: "2026-11-11T09:21:27.847Z"
+seconds: 133
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 113
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: rules/animation"
+        status: failed
+      - tool: Inspect pixels
+        status: failed
+      - tool: "Read guide: rules/animation"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw 6-frame walk on part layers
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Undo
+        status: ok
+      - tool: Draw 6-frame walk on part layers
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+    reply: "The legs look blocky because the body layer also copied the hero's original standing legs. I'm redrawing it so the body layer has only the head and torso.\nThat reads as a walk. Now I'm measuring the limbs and checking the frames.\nThe only warnings are for the eye pixel, which is meant to be a single pixel. Next, a fresh critic reviews the contact frames.\nI made a 6-frame walk facing right, tagged [walk](aseprite://tag/walk). The arms swing opposite the legs.\n\n**Where it lives:** the animation is on new part layers in a group named \"AI: walk\": [body](aseprite://layer/L8735), near arm, near leg, far arm and far leg. Your [Hero](aseprite://layer/L8493) layer is untouched but hidden, because its standing legs showed through. I drew the near arm in your unused light blue (#8cc8ff) and the far a"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 20
+    header: Claude
+    tools:
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw 4-frame idle breathing loop
+        status: ok
+    reply: "I added a 4-frame idle loop on frames 7–10, tagged [idle](aseprite://tag/idle), using the same part layers. The walk frames (1–6) are unchanged.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 7 | Rest | 300 ms |\n| 8 | Breathe in: head and torso up 1 px | 150 ms |\n| 9 | Rest | 300 ms |\n| 10 | Breathe out: head and torso down 1 px | 150 ms |\n\nThe character stands with straight legs and the near arm hanging at the side. The far arm is hidden behind the body. Only the head, torso and near arm bob, and the feet stay on the same row in every frame.\n\nThe check found no errors. It warned about two things I left on purpose: the single-pixel eye, and that the rest frames are 300 ms against 150 ms for the breathing frames. The longer rest is what makes the breathing look calm."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 58
+  scores:
+    readability: 3
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 2
+  overall: 2
+  note: "Clean pixels keep the six-frame walk and four-frame breathing loop readable. The visible arm swings with the same-side leg instead of opposing it, and abrupt height changes make the gait feel mechanical."

@@ -1,0 +1,125 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: "69b4fb04b"
+date: "2026-11-11T09:18:37.847Z"
+seconds: 110
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 10 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 80
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: rules/animation"
+        status: failed
+      - tool: Inspect pixels
+        status: failed
+      - tool: Look at the sprite
+        status: failed
+      - tool: "Read guide: rules/animation"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw 6-frame walk on part layers
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+    reply: "Wrong tool names — retrying with the aseprite prefix.\nI made the 6-frame `walk` cycle. It's in a new group, [AI: walk](aseprite://tag/walk), split into part layers: `far arm`, `far leg`, `body`, `near leg`, `near arm`. I hid your original [Hero](aseprite://layer/L7964) layer but didn't change it. The near limbs are lighter (light blue arm, grey-purple leg) and the far limbs are dark navy, so you can tell which side is closer. I used colors already in your palette.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 1 | Contact: near leg forward, near arm back | 120 ms |\n| 2 | Down: knees bend, body 1 px lower | 100 ms |\n| 3 | Passing: near leg straight under the body, far leg swings past, body 1 px higher | 100 ms |\n| 4 | Contact: legs swapped, near arm forward | 120 ms |\n| 5 | Down | 100 ms |\n| "
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 30
+    header: Claude
+    tools:
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw 4-frame idle breathing loop
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added a 4-frame `idle` loop on frames 7–10 and left the walk on frames 1–6 alone. It uses the same part layers as the walk. The legs stand straight and don't move, the near arm hangs at the side, and the head and chest rise and fall by 1 px.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 7 | Rest | 300 ms |\n| 8 | Breathe in: head and chest up 1 px | 150 ms |\n| 9 | Rest | 300 ms |\n| 10 | Breathe out: head and chest down 1 px, eyes blink | 150 ms |\n\nThe check found no errors. It gave two kinds of warnings, both on purpose: the 1-pixel eye counts as a stray pixel, and frames 7 and 9 last longer than the others because they are the rest holds."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 58
+  scores:
+    readability: 2
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 2
+  overall: 1.8
+  note: "The walk shows readable opposing arm and leg swings with clean color clusters. Motion remains stiff, shading adds little volume, and the eye disappears in the final idle frame."

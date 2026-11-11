@@ -1,0 +1,119 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: "69b4fb04b"
+date: "2026-11-11T09:07:17.833Z"
+seconds: 111
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 83
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: anim.walk.limbs"
+        status: failed
+      - tool: "Read guide: anim.timing.walk"
+        status: failed
+      - tool: Inspect pixels
+        status: failed
+      - tool: "Read guide: anim.walk.limbs"
+        status: ok
+      - tool: "Read guide: anim.timing.walk"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Build 6-frame walk
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+    reply: "I made a 6-frame walk cycle facing right, tagged `walk`, with the arms swinging opposite the legs. Both automated checks passed: `walk_check` measured the arm against the leg on both contact frames and says ok, and a separate critic that never saw the brief read the near and far limbs on the correct sides.\n\nYour original [Hero](aseprite://layer/L6925) layer is untouched but hidden. The walk is built on new part layers so you can edit each piece: [far arm](aseprite://layer/L6989), [far leg](aseprite://layer/L6990), [body](aseprite://layer/L6991), [near leg](aseprite://layer/L6992) and [near arm](aseprite://layer/L6993). I used the two unused palette colours to separate depth: the far limbs are dark navy and the near arm is light blue.\n\n| Frame | Pose | ms |\n|---|---|---|\n| 1 | contact: near"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 28
+    header: Claude
+    tools:
+      - tool: Add 4-frame idle
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Adding four idle frames (7–10) after the walk on the same part layers.\nI added a 4-frame idle loop on frames 7–10, tagged `idle`, after the walk. The walk is unchanged: still frames 1–6 with the same timing.\n\nThe breathing moves 1 px in two stages, so the head and arms never shift on the same frame:\n\n| Frame | Pose | ms |\n|---|---|---|\n| 7 | standing at rest | 250 |\n| 8 | head drops 1 px (breathing out) | 150 |\n| 9 | arms drop 1 px too (held low) | 250 |\n| 10 | head rises again, arms still low | 150 |\n\nThe idle loop takes 800 ms. The feet stay planted on y=30, and the check found no repeated frames or foot jitter.\n\nTwo kinds of warning remain, both on purpose:\n- **Orphan pixel:** the single-pixel eye is flagged on every frame, as before.\n- **Frame durations:** frames 7 and 9 are longer tha"
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 72
+  scores:
+    readability: 2
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 2
+  overall: 1.8
+  note: "Clean pixels, six walk poses, and a subtle four-frame idle bob preserve the character. Flat fills lack volume, while stiff transitions and same-side arm/leg swings weaken the requested walk."

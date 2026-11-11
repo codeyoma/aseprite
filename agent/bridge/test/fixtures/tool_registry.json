@@ -669,6 +669,15 @@
     ]
   },
   {
+    "name": "motion_review",
+    "title": "Walk motion review",
+    "kind": "read",
+    "label": "Ask a critic how the walk reads",
+    "input": [
+      "tag"
+    ]
+  },
+  {
     "name": "new_fx_sprite",
     "title": "Effect as a new sprite",
     "kind": "edit",

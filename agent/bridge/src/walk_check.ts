@@ -3,6 +3,7 @@
 // figure: the hand's offset from the shoulder and the foot's offset from the hip, toward the facing direction.
 import type { Rgba } from "./image.js";
 import { parseHex } from "./color.js";
+import type { Document } from "./document.js";
 
 /** A limb: a part layer, and/or colors (hex) within rows [y0, y1] of the canvas. */
 export interface LimbSelector {
@@ -136,4 +137,60 @@ export function judgeWalk(contacts: ContactReading[]): WalkVerdict {
     }
   }
   return { status: errors.length ? "errors" : unverifiable.length ? "unverifiable" : "ok", errors, unverifiable };
+}
+
+export interface WalkInput {
+  tag?: string;
+  facing?: "right" | "left";
+  contacts?: [number, number];
+  nearArm?: LimbSelector;
+  nearLeg?: LimbSelector;
+}
+
+export interface WalkMeasure {
+  contract: WalkContract;
+  readings: ContactReading[];
+  verdict: WalkVerdict;
+  /** The pixel spec with this contract in it, when it differs from the stored one (to store). */
+  newSpec?: string;
+}
+
+const hasSel = (l?: LimbSelector) => !!l && (!!l.layer || !!l.colors?.length);
+
+/**
+ * The walk's contract (the input, else the one stored in the pixel spec, else layers named like "near arm" and
+ * "near leg") and its measurement on the contacts. Throws with a message for the agent when something is missing.
+ */
+export async function measureWalk(doc: Document, input: WalkInput): Promise<WalkMeasure> {
+  const info = await doc.info();
+  let spec: Record<string, any> = {};
+  try { spec = info.pixelSpec ? JSON.parse(info.pixelSpec) : {}; } catch { spec = {}; }
+  const stored: Partial<WalkContract> = spec.walk ?? {};
+  const tagName = input.tag ?? stored.tag ?? "walk";
+  const tag = info.tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
+  if (!tag) throw new Error(`No tag "${tagName}": tag the walk's frames first, or pass tag.`);
+  const n = tag.to - tag.from + 1;
+  const named = (re: RegExp) => info.layers.find((l) => re.test(l.name))?.name;
+  const contract: WalkContract = {
+    tag: tag.name,
+    facing: input.facing ?? stored.facing ?? "right",
+    contacts: input.contacts ?? stored.contacts ?? [tag.from, tag.from + Math.floor(n / 2)],
+    nearArm: input.nearArm ?? stored.nearArm ?? { layer: named(/near[ _-]?arm/i) },
+    nearLeg: input.nearLeg ?? stored.nearLeg ?? { layer: named(/near[ _-]?leg/i) },
+  };
+  if (!hasSel(contract.nearArm) || !hasSel(contract.nearLeg)) {
+    throw new Error("Name the near arm and near leg: near_arm and near_leg as part layers, or as colors with rows " +
+      "(the arm's rows above the hip, the leg's below), or name the part layers 'near arm' and 'near leg'.");
+  }
+  for (const f of contract.contacts) if (f < 1 || f > info.durations.length) throw new Error(`Frame ${f} doesn't exist.`);
+  const readings: ContactReading[] = [];
+  for (const frame of contract.contacts) {
+    const read = async (l: LimbSelector) => {
+      const img = await doc.pixels(l.layer, frame);
+      return readLimb(limbMask(img, l), img.width, contract.facing);
+    };
+    readings.push({ frame, arm: await read(contract.nearArm), leg: await read(contract.nearLeg) });
+  }
+  const changed = JSON.stringify(spec.walk) !== JSON.stringify(contract);
+  return { contract, readings, verdict: judgeWalk(readings), ...(changed ? { newSpec: JSON.stringify({ ...spec, walk: contract }) } : {}) };
 }

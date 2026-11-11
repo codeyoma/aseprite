@@ -5,7 +5,7 @@ import * as z from "zod/v4";
 import { along, ease, imageColors, smear, squashStretch, subpixelShift, transform, type Easing } from "./animation.js";
 import { documentOf } from "./document.js";
 import { failure, text, type Tool } from "./tool.js";
-import { judgeWalk, limbMask, readLimb, type ContactReading, type LimbSelector, type WalkContract } from "./walk_check.js";
+import { measureWalk, type ContactReading, type LimbSelector } from "./walk_check.js";
 
 const limb = z.object({
   layer: z.string().optional().describe("The limb's part layer (name or id)."),
@@ -14,7 +14,6 @@ const limb = z.object({
 }).optional();
 
 const sel = (l: any): LimbSelector | undefined => (l ? { layer: l.layer, colors: l.colors, rows: l.rows } : undefined);
-const hasSel = (l?: LimbSelector) => !!l && (!!l.layer || !!l.colors?.length);
 const selText = (l: LimbSelector) => [l.layer && `layer "${l.layer}"`, l.colors?.length && `colors ${l.colors.join(" ")}`, l.rows && `rows ${l.rows[0]}-${l.rows[1]}`].filter(Boolean).join(", ");
 
 const moveSchema = z.object({
@@ -49,38 +48,15 @@ export const ANIMATION_TOOLS: Tool[] = [
     label: () => "Check the walk's arms and legs",
     async run(input, aseprite) {
       const doc = documentOf(aseprite);
-      const info = await doc.info();
-      let spec: Record<string, any> = {};
-      try { spec = info.pixelSpec ? JSON.parse(info.pixelSpec) : {}; } catch { spec = {}; }
-      const stored: Partial<WalkContract> = spec.walk ?? {};
-      const tagName = input.tag ?? stored.tag ?? "walk";
-      const tag = info.tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
-      if (!tag) return failure(`No tag "${tagName}": tag the walk's frames first, or pass tag.`);
-      const n = tag.to - tag.from + 1;
-      const named = (re: RegExp) => info.layers.find((l) => re.test(l.name))?.name;
-      const contract: WalkContract = {
-        tag: tag.name,
-        facing: input.facing ?? stored.facing ?? "right",
-        contacts: input.contacts ?? stored.contacts ?? [tag.from, tag.from + Math.floor(n / 2)],
-        nearArm: sel(input.near_arm) ?? stored.nearArm ?? { layer: named(/near[ _-]?arm/i) },
-        nearLeg: sel(input.near_leg) ?? stored.nearLeg ?? { layer: named(/near[ _-]?leg/i) },
-      };
-      if (!hasSel(contract.nearArm) || !hasSel(contract.nearLeg)) {
-        return failure("Name the near arm and near leg: near_arm and near_leg as part layers, or as colors with rows " +
-          "(the arm's rows above the hip, the leg's below), or name the part layers 'near arm' and 'near leg'.");
+      let m;
+      try {
+        m = await measureWalk(doc, { tag: input.tag, facing: input.facing, contacts: input.contacts, nearArm: sel(input.near_arm), nearLeg: sel(input.near_leg) });
+      } catch (e) {
+        return failure((e as Error).message);
       }
-      for (const f of contract.contacts) if (f < 1 || f > info.durations.length) return failure(`Frame ${f} doesn't exist.`);
-      const readings: ContactReading[] = [];
-      for (const frame of contract.contacts) {
-        const read = async (l: LimbSelector) => {
-          const img = await doc.pixels(l.layer, frame);
-          return readLimb(limbMask(img, l), img.width, contract.facing);
-        };
-        readings.push({ frame, arm: await read(contract.nearArm), leg: await read(contract.nearLeg) });
-      }
-      const verdict = judgeWalk(readings);
-      const changed = JSON.stringify(spec.walk) !== JSON.stringify(contract);
-      if (changed) await doc.putImages([], { spec: JSON.stringify({ ...spec, walk: contract }), label: "Walk limbs" });
+      const { contract, readings, verdict } = m;
+      const changed = m.newSpec !== undefined;
+      if (changed) await doc.putImages([], { spec: m.newSpec, label: "Walk limbs" });
       const lim = (r: ContactReading["arm"]) => r.offset === undefined ? `${r.pixels} px, not measurable`
         : `root ${r.root![0]},${r.root![1]} tip ${r.tip![0]},${r.tip![1]}: ${r.offset > 0 ? "+" : ""}${r.offset} px (${Math.abs(r.offset) < 1 ? "straight" : r.offset > 0 ? "forward" : "back"})`;
       return {
