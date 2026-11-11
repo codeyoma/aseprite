@@ -27,3 +27,15 @@ test("a home pinned to the stable bridge keeps its bridge.json; an unpinned home
   run(open, `s.recordBridge(${JSON.stringify(dev)}, "d")`);
   assert.equal(JSON.parse(readFileSync(join(open, "bridge.json"), "utf8")).bridgePath, dev, "no pin: the newest bridge records itself");
 });
+
+test("a --daemon started in a home pinned to another bridge starts that bridge and exits", async () => {
+  const home = mkdtempSync(join(tmpdir(), "agent-home-"));
+  const stable = join(home, "stable.js");
+  writeFileSync(stable, `require("fs").writeFileSync(require("path").join(process.env.ASEPRITE_AGENT_HOME, "started.txt"), process.argv.slice(2).join(" "));`);
+  writeFileSync(join(home, "bridge.json"), JSON.stringify({ bridgePath: stable, version: "s", pinned: true }));
+  const index = fileURLToPath(new URL("../dist/index.js", import.meta.url));
+  execFileSync(process.execPath, [index, "--daemon"], { env: { ...process.env, ASEPRITE_AGENT_HOME: home }, timeout: 15_000 });
+  const { existsSync } = await import("node:fs");
+  for (let i = 0; i < 50 && !existsSync(join(home, "started.txt")); i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(readFileSync(join(home, "started.txt"), "utf8"), "--daemon");
+});

@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { AsepriteLink, log, logToFile } from "./aseprite.js";
 import { bridgeMethods } from "./bridge_methods.js";
 import { ChatRunner } from "./chat.js";
+import { spawn } from "node:child_process";
 import { startHttpEndpoint } from "./http.js";
 import { CodexImageGenerator, ImageJobs } from "./image_gen.js";
 import { SavedCommands } from "./saved_commands.js";
@@ -33,6 +34,13 @@ async function main() {
   // A home pinned to another bridge (the user's stable instance) isn't ours: tools still work over stdio, but
   // Aseprite keeps its own bridge.
   const foreign = homeBelongsToAnother(self);
+  if (foreign && daemon) {
+    // Aseprite asked for its daemon but started this bridge (a path it remembered): start the pinned one instead.
+    const pinned = pinnedBridge()!;
+    log(`${sessionDir} belongs to ${pinned}; starting that bridge instead`);
+    spawn(process.execPath, [pinned, "--daemon"], { detached: true, stdio: "ignore", env: process.env }).unref();
+    process.exit(0);
+  }
   if (foreign) log(`${sessionDir} belongs to ${pinnedBridge()}; not publishing this bridge there (set ASEPRITE_AGENT_HOME for your own)`);
   recordBridge(self, VERSION);
 

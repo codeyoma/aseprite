@@ -24,6 +24,7 @@ One short entry per change: how it works, why it was done this way, and where it
 
 ## Stable instance: its agent home is pinned to its own bridge
 - **How:** `stable.mjs install` writes `pinned: true` into `~/.aseprite-agent/bridge.json`. A bridge started with that home whose own path differs (`homeBelongsToAnother`) neither records itself there nor publishes `session.json`; it logs why. Its stdio tools still work.
+- **Follow-up:** the extension never used the pin. `json.decode` gives userdata, and `bridge_connection.lua` required `type(info) == "table"`, so it fell back to a bridge path remembered from an old session (the dev checkout). The pinned dev bridge then refused to publish, and the chat said "The bridge did not start". The check now accepts userdata. A `--daemon` started in a home pinned to another bridge starts the pinned bridge and exits, which also repairs installs whose extension still has the old check.
 - **Why:** a `claude` CLI session in the repository ran the dev bridge as its MCP server without `ASEPRITE_AGENT_HOME`. Every bridge records its path in `<home>/bridge.json`, so that session pointed the user's Aseprite AI at the dev checkout, and Aseprite AI started dev code as its daemon.
 
 ## Walk check: near leg lighter than the far leg (#99)

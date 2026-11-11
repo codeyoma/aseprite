@@ -236,7 +236,8 @@ local function ensureBridge(callback)
     local bridgePath
     local recorded = readFile(app.fs.joinPath(agentHome(), "bridge.json"))
     local okJson, info = pcall(json.decode, recorded or "")
-    if okJson and type(info) == "table" and info.bridgePath and app.fs.isFile(info.bridgePath) then bridgePath = info.bridgePath end
+    -- json.decode gives a userdata object, not a table.
+    if okJson and info ~= nil and type(info) ~= "string" and info.bridgePath and app.fs.isFile(tostring(info.bridgePath)) then bridgePath = tostring(info.bridgePath) end
     bridgePath = bridgePath or preferences.bridgePath
     if not bridgePath or not app.fs.isFile(bridgePath) then
       return callback(false, "No bridge found. Run `claude` (or Codex) once with the aseprite MCP server so Aseprite learns where the bridge is.")
