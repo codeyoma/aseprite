@@ -4,6 +4,7 @@ title: Import a sprite sheet
 description: Turn a sprite sheet image, or an animated file (GIF, WebP, .aseprite) as it is, into an animated sprite with frames and tags, from a grid, loose sprites on a background, or an atlas (Aseprite or TexturePacker JSON, TexturePacker XML, Godot SpriteFrames .tres).
 category: Import
 triggers: [sprite sheet, spritesheet, import sheet, slice sheet, atlas, gif, animated gif, webp animation, import animation]
+intents: [import, slice, load, open this, from this sheet, from this gif]
 needs: [image]
 tools: [import_sheet, import_animation, snapshot, apply_timeline_text]
 ---

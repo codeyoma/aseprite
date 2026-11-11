@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { PNG } from "pngjs";
 import { fitPanel, mismatchRegions, readConcept, readStoryboard } from "../dist/concept.js";
 import { findTool, runTool } from "../dist/tools.js";
+import { documentOf } from "../dist/document.js";
+import { ImageJobs, codexInstruction, inside } from "../dist/image_gen.js";
 import { fakeDocument, rect } from "./helpers/fake_document.mjs";
 
 const textOf = (r) => r.content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
@@ -146,4 +148,90 @@ test("mismatch_regions lists the largest regions across frames and the centre of
   assert.match(t, /1\. frame 2, (missing|extra) 12 px/);
   assert.match(t, /2\. frame 2, (missing|extra) 12 px/);
   assert.doesNotMatch(t, /3\. /);
+});
+
+test("storyboard_to_frames with draft adds an editable pixel draft of few colors in the same write (#102)", async () => {
+  const path = writePng(storyboard());
+  const fake = fakeDocument({ width: 32, height: 32, layers: [{ name: "Art", frames: [undefined] }] });
+  const r = await run("storyboard_to_frames", { image: path, draft: 2 }, fake);
+  assert.equal(r.isError, undefined, textOf(r));
+  assert.deepEqual(fake.calls.filter((c) => !["get_state", "snapshot"].includes(c.method)).map((c) => c.method), ["put_images"]);
+  const st = (await fake.request("get_state")).result;
+  const draft = st.activeSprite.layers.find((l) => l.name === "AI: Draft");
+  assert.deepEqual([draft.visible, draft.editable, draft.celFrames], [true, true, [1, 2, 3, 4]]);
+  const colors = new Set();
+  for (const f of [1, 2, 3, 4]) {
+    const { data } = await documentOf(fake).pixels("AI: Draft", f);
+    for (let i = 0; i < data.length; i += 4) if (data[i + 3]) colors.add(data.slice(i, i + 4).join(","));
+  }
+  assert.ok(colors.size >= 1 && colors.size <= 2, `${colors.size} colors`);
+  assert.match(textOf(r), /2-color pixel draft on 'AI: Draft'/);
+});
+
+/** A fake image generator and consent for generate_image (#102). */
+function imageCtx(fake, { answer = true, delayMs = 0, fail } = {}) {
+  const asked = [];
+  const out = writePng(storyboard());
+  const generator = {
+    calls: 0,
+    async generate(prompt, aspect, signal) {
+      this.calls++;
+      await new Promise((r, j) => { const t = setTimeout(r, delayMs); signal.addEventListener("abort", () => { clearTimeout(t); j(new Error("cancelled")); }); });
+      if (fail) throw new Error(fail);
+      return { path: out, width: 256, height: 64 };
+    },
+  };
+  const images = new ImageJobs(generator);
+  return { ctx: { ...fake, ask: async (kind, title) => { asked.push({ kind, title }); return answer; }, images }, asked, generator };
+}
+
+test("generate_image asks the user first, then returns the image and the next step (#102)", async () => {
+  const { ctx, asked, generator } = imageCtx(fakeDocument({ width: 8, height: 8 }));
+  const r = await runTool(findTool("generate_image"), { prompt: "a knight, side view", aspect: "landscape" }, ctx);
+  assert.equal(r.isError, undefined, textOf(r));
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].kind, "image_generator");
+  assert.match(asked[0].title, /Codex plan's limits.*a knight, side view/);
+  assert.equal(generator.calls, 1);
+  assert.match(textOf(r), /storyboard_to_frames/);
+  assert.ok(r.content.some((c) => c.type === "image"), "a preview");
+});
+
+test("generate_image: a declined request generates nothing; outside the panel it is unavailable (#102)", async () => {
+  const fake = fakeDocument({ width: 8, height: 8 });
+  const { ctx, generator } = imageCtx(fake, { answer: false });
+  const r = await runTool(findTool("generate_image"), { prompt: "a knight" }, ctx);
+  assert.equal(r.isError, true);
+  assert.match(textOf(r), /declined/);
+  assert.equal(generator.calls, 0);
+  const cli = await runTool(findTool("generate_image"), { prompt: "a knight" }, fake);
+  assert.match(textOf(cli), /only in the chat panel/);
+});
+
+test("generate_image: a slow job hands back its id, a later call waits for it, and failures say to draw by hand (#102)", async (t) => {
+  const { IMAGE_WAIT_MS } = await import("../dist/concept_tools.js");
+  assert.ok(IMAGE_WAIT_MS < 60_000, "under a client's tool timeout");
+  const jobs = new ImageJobs({ generate: (p, a, signal) => new Promise((r, j) => signal.addEventListener("abort", () => j(new Error("cancelled")))) });
+  const job = jobs.start("x", "square");
+  assert.equal(await jobs.wait(job, 10), false);
+  assert.throws(() => jobs.start("y", "square"), /already being generated/);
+  assert.equal(jobs.cancel(job.id), true);
+  await job.done;
+  assert.match(job.error, /cancelled/);
+  const { ctx } = imageCtx(fakeDocument({ width: 8, height: 8 }), { fail: "no image tool" });
+  const r = await runTool(findTool("generate_image"), { prompt: "a knight" }, ctx);
+  assert.match(textOf(r), /failed: no image tool Draw it yourself/);
+  const unknown = await runTool(findTool("generate_image"), { job: "img-99" }, ctx);
+  assert.match(textOf(unknown), /No image job/);
+});
+
+test("the Codex image instruction asks for one image, no other tools, and the path as JSON (#102)", () => {
+  const s = codexInstruction("a red slime", "portrait");
+  assert.match(s, /exactly one image, at 1024x1536/);
+  assert.match(s, /Don't run shell commands/);
+  assert.match(s, /Image: a red slime/);
+  const dir = mkdtempSync(join(tmpdir(), "gen-"));
+  writeFileSync(join(dir, "a.png"), "x");
+  assert.equal(inside(dir, join(dir, "a.png")), true);
+  assert.equal(inside(dir, join(tmpdir())), false);
 });

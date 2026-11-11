@@ -4,6 +4,7 @@ title: 3D model to pixel sprites
 description: Render a .glb, .gltf or .obj model into consistent pixel-art sprites in 4 or 8 directions, with its animations as frames.
 category: 3D
 triggers: [3d model, glb, gltf, obj, prerender, pre-rendered, 8 directions, model to sprite, blender]
+intents: [3d, model, glb, gltf, obj, blender, render]
 tools: [render_model, snapshot, check]
 ---
 # 3D model to pixel sprites

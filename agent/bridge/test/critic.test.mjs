@@ -324,3 +324,29 @@ test("a checkpoint can be planted for tests", () => {
   __setReviewCheckpointForTest({ name: "planted", title: "", width: 1, height: 1, frames: [1], composite: new Map(), layers: new Map() });
   assert.ok(reviewCheckpoint("planted"));
 });
+
+test("ab_compare: a timing-only change is compared with both timings, still blind (#98)", async () => {
+  const { timingChanges, describeTiming } = await import("../dist/critic.js");
+  assert.deepEqual(timingChanges({ durations: [100, 100], tags: [{ name: "walk", from: 1, to: 2 }] },
+    { durations: [100, 300], tags: [{ name: "walk", from: 1, to: 2, direction: "pingpong" }] }),
+  ["frame 2: 100 -> 300 ms", "tag walk: 1-2 forward -> 1-2 pingpong"]);
+  assert.equal(describeTiming([100, 100], [{ name: "idle", from: 1, to: 2, direction: "reverse" }]), "100 ms each, tags idle 1-2 reverse");
+
+  const body = rect(W, W, [12, 10, 19, 27], BODY);
+  const fake = fakeDocument({ width: W, height: W, frames: 2, palette: ["#000000", "#ff004d"], layers: [{ name: "Body", frames: [body, body] }],
+    extra: { diff_visual: (p) => ({ saved: p.save, width: W, height: W, changed: 0 }) } });
+  await runTool(findTool("diff_visual"), { save: "cp" }, fake);
+  // Only the timing changes: frame 2 is held three times longer.
+  await fake.request("put_images", { images: [], durations: [{ frame: 2, ms: 300 }] });
+  fake.random = seededRandom(3);
+  let asked = "";
+  fake.critic = scriptedCritic([(message) => {
+    asked = message;
+    return JSON.stringify({ winner: "A", reason: "the hold reads" });
+  }]);
+  const r = await runTool(findTool("ab_compare"), { checkpoint: "cp", what: "a 32x32 character" }, fake);
+  assert.ok(!r.isError, textOf(r));
+  assert.doesNotMatch(textOf(r), /Nothing changed/);
+  assert.match(asked, /play with different timing: A (100 ms each|durations 100, 300 ms); B (100 ms each|durations 100, 300 ms)/);
+  assert.doesNotMatch(asked, /checkpoint|before|after|fix/i, "the critic is not told which is which");
+});

@@ -95,7 +95,7 @@ end
   -- the data as a binary frame when onRequest returns bytes.
   local function handleRequest(msg)
     local id = msg.id
-    local ok, result, bytes = xpcall(onRequest, debug.traceback, msg.method, msg.params or {}, msg.origin)
+    local ok, result, bytes = xpcall(onRequest, debug.traceback, msg.method, msg.params or {}, msg.origin, msg.chat)
     if not ok then
       local err = type(result) == "table" and result or { code = -32000, message = tostring(result) }
       send({ jsonrpc = "2.0", id = id, error = err })

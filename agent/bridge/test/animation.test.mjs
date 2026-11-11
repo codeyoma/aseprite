@@ -71,8 +71,11 @@ test("transform_layer writes frames after from_frame", async () => {
     },
   };
   const r = await runTool(findTool("transform_layer"), { layer: "Sword", from_frame: 1, to_frame: 5, move: { angle: 90, pivot_x: 20, pivot_y: 27 }, arc: 3 }, fake);
-  const puts = calls.filter((c) => c.m === "put_image");
-  assert.deepEqual(puts.map((p) => p.p.frame), [2, 3, 4, 5]);
+  // One write for every frame (#101).
+  const puts = calls.filter((c) => c.m === "put_images");
+  assert.equal(puts.length, 1);
+  assert.equal(calls.filter((c) => c.m === "put_image").length, 0);
+  assert.deepEqual(puts[0].p.images.map((i) => i.frame), [2, 3, 4, 5]);
   assert.match(r.content[0].text, /frames 2-5 \(4 steps, ease-in-out, arc 3px\)/);
   const bad = await runTool(findTool("transform_layer"), { layer: "Sword", from_frame: 1, to_frame: 9, move: { dx: 1 } }, fake);
   assert.equal(bad.isError, true);
@@ -104,4 +107,30 @@ test("subpixel_move writes the in-between frames", async () => {
   assert.match(r.content[0].text, /steps of 0\.50 px/);
   assert.ok(fake.cel("Blob", 2) && fake.cel("Blob", 3));
   assert.equal(fake.cel("Blob", 3)[(6 * W + 3) * 4 + 3], 255, "a whole pixel down by frame 3");
+});
+
+test("multi-frame animation tools write once: one undo step; a bad frame writes nothing (#101)", async () => {
+  const { fakeDocument } = await import("./helpers/fake_document.mjs");
+  const { findTool, runTool } = await import("../dist/tools.js");
+  const W = 8, d = new Uint8Array(W * W * 4);
+  for (let y = 2; y < 6; y++) for (let x = 2; x < 4; x++) d.set([200, 40, 40, 255], (y * W + x) * 4);
+  const fresh = () => fakeDocument({ width: W, height: W, frames: 4, layers: [{ name: "Arm", frames: [d, d, d, d] }] });
+  const writes = (fake) => fake.calls.filter((c) => ["put_image", "put_images"].includes(c.method));
+
+  const rot = fresh();
+  const r1 = await runTool(findTool("rotate_layer"), { layer: "Arm", frames: [1, 2, 2, 3], angle: 90 }, rot);
+  assert.ok(!r1.isError, r1.content[0].text);
+  assert.equal(writes(rot).length, 1, "one write");
+  assert.deepEqual(writes(rot)[0].params.images.map((i) => i.frame), [1, 2, 3], "a repeated frame is rotated once");
+  assert.match(r1.content[0].text, /in 3 frame/);
+
+  const bad = fresh();
+  const r2 = await runTool(findTool("rotate_layer"), { layer: "Arm", frames: [1, 9], angle: 90 }, bad);
+  assert.equal(r2.isError, true);
+  assert.equal(writes(bad).length, 0, "nothing written when a later frame is invalid");
+
+  const sub = fresh();
+  await runTool(findTool("subpixel_move"), { layer: "Arm", from_frame: 1, to_frame: 4, dx: 1 }, sub);
+  assert.equal(writes(sub).length, 1);
+  assert.deepEqual(writes(sub)[0].params.images.map((i) => i.frame), [2, 3, 4]);
 });

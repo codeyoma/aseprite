@@ -1,7 +1,7 @@
 // Live test of chats per sprite: each sprite has its own chats, a sprite can
 // have several, switching tabs shows that sprite's chats, the running
-// chat's tool requests wait while its sprite isn't the active tab, and a
-// message for another chat waits for the running turn.
+// chats work at the same time, each on its own sprite, whichever tab is
+// active (#90).
 // Run with Aseprite open:  node agent/tests/chats_live.mjs [claude|codex]
 import { live } from "./live.mjs";
 
@@ -44,36 +44,51 @@ await show("Alpha");
 await sleep(300);
 check("Alpha's chats are back", (await chats()).length === 2);
 
-// 3) A turn on Alpha waits while Beta is the active tab.
-// A fresh chat: Codex keeps an Ask turn's read-only stance in the same conversation.
-const gateChat = await lua("return AsepriteAgent.newChat()");
-await submit("Add a new empty layer named Gate to this sprite, then reply DONE.", "agent");
-await whenBusy();
-await show("Beta");
-let waited = false;
-for (let i = 0; i < 60 && !waited; i++) {
-  await sleep(500);
-  waited = await lua(`return AsepriteAgent.isBusy() and true or false`) && (await layers("Alpha")).indexOf("Gate") < 0;
-  if (waited && i < 10) waited = false; // give the agent time to reach its first tool call
-}
-check("Beta never gets the layer", !(await layers("Beta")).includes("Gate"));
-check("Alpha has no layer yet while Beta is active", !(await layers("Alpha")).includes("Gate"), await layers("Alpha"));
+// 3) Two chats work at the same time, each on its own sprite, while a third
+//    sprite is the active tab (#90). Each edit lands on its chat's sprite.
+await lua(`local g = Sprite(16, 16) g.filename = "Gamma" return true`);
 await show("Alpha");
+await sleep(300);
+const alphaChat = await lua("return AsepriteAgent.newChat()");
+await submit("Add a new empty layer named Gate to this sprite, then reply DONE.", "agent");
+await show("Beta");
+await sleep(300);
+const betaChat = await lua("return AsepriteAgent.newChat()");
+await submit("Add a new empty layer named Gate to this sprite, then reply DONE.", "agent");
+await show("Gamma");
+await sleep(500);
+let both = false;
+for (let i = 0; i < 40 && !both; i++) {
+  const busy = await lua("return AsepriteAgent.busyChats()");
+  both = Array.isArray(busy) && busy.includes(alphaChat) && busy.includes(betaChat);
+  if (!both) await sleep(250);
+}
+check("a chat works while another does", both);
 await waitIdle();
-const gateLog = (await lua("return AsepriteAgent.entries()")).slice(-12).map((e) => `${e.kind}:${(e.text ?? "").slice(0, 160)}`);
-check("back on Alpha, the turn finishes there", (await layers("Alpha")).includes("Gate"), { layers: await layers("Alpha"), log: gateLog });
-check("and Beta stays untouched", !(await layers("Beta")).includes("Gate"));
+check("Alpha got its layer", (await layers("Alpha")).includes("Gate"), await layers("Alpha"));
+check("Beta got its layer", (await layers("Beta")).includes("Gate"), await layers("Beta"));
+check("Gamma, the active tab, untouched", !(await layers("Gamma")).includes("Gate"), await layers("Gamma"));
+check("the active tab is still Gamma", (await lua("return app.fs.fileTitle(app.sprite.filename)")) === "Gamma");
+await lua(`AsepriteAgent.showChat(${JSON.stringify(alphaChat)}) return true`);
+check("Alpha's chat stayed on Alpha", (await chats()).some((c) => c.id === alphaChat));
 
-// 4) A message for another chat waits for the running turn.
-await lua(`AsepriteAgent.showChat(${JSON.stringify(first)}) return true`);
-await submit("Count slowly from 1 to 25, one number per line.");
-await whenBusy();
-await lua(`AsepriteAgent.showChat(${JSON.stringify(second)}) return true`);
-await submit("Reply with only the word THREE.");
-const q = await chats();
-check("the other chat's message is queued", q.find((c) => c.id === second)?.queued === 1, q);
+// 4) Two chats on the same sprite at once: both edits land, and neither reply
+//    offers Revert (its undo range holds the other chat's steps too).
+await show("Beta");
+await sleep(300);
+const one = await lua("return AsepriteAgent.newChat()");
+await submit("Add a new empty layer named One to this sprite, then reply DONE.", "agent");
+const two = await lua("return AsepriteAgent.newChat()");
+await submit("Add a new empty layer named Two to this sprite, then reply DONE.", "agent");
 await waitIdle();
-await sleep(1500);
-await waitIdle();
-check("it ran after the turn ended", (await bubbles()).some((t) => t.includes("THREE")));
+const beta = await layers("Beta");
+check("both same-sprite edits landed", beta.includes("One") && beta.includes("Two"), beta);
+const views = [];
+for (const id of [one, two]) {
+  await lua(`AsepriteAgent.showChat(${JSON.stringify(id)}) return true`);
+  views.push(await lua("return AsepriteAgent.lastTurnView()"));
+}
+const overlapped = (await lua("return true")) && views.some((v) => v.action !== "revert");
+check("a reply mixed with another chat's edits offers no Revert", overlapped, views);
+
 done("CHATS");

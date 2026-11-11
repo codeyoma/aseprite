@@ -2,6 +2,59 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Image generator for art from scratch (#102)
+- **How:**
+  - `generate_image` (`concept_tools.ts`) asks the chat's user first through the panel's permission prompt (`ChatRunner.ask`: "Allow once" or "Deny"). A timeout or a stop counts as "Deny". After a "Deny", the same question returns no without asking until the user's next message.
+  - Then it starts a job in `ImageJobs` (`image_gen.ts`), which runs one generation at a time and cancels after 5 minutes. `CodexImageGenerator` runs `codex exec` in the agent's own Codex home, in an empty temporary folder with a read-only sandbox. The instruction asks for one image with Codex's built-in image tool and for the path as JSON (`--output-schema`). The PNG must be inside that home's `generated_images` and newer than the job; otherwise the newest one there is used. It is copied to `<agent home>/generated`.
+  - One call waits up to 45 s. If the job isn't done, the agent calls again with the job id. That keeps every call under a client's tool timeout (Codex's MCP default is 60 s), although a generation takes a minute or two.
+  - `storyboard_to_frames` takes `draft: N`. In the same `putImages` write, it puts each panel, reduced to N colors with k-means over all panels, on an editable `AI: Draft` layer above the reference.
+  - The concept skill now uses the generator by default. The user's own image model and "continue without" remain for a "Deny" or a failure. The skill also says what reworking the draft means: palette, outline, ramps, stray pixels and readability at 1x.
+- **Why:** pixels written in code for a new design came out weak. The design work (proportions, pose, color masses) is what an image model does well, and the concept workflow already turned such an image into reference frames. Only the step "the user pastes the prompt into another app" was missing. Codex's review shaped the details:
+  - consent is enforced in the bridge, not only in the skill;
+  - the tool says it uses the user's Codex plan limits (image generation spends them 3–5× faster), not that it's free;
+  - the child has no repository context and no Aseprite tools;
+  - the draft is snapped by the dominant color per block, never averaged.
+  - `recreate_from_reference` stays for upscaled pixel art; `storyboard_to_frames` already fits a large image to the canvas.
+- **Architecture:** the tool context gains `ask` and `images`. `http.ts` gives both only to the lead agent's endpoints, bound to the calling chat (`?chat=`), so sub-agents and critics can't generate. `index.ts` makes one `ImageJobs` for the bridge. The live test `image_gen_live.mjs` uses one real generation, so it isn't in "all".
+
+## Sprite animation workflow research
+
+The [research note](sprite-animation-ai-research.md) compares fixed character references, editable poses, localized redraws, and timing controls. It maps those workflows to the existing Pixel spec, Animate skill, and Review views, with a benchmark that measures both motion quality and time to an accepted result.
+
+## Codex review follow-ups: one write per multi-frame tool, intent routing, timing in A/B, key-pose animation (#98-#101)
+- **How:**
+  - #101: `transform_layer`, `rotate_layer` and `subpixel_move` build every frame first and write them with one `putImages`, which is one transaction and one undo step. A frame that can't be read fails before anything is written. `rotate_layer` rotates a frame listed twice once.
+  - #100: `skillContext` ranks the matching skills (`skillScore`: trigger hits, longer phrases count more, plus `intents` words from the skill's frontmatter). The best one is the primary workflow; the others are only named, for `read_guide`. `/skill:name` loads that skill alone. Animate and Directions point at `parallel-frames` for splitting frames across sub-agents instead of repeating it.
+  - #98:
+    - Review checkpoints keep durations and tags. `timingChanges` lists what changed, so a timing-only fix is compared instead of "Nothing changed".
+    - The A/B critic gets each shown version's timing (`describeTiming`) in the shown order, which keeps it blind.
+    - The animate benchmark checks the walk tag only, with `maxWarnings: 0`, so an idle may hold a frame (`check` criteria take `tag`).
+  - #99: the Animate skill blocks the key poses first:
+    - the reference frame is kept, with landmarks for the ground row, hip height and support foot;
+    - flat silhouettes of the contacts and passing poses (or anticipation, hit, hold) go on `AI: Keys` and are checked in the filmstrip;
+    - then the keys are drawn in color, and the in-betweens last, each from both neighbors (onion), redrawing only what drifts;
+    - a hold is a longer duration, never a repeated frame.
+- **Why:** Codex's architecture and motion review: half-done multi-frame writes, every trigger match injected, timing invisible to the A/B, and motion scored 1-2/4 while the checks passed.
+- **Left:** horizontal slip of a marked contact foot (needs a contact marker); isolated playback for the human judge; the benchmark comparison numbers for #99 are in the issue.
+
+## Parallel chats, drafts that stay, Enter while typing Korean (#90 part)
+- **How:**
+  - Bridge:
+    - `ChatRunner` keeps a turn per chat (`turns` map); `chat.stop`, permissions and `currentProvider` take the chat id.
+    - `AcpRuntime` keeps a runner (agent process) per chat and conversation key (`runnerKey`), and stops agents idle for 15 minutes (`IDLE_MS`).
+    - Each runner's MCP address carries `?chat=<id>` (`chatEndpoint`). `http.ts` reads it, tags every request's envelope `{ origin: "chat", chat }`, and binds sub-agents and critics to the chat (`SubAgents.forChat`), so their tool calls and steps belong to it too.
+  - Extension:
+    - `chats.lua` marks working chats (`chat.busy`). A message waits only for its own chat's turn; `nextToSend` takes every ready chat.
+    - `Panel.handleRequest` routes a request to its chat's sprite: when that isn't the active tab it is made active for that one Lua call, then the user's sprite, frame and layer come back before anything is drawn. A request that opens or makes a sprite moves the chat there.
+    - Step captures record the chat and sprite, and claims filter by chat. Turns that overlap on one sprite are marked mixed, and lose Revert, with a note: their undo ranges hold each other's steps.
+  - Drafts: the prompt box's text belongs to `promptOwner`. It is saved before another chat's draft is shown, and the owner changes before the text is set: the box's change event used to save the empty text into the old chat.
+  - laf (`codeyoma/laf` agent-ime): Enter during an IME composition commits the syllable and also reaches the text box. Before, the input method's commit marked the key as handled, so a second Enter was needed.
+- **Why:**
+  - The user opened several chats and saw the others stop: turns ran one at a time, and requests waited for their sprite's tab.
+  - Korean input dropped the first Enter.
+  - Switching sprites lost drafts.
+- **Left for later (#90):** document-scoped handlers instead of making a sprite active for each call, which agent-written Lua can't be confined by; sprite worktrees for sub-agents.
+
 ## Dev and stable instances, updates, Windows
 - **How:**
   - `ASEPRITE_AGENT_HOME` (bridge `session.ts`, extension `agentHome()`) and Aseprite's `ASEPRITE_USER_FOLDER` make an instance; `tools/instances.mjs` defines dev (this checkout's build, `~/.aseprite-agent-dev`, its own user folder, linked extension) and stable (`~/.aseprite-agent-stable`, default user folder and home, copied extension).

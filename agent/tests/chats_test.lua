@@ -27,47 +27,45 @@ check("sprite 2 gets its own chat", b1 and b1.key == "s2" and #chats:list() == 1
 check("back to sprite 1 shows its last chat", chats:siteChanged(1) == a2)
 check("same sprite: nothing to switch", chats:siteChanged(1) == nil)
 
--- Queue: one turn at a time, the chat on screen first.
+-- Queue: a chat's message waits only for its own turn; other chats run.
 chats:start(a1)
 chats:enqueue(b1, { shown = "for b" })
 chats:enqueue(a2, { shown = "for a2" })
-check("nothing goes while a turn runs", chats:nextToSend() == nil)
-chats:finish(a1)
+chats:enqueue(a1, { shown = "for a1" })
 local c, r = chats:nextToSend()
-check("the chat on screen goes first", c == a2 and r.shown == "for a2" and r.queued)
+check("a chat that isn't working sends at once, the chat on screen first", c == a2 and r.shown == "for a2" and r.queued)
 c, r = chats:nextToSend()
 check("then the others", c == b1 and r.shown == "for b")
+check("a working chat's message waits", chats:nextToSend() == nil and #a1.queue == 1)
+chats:finish(a1)
+c, r = chats:nextToSend()
+check("and goes when its turn ends", c == a1 and r.shown == "for a1")
+check("any busy", (function() chats:start(b1) local x = chats:anyBusy() chats:finish(b1) return x and not chats:anyBusy() end)())
 
--- Stop pauses; Send now resumes and asks to stop a running turn.
-chats:start(a1)
-chats:enqueue(a2, { shown = "x" }); chats:enqueue(a2, { shown = "y" })
-chats:stop()
-check("stop pauses the running chat's queue only if it has one", a2.queuePaused == false)
+-- Stop pauses that chat's queue; Send now asks to stop it when it works.
 chats:show(a2)
-chats.running = a2
-chats:stop()
+chats:start(a2)
+chats:enqueue(a2, { shown = "x" }); chats:enqueue(a2, { shown = "y" })
+chats:stop(a2)
 check("stop pauses", a2.queuePaused == true)
-chats.running = a1
 local ok, mustStop = chats:sendNow(2)
 check("send now moves y first, unpauses, and must stop the turn", ok and mustStop and a2.queue[1].shown == "y" and not a2.queuePaused)
 check("remove queued", chats:removeQueued(2) and #a2.queue == 1)
-chats:finish(a1)
+chats:finish(a2)
+a2.queue = {}
 
--- Gate: hold while the running chat's sprite is not active; error when closed.
-chats:start(a1)
-local g, changed = chats:gate(2)
-check("hold on another sprite", g == "hold" and changed and a1.waiting)
-g, changed = chats:gate(1)
-check("run on its sprite", g == true and changed and not a1.waiting)
+-- Route: a chat's requests go to its sprite; a closed sprite is an error.
+local rc, rs = chats:route(a1.id)
+check("route to the chat's sprite", rc == a1 and rs == 1)
 open[1] = false
-check("closed sprite: error", chats:gate(1) == "The sprite this chat works on was closed")
+local nc, err = chats:route(a1.id)
+check("closed sprite: error", nc == nil and err == "The sprite this chat works on was closed")
 open[1] = true
-chats:finish(a1)
-check("no turn: always run", chats:gate(2) == true)
+check("a request without a chat runs on the active sprite", select(2, chats:route(nil)) == nil)
 
--- Close: not the running chat; the last chat is replaced.
+-- Close: not a working chat; the last chat is replaced.
 chats:start(a2)
-check("can't close the running chat", not chats:close(a2.id))
+check("can't close a working chat", not chats:close(a2.id))
 chats:finish(a2)
 local okc, why, show = chats:close(a2.id)
 check("close the chat on screen shows another", okc and show == a1 and chats.current == a1)

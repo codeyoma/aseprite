@@ -64,7 +64,14 @@ end
 
 local function finish(self)
   if not self.current then return end
-  self.history.finish(self.current, self.activeSprite())
+  local sprite = self.activeSprite()
+  -- Another chat edited the same sprite during this reply (#90): its undo
+  -- range holds their steps too, so the reply can't be reverted alone.
+  if self.capture and self.capture.othersSince and self.chatId
+     and self.capture:othersSince(self.current.captureSeq, self.chatId, sprite and sprite.id or nil) then
+    self.current.mixed = true
+  end
+  self.history.finish(self.current, sprite)
   self.last, self.current = self.current, nil
 end
 
@@ -85,7 +92,7 @@ function Turns:apply(ev)
   if ev.type == "tool_result" and ev.ok and self.capture and self.current then
     local e = toolEntry(self, ev.id)
     if e and e.toolKind == "edit" and not e.capture then
-      e.capture = self.capture:claim(self.current.captureSeq)
+      e.capture = self.capture:claim(self.current.captureSeq, self.chatId)
     end
   end
   if r.turnEnded then finish(self) end
@@ -113,7 +120,8 @@ local function turnFor(self, header)
 end
 
 -- A finished reply's status ("done", "undone", "partly undone", "empty",
--- "gone") and the action its button offers ("revert", "restore" or nil).
+-- "gone"), the action its button offers ("revert", "restore" or nil), and
+-- whether another chat edited the same sprite during it (then no revert).
 -- nil while the reply runs, or for an entry that is not a reply's header.
 function Turns:view(header)
   local turn = turnFor(self, header)
@@ -122,11 +130,11 @@ function Turns:view(header)
   local status = H.status(turn)
   local action
   if status == "done" or status == "partly undone" then
-    if H.canRevert(turn) then action = "revert" end
+    if H.canRevert(turn) and not turn.mixed then action = "revert" end
   elseif status == "undone" then
     action = "restore"
   end
-  return status, action
+  return status, action, turn.mixed == true
 end
 
 -- Reverts or restores a whole reply. Returns ok, why and, when a revert is

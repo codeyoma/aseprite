@@ -26,7 +26,7 @@ Each skill does one job well. This one picks which skills a request needs, runs 
 
 | The user wants | Chain |
 |---|---|
-| A new character or prop, loosely described | `brief` → `concept` (when a reference image helps) → new sprite (`recipes`) → draw (`pixel-art`) → `shade-sprite` → `review` |
+| A new character or prop, loosely described | `brief` → `concept` (the image generator, with the user's OK) → new sprite (`recipes`) → draw (`pixel-art`) → `shade-sprite` → `review` |
 | A new animated character | the chain above → `animate` → `review` |
 | Art for a game engine | the chains above → `export-game` |
 | An animation of a sprite that exists | `animate` (`parallel-frames` to draw many frames at once) → `retime-animation` if the timing is off → `review` |

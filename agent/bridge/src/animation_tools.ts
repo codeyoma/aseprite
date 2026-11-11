@@ -43,10 +43,13 @@ export const ANIMATION_TOOLS: Tool[] = [
       const m = input.move;
       const to = { dx: m.dx, dy: m.dy, angle: m.angle, sx: m.scale_x, sy: m.scale_y, px: m.pivot_x, py: m.pivot_y };
       const n = input.to_frame - input.from_frame;
+      // Every frame in one write (#101): one transaction, one undo step, nothing half done.
+      const items = [];
       for (let f = input.from_frame + 1; f <= input.to_frame; f++) {
         const t = (f - input.from_frame) / n;
-        await doc.putImage(transform(base, along(to, t, input.arc ?? 0, (input.easing ?? "ease-in-out") as Easing)), { layer: input.layer, frame: f, label: "In-between" });
+        items.push({ image: transform(base, along(to, t, input.arc ?? 0, (input.easing ?? "ease-in-out") as Easing)), layer: input.layer, frame: f });
       }
+      await doc.putImages(items, { label: `In-between ${input.layer}` });
       return { content: [text(`Animated ${input.layer} over frames ${input.from_frame + 1}-${input.to_frame} (${n} steps, ${input.easing ?? "ease-in-out"}${input.arc ? `, arc ${input.arc}px` : ""}).`)] };
     },
   },
@@ -65,11 +68,15 @@ export const ANIMATION_TOOLS: Tool[] = [
     label: (a) => `Rotate ${a.layer ?? ""} ${a.angle ?? ""}°`.trim(),
     async run(input, aseprite) {
       const doc = documentOf(aseprite);
-      for (const f of input.frames) {
+      // Each frame once, all in one write (#101): one undo step; a frame listed twice is rotated once.
+      const frames = [...new Set(input.frames as number[])];
+      const items = [];
+      for (const f of frames) {
         const img = await doc.pixels(input.layer, f);
-        await doc.putImage(transform(img, { angle: input.angle, px: input.pivot_x, py: input.pivot_y }), { layer: input.layer, frame: f, label: "Rotate" });
+        items.push({ image: transform(img, { angle: input.angle, px: input.pivot_x, py: input.pivot_y }), layer: input.layer, frame: f });
       }
-      return { content: [text(`Rotated ${input.layer} by ${input.angle}° in ${input.frames.length} frame(s).`)] };
+      await doc.putImages(items, { label: `Rotate ${input.layer}` });
+      return { content: [text(`Rotated ${input.layer} by ${input.angle}° in ${frames.length} frame(s).`)] };
     },
   },
   {
@@ -136,10 +143,12 @@ export const ANIMATION_TOOLS: Tool[] = [
       const base = await doc.pixels(input.layer, input.from_frame);
       const colors = [...imageColors(base), ...info.palette];
       const n = input.to_frame - input.from_frame;
+      const items = [];
       for (let f = input.from_frame + 1; f <= input.to_frame; f++) {
         const t = ease((f - input.from_frame) / n, (input.easing ?? "linear") as Easing);
-        await doc.putImage(subpixelShift(base, (input.dx ?? 0) * t, (input.dy ?? 0) * t, colors), { layer: input.layer, frame: f, label: "Sub-pixel move" });
+        items.push({ image: subpixelShift(base, (input.dx ?? 0) * t, (input.dy ?? 0) * t, colors), layer: input.layer, frame: f });
       }
+      await doc.putImages(items, { label: `Sub-pixel move ${input.layer}` });
       return { content: [text(`Moved ${input.layer} by (${input.dx ?? 0}, ${input.dy ?? 0}) px over frames ${input.from_frame + 1}-${input.to_frame} in sub-pixel steps of ${(Math.hypot(input.dx ?? 0, input.dy ?? 0) / n).toFixed(2)} px.`)] };
     },
   },

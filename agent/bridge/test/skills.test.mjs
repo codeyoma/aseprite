@@ -45,9 +45,11 @@ test("user skills are listed and readable; a same-name skill overrides the built
 
 test("trigger words inline short skills and hint long ones", () => {
   const r = skillContext("Shade the sky with a gradient");
-  // The built-in Shade and outline skill also matches "shade".
-  assert.ok(r.used.includes("dithering") && r.used.includes("shade-sprite"), r.used.join());
+  // The built-in Shade and outline skill also matches "shade": one primary workflow, the other only named (#100).
+  assert.deepEqual(r.used, ["dithering"]);
   assert.match(r.context, /<skill name="dithering" note="matched 'gradient'/);
+  assert.match(r.context, /Other skills that may help[^\n]*shade-sprite/);
+  assert.ok(!r.context.includes('<skill name="shade-sprite"'));
   assert.equal(r.message, "Shade the sky with a gradient");
   const long = skillContext("add an outline");
   assert.ok(readGuide("outline").length > INLINE_SKILL_CHARS);
@@ -97,4 +99,29 @@ test("every built-in skill lists only real tools", async () => {
     if (s.source !== "built-in") continue;
     for (const t of s.tools) assert.ok(names.has(t), `${s.name} lists unknown tool ${t}`);
   }
+});
+
+test("skills are routed by intent: one primary workflow, the rest named (#100)", () => {
+  const primary = (msg) => skillContext(msg).used[0];
+  assert.equal(primary("Export an atlas for Godot"), "export-game");
+  assert.equal(primary("Import this sprite sheet atlas and slice it"), "import-sheet");
+  assert.equal(primary("Make 8 directions from this sprite"), "make-directions");
+  assert.equal(primary("Turn this glb model into 8 directions"), "model-to-sprites");
+  const atlas = skillContext("Export an atlas for Godot");
+  assert.ok(!atlas.context.includes("# Import a sprite sheet"), "the import skill's text is not loaded");
+  assert.match(atlas.context, /Other skills[^\n]*import-sheet/);
+  // An explicit skill wins and loads alone.
+  const forced = skillContext("/skill:import-sheet export an atlas for godot");
+  assert.deepEqual(forced.used, ["import-sheet"]);
+  assert.ok(!forced.context.includes("<skill name=\"export-game\""));
+  // A multi-stage request leads with Studio.
+  assert.equal(primary("Make a game-ready sprite from scratch to export, end to end"), "studio");
+});
+
+test("prompt size: one primary skill instead of every match (#100)", () => {
+  const msg = "Export an atlas for Godot";
+  const all = [...allSkills().values()].filter((s) => s.triggers.some((t) => msg.toLowerCase().includes(t)));
+  const before = all.reduce((n, s) => n + Math.min(s.body.length, INLINE_SKILL_CHARS), 0);
+  const after = skillContext(msg).context.length;
+  assert.ok(all.length >= 2 && after < before, `${after} chars now vs about ${before} with every match`);
 });

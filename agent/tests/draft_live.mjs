@@ -27,6 +27,11 @@ check("back on A, A's draft is still there", (await prompt()) === "half-typed re
 await show("DraftB");
 await sleep(300);
 check("and B's too", (await prompt()) === "note for B", await prompt());
+await lua("AsepriteAgent.closePanel() return true");
+await sleep(300);
+await lua("AsepriteAgent.openPanel() return true");
+await sleep(300);
+check("closing and opening the panel keeps the draft", (await prompt()) === "note for B", await prompt());
 const id = await lua("return AsepriteAgent.newChat()");
 check("a new chat starts empty", (await prompt()) === "", id);
 done("DRAFT");

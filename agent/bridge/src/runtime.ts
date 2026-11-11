@@ -24,6 +24,8 @@ export interface Turn {
   mode: ChatMode;
   cwd: string;
   systemPrompt: string;
+  /** The panel's chat: each chat has its own agent process and MCP address, so chats run at the same time. */
+  chatId?: string;
 }
 
 /** Where a runtime reports what happens during a turn. */
@@ -44,6 +46,7 @@ export interface TurnResult {
 
 export interface WarmRequest {
   key: string;
+  chatId?: string;
   provider: AgentProvider;
   mode: ChatMode;
   cwd: string;
@@ -57,8 +60,8 @@ export interface Runtime {
   start(turn: Turn, sink: TurnSink): Promise<TurnResult>;
   /** Optional: start the agent and a spare session ahead of the first turn (#87). */
   warm?(w: WarmRequest): Promise<void>;
-  /** Cancels the running turn (its start() then settles as "cancelled"). Safe to call twice. */
-  stop(): void;
+  /** Cancels the running turn of a runner key (all when omitted); its start() then settles as "cancelled". Safe to call twice. */
+  stop(key?: string): void;
   dispose(): void;
 }
 
@@ -68,14 +71,48 @@ export { which } from "./platform.js";
 import { which } from "./platform.js";
 
 /** ACP: one long-lived agent per conversation key, prompted per turn. */
+/** A runner per chat and conversation key. */
+export const runnerKey = (key: string, chatId?: string) => (chatId ? `${chatId}|${key}` : key);
+
+/** The endpoint with the chat in its MCP addresses, so the bridge knows which chat a tool call belongs to. */
+export function chatEndpoint<E extends { url: string; askUrl?: string; token: string }>(endpoint: E, chatId?: string): E {
+  if (!chatId) return endpoint;
+  const q = (u?: string) => (u ? `${u}${u.includes("?") ? "&" : "?"}chat=${encodeURIComponent(chatId)}` : u);
+  return { ...endpoint, url: q(endpoint.url)!, askUrl: q(endpoint.askUrl) };
+}
+
 export class AcpRuntime implements Runtime {
   readonly name = "acp";
   private runners = new Map<string, AcpRunner>();
   private sinks = new Map<string, TurnSink>();
   private cwds = new Map<string, string>(); // each runner's working directory
-  private current?: string;
+  private running = new Set<string>(); // runner keys with a turn in progress
+  private lastUsed = new Map<string, number>(); // runner key -> when its last turn ended (or it was warmed)
+  private sweeper?: NodeJS.Timeout;
+
+  /** A chat's agent idle this long is stopped (each chat has its own process, #90); its conversation reloads on the next turn. */
+  static IDLE_MS = 15 * 60_000;
 
   constructor(private readonly endpoint: HttpEndpoint, private readonly recordDir?: string) {}
+
+  /** Stops agents that no turn used for IDLE_MS. */
+  private sweep(now = Date.now()): void {
+    for (const [key, at] of this.lastUsed) {
+      if (this.running.has(key) || now - at < AcpRuntime.IDLE_MS) continue;
+      this.runners.get(key)?.dispose();
+      this.runners.delete(key);
+      this.lastUsed.delete(key);
+      log(`acp: stopped the idle agent ${key}`);
+    }
+  }
+
+  private touch(key: string): void {
+    this.lastUsed.set(key, Date.now());
+    if (!this.sweeper) {
+      this.sweeper = setInterval(() => this.sweep(), 60_000);
+      this.sweeper.unref();
+    }
+  }
 
   supports(provider: AgentProvider): boolean {
     return acpCommand(provider) !== undefined;
@@ -83,35 +120,39 @@ export class AcpRuntime implements Runtime {
 
   async start(turn: Turn, sink: TurnSink): Promise<TurnResult> {
     const developer = turn.mode === "developer";
-    this.sinks.set(turn.key, sink);
-    let runner = this.runners.get(turn.key);
+    // Each chat has its own runner (agent process), so chats' turns run at the same time.
+    const key = runnerKey(turn.key, turn.chatId);
+    this.sinks.set(key, sink);
+    let runner = this.runners.get(key);
     // A new developer worktree: a new agent there, and a new conversation
     // (the old one's files were in the other folder).
-    if (runner && this.cwds.get(turn.key) !== turn.cwd) {
+    if (runner && this.cwds.get(key) !== turn.cwd) {
       runner.dispose();
-      this.runners.delete(turn.key);
+      this.runners.delete(key);
       runner = undefined;
       turn = { ...turn, conversationId: undefined };
     }
-    if (!runner) runner = this.runner(turn.key, turn.provider, turn.cwd, turn.systemPrompt, developer);
-    this.current = turn.key;
+    if (!runner) runner = this.runner(key, turn.provider, turn.cwd, turn.systemPrompt, developer, turn.chatId);
+    this.running.add(key);
     try {
       const { conversationId, stopReason } = await runner.prompt(turn.message, turn.conversationId, turn.images, developer ? "agent" : turn.mode);
       if (stopReason === "cancelled") return { conversationId, stop: "cancelled" };
       if (stopReason === "end_turn") return { conversationId, stop: "end" };
       return { conversationId, stop: "early", detail: stopReason };
     } finally {
-      if (this.current === turn.key) this.current = undefined;
+      this.running.delete(key);
+      this.touch(key);
     }
   }
 
   /** The runner of a conversation key, made on first use. */
-  private runner(key: string, provider: AgentProvider, cwd: string, systemPrompt: string, developer: boolean): AcpRunner {
+  private runner(key: string, provider: AgentProvider, cwd: string, systemPrompt: string, developer: boolean, chatId?: string): AcpRunner {
     let runner = this.runners.get(key);
     if (runner) return runner;
-    const record = this.recordDir ? join(this.recordDir, `acp-${key.replace(":", "-")}-${stamp()}.jsonl`) : undefined;
-    // Events go to the sink of the turn running on this key.
-    runner = new AcpRunner(provider, this.endpoint, cwd, systemPrompt, {
+    const record = this.recordDir ? join(this.recordDir, `acp-${key.replace(/[:|]/g, "-")}-${stamp()}.jsonl`) : undefined;
+    // Events go to the sink of the turn running on this key; its tool calls
+    // name the chat in their MCP address (http.ts reads ?chat=).
+    runner = new AcpRunner(provider, chatEndpoint(this.endpoint, chatId), cwd, systemPrompt, {
       onEvent: (ev) => this.sinks.get(key)?.event(ev),
       onPermission: (req) => this.sinks.get(key)?.permission(req) ?? Promise.resolve({ outcome: "cancelled" } as PermissionOutcome),
     }, record, developer);
@@ -122,16 +163,19 @@ export class AcpRuntime implements Runtime {
 
   async warm(w: WarmRequest): Promise<void> {
     if (w.mode === "developer") return;
-    await this.runner(w.key, w.provider, w.cwd, w.systemPrompt, false).warm(w.mode);
+    const key = runnerKey(w.key, w.chatId);
+    this.touch(key);
+    await this.runner(key, w.provider, w.cwd, w.systemPrompt, false, w.chatId).warm(w.mode);
   }
 
-  stop(): void {
-    if (this.current) void this.runners.get(this.current)?.cancel();
+  stop(key?: string): void {
+    for (const k of key ? [key] : [...this.running]) void this.runners.get(k)?.cancel();
   }
 
   dispose(): void {
     for (const r of this.runners.values()) r.dispose();
     this.runners.clear();
+    if (this.sweeper) clearInterval(this.sweeper);
   }
 }
 

@@ -7,7 +7,9 @@ import {
   type ConceptReading, type FitMethod, type Mismatch, type PanelLayout,
 } from "./concept.js";
 import { documentOf, resolveFrames, type Document, type SpriteInfo } from "./document.js";
-import { blank, readPng } from "./image.js";
+import { blank, countColors, encodePng, readPng, shrink, snapToPalette, type Rgba } from "./image.js";
+import { quantize } from "./color.js";
+import type { Aspect } from "./image_gen.js";
 import { NOT_PNG_SHEET } from "./sheet_tools.js";
 import { failure, text, type Tool } from "./tool.js";
 import { framesInput } from "./tool_inputs.js";
@@ -48,6 +50,34 @@ const rolesLine = (r: ConceptReading) =>
   r.roles.map((c) => `${c.role} ${c.hex} (${colorName(c.hex)}, ${Math.round(c.share * 100)}%)`).join(", ");
 
 /** The reading of an image path, with the failure text when it can't be read. */
+/** Each panel reduced to `colors` colors (k-means over all panels together), for a draft to clean up (#102). */
+export function pixelDrafts(images: Rgba[], colors: number): Rgba[] {
+  const all = images.flatMap((img) => countColors(img));
+  const palette = quantize(all, colors);
+  return images.map((img) => snapToPalette(img, palette));
+}
+
+/** A generate_image result: the image (path, size, a small preview), the error, or the job still running. */
+function imageResult(id: string, finished: boolean, job: { started: number; result?: { path: string; width: number; height: number }; error?: string }) {
+  if (!finished) {
+    const s = Math.round((Date.now() - job.started) / 1000);
+    return { content: [text(`Still generating (${s}s so far). Call generate_image with job "${id}" to keep waiting.`)] };
+  }
+  if (job.error) return failure(`The image generator failed: ${job.error} Draw it yourself instead.`);
+  const r = job.result!;
+  const preview = shrink(readPng(r.path), 256);
+  return {
+    content: [
+      text(`Generated ${r.path} (${r.width}x${r.height}). It is a rough design to trace, not pixel art: put it on the sprite with ` +
+        `storyboard_to_frames (image: that path, draft: 8-16 for a pixel draft), then clean the draft up and compare.`),
+      { type: "image" as const, data: encodePng(preview).toString("base64"), mimeType: "image/png" },
+    ],
+  };
+}
+
+/** How long one generate_image call waits for its job before handing back the job id. */
+export const IMAGE_WAIT_MS = 45_000;
+
 function readImage(path: string, w: number, h: number, layout: PanelLayout | undefined, how: FitMethod | undefined) {
   const img = readPng(path, NOT_PNG_SHEET);
   const reading = readConcept(img, w, h, layout ?? "auto", how ?? "snap");
@@ -65,6 +95,48 @@ function panelFrames(spec: unknown, n: number, count: number): number[] {
 }
 
 export const CONCEPT_TOOLS: Tool[] = [
+  {
+    name: "generate_image",
+    title: "Generate an image",
+    description:
+      "Make a rough image from a prompt with the image generator (Codex's image generation, on the user's Codex plan), " +
+      "for a concept sheet or storyboard to trace: then storyboard_to_frames with its path (draft: N for a pixel draft). " +
+      "The user is asked first; if they decline, draw it yourself and don't call this again in this turn. A generation " +
+      "takes a minute or two: when the result says it is still running, call again with its job id to keep waiting. " +
+      "Only for new designs with no reference; never to copy an existing character or artwork.",
+    input: z.object({
+      prompt: z.string().min(1).max(4000).optional().describe("The image prompt (English): subject, view, layout, plain background, no text."),
+      aspect: z.enum(["square", "portrait", "landscape"]).optional().describe("Default square; landscape for a storyboard row."),
+      job: z.string().optional().describe("Wait for this job (from an earlier call) instead of starting one."),
+      cancel: z.boolean().optional().describe("With job: cancel it."),
+    }),
+    kind: "read",
+    label: (input) => (input.job ? `Waiting for image ${input.job}` : "Generate an image"),
+    async run(input, ctx) {
+      const jobs = ctx.images;
+      if (!jobs || !ctx.ask) return failure("The image generator works only in the chat panel's own agent. Draw it yourself.");
+      if (input.job) {
+        const job = jobs.get(input.job);
+        if (!job) return failure(`No image job ${input.job}.`);
+        if (input.cancel) return { content: [text(jobs.cancel(input.job) ? `Cancelled ${input.job}.` : `${input.job} already finished.`)] };
+        return imageResult(job.id, await jobs.wait(job, IMAGE_WAIT_MS), job);
+      }
+      if (!input.prompt) return failure("Give a prompt (or a job id to wait for).");
+      const running = jobs.running();
+      if (running) return imageResult(running.id, await jobs.wait(running, IMAGE_WAIT_MS), running);
+      const short = input.prompt.length > 300 ? input.prompt.slice(0, 300) + "..." : input.prompt;
+      const ok = await ctx.ask("image_generator",
+        `the image generator (Codex image generation; it uses your Codex plan's limits) to make a rough image for: ${short}`);
+      if (!ok) return failure("The user declined the image generator. Draw it yourself, and don't ask for it again in this turn.");
+      let job;
+      try {
+        job = jobs.start(input.prompt, (input.aspect ?? "square") as Aspect);
+      } catch (e) {
+        return failure((e as Error).message);
+      }
+      return imageResult(job.id, await jobs.wait(job, IMAGE_WAIT_MS), job);
+    },
+  },
   {
     name: "concept_spec",
     title: "Read concept into a pixel spec",
@@ -162,6 +234,9 @@ export const CONCEPT_TOOLS: Tool[] = [
       name: z.string().optional().describe("Layer name after 'AI: '. Default 'Reference'."),
       spec: z.union([z.string(), z.record(z.string(), z.unknown())]).optional()
         .describe("A pixel spec to store in the same step (JSON object or text)."),
+      draft: z.number().int().min(2).max(64).optional()
+        .describe("Also put a pixel draft on a visible 'AI: Draft' layer: each panel as the reference has it, reduced to this many " +
+          "colors. A starting point to clean up (outline, ramps, stray pixels), not finished art."),
     }),
     kind: "edit",
     label: () => "Storyboard to reference frames",
@@ -196,9 +271,13 @@ export const CONCEPT_TOOLS: Tool[] = [
         info = await doc.info();
       }
       const faint = input.show === "faint";
-      const r = await doc.putImages(reading.images.map((image, i) => ({
-        image, frame: frames[i], newLayer: name, locked: true, ...(faint ? { opacity: 64 } : { hide: true }),
-      })), { frames: need, label: "Storyboard to reference frames", ...(spec !== undefined ? { spec } : {}) });
+      const drafts = input.draft ? pixelDrafts(reading.images, input.draft) : [];
+      const r = await doc.putImages([
+        ...reading.images.map((image, i) => ({
+          image, frame: frames[i], newLayer: name, locked: true, ...(faint ? { opacity: 64 } : { hide: true }),
+        })),
+        ...drafts.map((image, i) => ({ image, frame: frames[i], newLayer: "Draft", above: `AI: ${name}` })),
+      ], { frames: need, label: "Storyboard to reference frames", ...(spec !== undefined ? { spec } : {}) });
       const s = reading.storyboard;
       const empty = reading.frames.filter((f) => !f.bounds).length;
       const art = info.layer && info.layer !== `AI: ${name}` ? `"${info.layer}"` : "a layer of your own";
@@ -209,6 +288,7 @@ export const CONCEPT_TOOLS: Tool[] = [
           `${r.added ? `added ${r.added} frame${r.added === 1 ? "" : "s"}, ` : ""}one undo step.\nReference silhouettes:\n${frameLines(reading, frames).join("\n")}\n` +
           `Colors: ${rolesLine(reading)}.\n` +
           (empty ? `${empty} panel(s) came out empty: check the panel grid.\n` : "") +
+          (drafts.length ? `Put a ${input.draft}-color pixel draft on 'AI: Draft' (visible, editable): clean it up there (outline, ramps, stray pixels, readable shapes at 1x).\n` : "") +
           (spec !== undefined ? `Stored the ${input.spec !== undefined ? "given" : "measured"} pixel spec on the sprite (pixel_spec reads it).\n` : "") +
           `Draw each frame on ${art} (not the reference), then snapshot view 'compare' and mismatch_regions; fix the 3-5 largest mismatches.`,
         )],

@@ -46,7 +46,7 @@ const NO_PROVIDER = new Set(["permission", "daemon", "eval", "fx_export", "fx_re
 const ENV = { commands: { ASEPRITE_AGENT_COMMANDS: "@tmp" } };
 // Tests that need longer than --timeout (minutes): studio runs a whole chain in one turn.
 const MIN_MINUTES = { studio: 45 };
-const NOT_IN_ALL = new Set(["developer", "developer_build", "daemon", "chat", "pixel_snap", "eval"]);
+const NOT_IN_ALL = new Set(["image_gen", "developer", "developer_build", "daemon", "chat", "pixel_snap", "eval"]);
 // Tests that use no model (the rest are agent tests).
 const TOOL = new Set(["eval"]);
 const liveTests = () => readdirSync(here).filter((f) => f.endsWith("_live.mjs") && f !== "run_live.mjs").map((f) => f.slice(0, -9));

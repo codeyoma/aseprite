@@ -8,7 +8,7 @@ import type { AsepriteLink } from "./aseprite.js";
 import { log } from "./aseprite.js";
 import type { HttpEndpoint } from "./http.js";
 import { PROVIDERS, providerFor, type AgentProvider, type ProviderEvent, type ProviderId } from "./providers/index.js";
-import { AcpRuntime, StreamRuntime, which, type Runtime, type TurnSink } from "./runtime.js";
+import { AcpRuntime, runnerKey, StreamRuntime, which, type Runtime, type TurnSink } from "./runtime.js";
 import { sessionDir } from "./session.js";
 import { type Attachment, type ImageBlock, loadAttachments } from "./attachments.js";
 import { readGuide, skillContext } from "./guide.js";
@@ -151,9 +151,12 @@ export interface ChatRunnerOptions {
 
 export class ChatRunner {
   private runtimes: Runtime[];
-  private turn?: { key: string; runtime: Runtime; stopped: boolean };
-  private permissions = new Map<string, { resolve: (o: PermissionOutcome) => void; timer: NodeJS.Timeout; options: PermissionRequest["options"] }>();
+  /** Running turns by chat ("" for a message without a chat id); chats run at the same time. */
+  private turns = new Map<string, { key: string; runtime: Runtime; stopped: boolean; provider: AgentProvider }>();
+  private permissions = new Map<string, { chat: string; resolve: (o: PermissionOutcome) => void; timer: NodeJS.Timeout; options: PermissionRequest["options"] }>();
   private nextPermission = 1;
+  /** Questions a chat's user declined in its current turn (#102): asked again only after their next message. */
+  private declined = new Map<string, Set<string>>();
   // Conversation ids. The panel owns them (they survive bridge restarts) and
   // passes them with each message; new ones are reported with "session".
   private conversations: Record<string, string | undefined> = {};
@@ -185,16 +188,22 @@ export class ChatRunner {
    * and a spare session the next new conversation takes, so the first turn
    * doesn't wait for them.
    */
-  warm(provider: AgentProvider, mode: ChatMode = "agent"): void {
-    if (this.busy) return;
+  warm(provider: AgentProvider, mode: ChatMode = "agent", chatId?: string): void {
+    if (this.turns.has(chatId ?? "")) return;
     const runtime = this.runtimes.find((r) => r.supports(provider));
     if (!runtime?.warm) return;
-    void runtime.warm({ key: conversationKey(provider.id, mode), provider, mode, cwd: this.cwd, systemPrompt: SYSTEM_PROMPT })
+    void runtime.warm({ key: conversationKey(provider.id, mode), chatId, provider, mode, cwd: this.cwd, systemPrompt: SYSTEM_PROMPT })
       .catch((err) => log(`chat: warming ${provider.id} failed: ${err instanceof Error ? err.message : String(err)}`));
   }
 
+  /** Whether any chat's turn runs. */
   get busy(): boolean {
-    return this.turn !== undefined;
+    return this.turns.size > 0;
+  }
+
+  /** Whether this chat's turn runs. */
+  busyChat(chatId?: string): boolean {
+    return this.turns.has(chatId ?? "");
   }
 
   /** The first runtime that can run the provider. */
@@ -210,10 +219,10 @@ export class ChatRunner {
     return out;
   }
 
-  /** The provider of the running turn (sub-agents use the same agent), else Claude. */
-  currentProvider(): AgentProvider {
-    const id = this.turn?.key.split(":")[0];
-    return id === "codex" ? PROVIDERS.codex : PROVIDERS.claude;
+  /** The provider of a chat's running turn (its sub-agents and critics use the same agent), else of any turn, else Claude. */
+  currentProvider(chatId?: string): AgentProvider {
+    const turn = this.turns.get(chatId ?? "") ?? [...this.turns.values()][0];
+    return turn?.provider ?? PROVIDERS.claude;
   }
 
   /** Sends a chat event to the panel outside a turn (build progress). */
@@ -236,30 +245,52 @@ export class ChatRunner {
     for (const r of this.runtimes) r.dispose();
   }
 
-  /** Cancels the running turn; it then ends with "Stopped.". Safe to call twice. */
-  stop(): void {
-    if (!this.turn || this.turn.stopped) return;
-    this.turn.stopped = true;
-    for (const [id, p] of this.permissions) {
-      clearTimeout(p.timer);
-      p.resolve({ outcome: "cancelled" });
-      this.permissions.delete(id);
+  /** Cancels a chat's running turn (every chat's when omitted); it then ends with "Stopped.". Safe to call twice. */
+  stop(chatId?: string): void {
+    for (const [chat, turn] of this.turns) {
+      if (chatId !== undefined && chat !== chatId) continue;
+      if (turn.stopped) continue;
+      turn.stopped = true;
+      for (const [id, p] of this.permissions) {
+        if (p.chat !== chat) continue;
+        clearTimeout(p.timer);
+        p.resolve({ outcome: "cancelled" });
+        this.permissions.delete(id);
+      }
+      turn.runtime.stop(runnerKey(turn.key, chat || undefined));
     }
-    this.turn.runtime.stop();
   }
 
   /** Forwards a permission request to the panel and waits for the answer. */
-  private askPermission(req: PermissionRequest): Promise<PermissionOutcome> {
+  private askPermission(req: PermissionRequest, chat: string): Promise<PermissionOutcome> {
     const requestId = `perm-${this.nextPermission++}`;
+    const tag = chat ? { chatId: chat } : {};
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.permissions.delete(requestId);
         resolve(rejectOutcome(req.options));
-        this.emit({ type: "status", text: "A permission request timed out and was rejected." });
+        this.emit({ type: "status", text: "A permission request timed out and was rejected.", ...tag });
       }, PERMISSION_TIMEOUT_MS);
-      this.permissions.set(requestId, { resolve, timer, options: req.options });
-      this.emit({ type: "permission", requestId, text: req.title, options: req.options });
+      this.permissions.set(requestId, { chat, resolve, timer, options: req.options });
+      this.emit({ type: "permission", requestId, text: req.title, options: req.options, ...tag });
     });
+  }
+
+  /**
+   * Asks the user of a chat a yes/no question from a tool (#102), with the panel's permission prompt: true only for
+   * "Allow". A timeout, a stop or no running turn is a no; a no stands for the rest of the turn, so the agent can't
+   * ask the same thing again until the user writes.
+   */
+  async ask(chat: string, kind: string, title: string): Promise<boolean> {
+    if (!this.turns.has(chat) || this.declined.get(chat)?.has(kind)) return false;
+    const options = [
+      { optionId: "allow", name: "Allow once", kind: "allow_once" },
+      { optionId: "deny", name: "Deny", kind: "reject_once" },
+    ];
+    const outcome = await this.askPermission({ title, options }, chat);
+    const yes = outcome.outcome === "selected" && outcome.optionId === "allow";
+    if (!yes) this.declined.set(chat, new Set([...(this.declined.get(chat) ?? []), kind]));
+    return yes;
   }
 
   /** Answers a permission request from the panel (optionId, or null to reject). */
@@ -274,16 +305,19 @@ export class ChatRunner {
 
   /** Starts a turn; events and the end of the turn arrive as chat events. */
   send(req: ChatRequest, images: ImageBlock[] = []): void {
-    if (this.busy) throw new Error("The agent is still working. Stop it first.");
+    const chat = req.chatId ?? "";
+    if (this.turns.has(chat)) throw new Error("The agent is still working in this chat. Stop it first.");
     const mode = req.mode ?? "agent";
     const provider = req.provider;
     // User skills (#27): "/skill:name" forces one; trigger words suggest them.
     const skills = skillContext(req.prompt);
     if (!skills.message.trim()) throw new Error("Add a request after /skill:name");
     const key = conversationKey(provider.id, mode);
+    // Conversation ids per chat: chats running at once must not share one.
+    const convKey = runnerKey(key, req.chatId);
     const known = req.sessions?.[key];
-    if (known) this.conversations[key] = known;
-    else delete this.conversations[key];
+    if (known) this.conversations[convKey] = known;
+    else delete this.conversations[convKey];
     const runtime = this.runtimeFor(provider);
     if (mode === "developer" && runtime.name !== "acp") throw new Error("Developer mode needs the ACP runtime (unset ASEPRITE_AGENT_RUNTIME)");
     let cwd = this.cwd;
@@ -292,13 +326,14 @@ export class ChatRunner {
       cwd = dev.cwd;
       this.emit({ type: "status", text: `Developer mode on branch ${dev.branch} (its own worktree; your checkout is untouched until you apply)` });
     }
-    if (skills.used.length) this.emit({ type: "status", text: `Using skill: ${skills.used.join(", ")}` });
-
-    const turn = { key, runtime, stopped: false };
-    this.turn = turn;
-    const live = () => this.turn === turn;
     const chatId = req.chatId;
     const emit = (ev: ChatEvent) => this.emit(chatId ? { ...ev, chatId } : ev);
+    if (skills.used.length) emit({ type: "status", text: `Using skill: ${skills.used.join(", ")}` });
+
+    const turn = { key, runtime, stopped: false, provider };
+    this.turns.set(chat, turn);
+    this.declined.delete(chat);
+    const live = () => this.turns.get(chat) === turn;
     log(`chat: starting ${key} (${runtime.name})`);
     emit({ type: "status", text: `${provider.id} is working...` });
     const sink: TurnSink = {
@@ -306,26 +341,26 @@ export class ChatRunner {
         if (!live()) return;
         if (ev.type === "plan") return emit({ type: "plan", entries: ev.entries });
         if (ev.type === "conversation") {
-          if (this.conversations[key] === ev.id) return;
-          this.conversations[key] = ev.id;
+          if (this.conversations[convKey] === ev.id) return;
+          this.conversations[convKey] = ev.id;
           return emit({ type: "session", provider: key, sessionId: ev.id });
         }
         emit(toChatEvent(ev, provider.id));
       },
-      permission: (r) => (live() && !turn.stopped ? this.askPermission(r) : Promise.resolve({ outcome: "cancelled" })),
+      permission: (r) => (live() && !turn.stopped ? this.askPermission(r, chat) : Promise.resolve({ outcome: "cancelled" })),
     };
     let message = composeMessage({ ...req, prompt: skills.message, skills: skills.context, mode });
-    const conversation = this.conversations[key];
+    const conversation = this.conversations[convKey];
     if (mode === "agent" && conversation && this.readOnly.has(conversation)) message = `${AGENT_AGAIN_NOTE}\n${message}`;
     runtime
-      .start({ key, provider, message, conversationId: this.conversations[key], images, mode, cwd, systemPrompt: mode === "developer" ? DEVELOPER_PROMPT : SYSTEM_PROMPT }, sink)
+      .start({ key, provider, message, conversationId: this.conversations[convKey], images, mode, cwd, chatId, systemPrompt: mode === "developer" ? DEVELOPER_PROMPT : SYSTEM_PROMPT }, sink)
       .then((r) => {
         if (r.conversationId) {
           if (mode === "ask" || mode === "plan") this.readOnly.add(r.conversationId);
           else this.readOnly.delete(r.conversationId);
         }
-        if (r.conversationId && this.conversations[key] !== r.conversationId) {
-          this.conversations[key] = r.conversationId;
+        if (r.conversationId && this.conversations[convKey] !== r.conversationId) {
+          this.conversations[convKey] = r.conversationId;
           emit({ type: "session", provider: key, sessionId: r.conversationId });
         }
         if (r.stop === "cancelled" || turn.stopped) emit({ type: "done", text: "Stopped." });
@@ -334,7 +369,7 @@ export class ChatRunner {
       })
       .catch((err) => emit({ type: "error", text: err instanceof Error ? err.message : String(err) }))
       .finally(() => {
-        if (this.turn === turn) this.turn = undefined;
+        if (this.turns.get(chat) === turn) this.turns.delete(chat);
         log(`chat: ${key} (${runtime.name}) turn ended`);
       });
   }
@@ -348,7 +383,7 @@ function rejectOutcome(options: PermissionRequest["options"]): PermissionOutcome
 /** The chat panel's chat.* requests; the other bridge methods are in bridge_methods.ts. */
 export function chatMethods(chat: ChatRunner, version: string): Record<string, (params: any) => unknown> {
   return {
-    "chat.info": () => ({ providers: chat.providers(), busy: chat.busy, version }),
+    "chat.info": () => ({ providers: chat.providers(), busy: chat.busy, version, parallel: true }),
     // `state` is the extension's <aseprite-state> block.
     // `attachments` are image files to show the agent (#21); `changes` is what
     // the user changed since the last reply; `sessions` the panel's conversation ids.
@@ -369,15 +404,16 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
       }, images);
       return { started: true };
     })(),
-    "chat.warm": (p: { provider?: string; mode?: string }) => {
-      chat.warm(providerFor(p.provider), chatMode(p.mode));
+    "chat.warm": (p: { provider?: string; mode?: string; chatId?: string }) => {
+      chat.warm(providerFor(p.provider), chatMode(p.mode), p.chatId ? String(p.chatId) : undefined);
       return { warming: true };
     },
     "chat.permission": (p: { requestId: string; optionId?: string | null }) => ({
       answered: chat.answerPermission(String(p.requestId), p.optionId ?? null),
     }),
-    "chat.stop": () => {
-      chat.stop();
+    // `chatId`: stop that chat's turn; without it, every chat's.
+    "chat.stop": (p: { chatId?: string } = {}) => {
+      chat.stop(p?.chatId ? String(p.chatId) : undefined);
       return { stopped: true };
     },
     "chat.reset": () => {

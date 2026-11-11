@@ -16,6 +16,7 @@ import { AsepriteLink, log, logToFile } from "./aseprite.js";
 import { bridgeMethods } from "./bridge_methods.js";
 import { ChatRunner } from "./chat.js";
 import { startHttpEndpoint } from "./http.js";
+import { CodexImageGenerator, ImageJobs } from "./image_gen.js";
 import { SavedCommands } from "./saved_commands.js";
 import { createMcpServer, VERSION } from "./server.js";
 import { newToken, recordBridge, sessionDir } from "./session.js";
@@ -33,13 +34,20 @@ async function main() {
   const commands = new SavedCommands();
   // spawn_agents (#33): set below, since sub-agents connect back to the endpoint.
   let subAgents: SubAgents | undefined;
-  const endpoint = await startHttpEndpoint(link, newToken(), { commands, subAgents: () => subAgents, critic: () => subAgents });
+  // ask needs the chat runner, made after the endpoint it uses.
+  let chatRunner: ChatRunner | undefined;
+  const images = new ImageJobs(new CodexImageGenerator());
+  const endpoint = await startHttpEndpoint(link, newToken(), {
+    commands, subAgents: () => subAgents, critic: () => subAgents, images,
+    ask: (chatId, kind, title) => chatRunner?.ask(chatId, kind, title) ?? Promise.resolve(false),
+  });
   const chat = new ChatRunner(link, endpoint);
+  chatRunner = chat;
   // Sub-agents use the running chat's agent and show their steps in the panel.
   subAgents = new SubAgents(
     endpoint,
     async () => (await link.request("state_block", {})).result.text as string,
-    () => chat.currentProvider(),
+    (chatId) => chat.currentProvider(chatId),
     (ev) => chat.notify(ev),
   );
   cleanAttachments(); // rendered attachments older than a week

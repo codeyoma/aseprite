@@ -1,3 +1,4 @@
+import type { RequestRoute } from "./tool.js";
 import { appendFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -294,7 +295,7 @@ export class AsepriteLink extends EventEmitter {
     });
   }
 
-  async request(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000, origin?: "chat"): Promise<Reply> {
+  async request(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000, route?: RequestRoute): Promise<Reply> {
     if (!isRequest(method)) throw new Error(`Not a protocol request: ${method}`);
     checkParams(method, params);
     if (!(await this.waitForConnection(3_000))) throw new AsepriteNotConnectedError();
@@ -305,7 +306,7 @@ export class AsepriteLink extends EventEmitter {
         reject(new Error(`Aseprite did not answer ${method} within ${timeoutMs / 1000}s (a modal dialog may be open)`));
       }, timeoutMs);
       this.pending.set(id, { method, resolve, reject, timer });
-      this.client!.send(JSON.stringify({ jsonrpc: "2.0", id, method, params, ...(origin ? { origin } : {}) }));
+      this.client!.send(JSON.stringify({ jsonrpc: "2.0", id, method, params, ...(route ?? {}) }));
     });
   }
 }

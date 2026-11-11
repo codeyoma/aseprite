@@ -18,13 +18,58 @@
     "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
   ],
   "criteria": [
-    { "id": "ran-skill", "type": "skill", "desc": "the first turn ran the animate skill" },
-    { "id": "size-kept", "type": "size", "width": 24, "height": 32, "desc": "the canvas keeps its size" },
-    { "id": "ten-frames", "type": "frames", "min": 10, "desc": "6 walk + 4 idle frames or more" },
-    { "id": "walk-tag", "type": "tag", "name": "walk", "minFrames": 6 },
-    { "id": "idle-tag", "type": "tag", "name": "idle", "minFrames": 4 },
-    { "id": "walk-moves", "type": "distinct", "tag": "walk", "min": 5, "desc": "every walk frame differs from the one before" },
-    { "id": "no-repeats-or-jitter", "type": "check", "rules": ["duplicate-frame", "ground-jitter"], "desc": "check: no repeated frames, feet stay on the ground" },
-    { "id": "check-clean", "type": "check", "desc": "check: 0 errors" }
+    {
+      "id": "ran-skill",
+      "type": "skill",
+      "desc": "the first turn ran the animate skill"
+    },
+    {
+      "id": "size-kept",
+      "type": "size",
+      "width": 24,
+      "height": 32,
+      "desc": "the canvas keeps its size"
+    },
+    {
+      "id": "ten-frames",
+      "type": "frames",
+      "min": 10,
+      "desc": "6 walk + 4 idle frames or more"
+    },
+    {
+      "id": "walk-tag",
+      "type": "tag",
+      "name": "walk",
+      "minFrames": 6
+    },
+    {
+      "id": "idle-tag",
+      "type": "tag",
+      "name": "idle",
+      "minFrames": 4
+    },
+    {
+      "id": "walk-moves",
+      "type": "distinct",
+      "tag": "walk",
+      "min": 5,
+      "desc": "every walk frame differs from the one before"
+    },
+    {
+      "id": "no-repeats-or-jitter",
+      "type": "check",
+      "rules": [
+        "duplicate-frame",
+        "ground-jitter"
+      ],
+      "desc": "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)",
+      "tag": "walk",
+      "maxWarnings": 0
+    },
+    {
+      "id": "check-clean",
+      "type": "check",
+      "desc": "check: 0 errors"
+    }
   ]
 }

@@ -137,3 +137,55 @@ test("Agent after Ask says the read-only note no longer applies, once", async ()
   await methods["chat.send"]({ prompt: "another", provider: "codex", mode: "agent", sessions: { codex: "s1" } });
   assert.doesNotMatch(runtime.turns[2].turn.message, /<mode>Agent/);
 });
+
+test("chats run at the same time; Stop stops only its chat (#90)", async () => {
+  const runtime = fakeRuntime();
+  const stopped = [];
+  runtime.stop = (key) => stopped.push(key);
+  const { chat, events, methods } = setup(runtime);
+  await methods["chat.send"]({ prompt: "a", provider: "claude", sessions: {}, chatId: "c1" });
+  await methods["chat.send"]({ prompt: "b", provider: "codex", sessions: {}, chatId: "c2" });
+  assert.equal(runtime.turns.length, 2, "both turns started");
+  assert.deepEqual(runtime.turns.map((t) => t.turn.chatId), ["c1", "c2"]);
+  await assert.rejects(methods["chat.send"]({ prompt: "again", provider: "claude", sessions: {}, chatId: "c1" }), /still working in this chat/);
+  assert.equal(chat.currentProvider("c2").id, "codex");
+  methods["chat.stop"]({ chatId: "c1" });
+  assert.deepEqual(stopped, ["c1|claude"]);
+  runtime.turns[1].sink.event({ type: "text", text: "from b" });
+  runtime.turns[1].resolve({ conversationId: "s2", stop: "end" });
+  runtime.turns[0].resolve({ conversationId: "s1", stop: "cancelled" });
+  await tick();
+  assert.ok(events.some((e) => e.chatId === "c2" && e.type === "text" && e.text === "from b"));
+  assert.ok(events.some((e) => e.chatId === "c1" && e.type === "done" && e.text === "Stopped."));
+  assert.equal(chat.busy, false);
+});
+
+test("ask: a tool's question goes to the chat's permission prompt; a no stands until the next message (#102)", async () => {
+  const runtime = fakeRuntime();
+  const { chat, events, methods } = setup(runtime);
+  assert.equal(await chat.ask("c1", "image_generator", "the image generator"), false, "no turn running: no");
+  await methods["chat.send"]({ prompt: "a", provider: "claude", sessions: {}, chatId: "c1" });
+  const yes = chat.ask("c1", "image_generator", "the image generator");
+  await tick();
+  let p = events.findLast((e) => e.type === "permission");
+  assert.equal(p.chatId, "c1");
+  assert.deepEqual(p.options.map((o) => o.name), ["Allow once", "Deny"]);
+  chat.answerPermission(p.requestId, "allow");
+  assert.equal(await yes, true);
+  const no = chat.ask("c1", "image_generator", "again");
+  await tick();
+  p = events.findLast((e) => e.type === "permission");
+  chat.answerPermission(p.requestId, "deny");
+  assert.equal(await no, false);
+  const count = events.filter((e) => e.type === "permission").length;
+  assert.equal(await chat.ask("c1", "image_generator", "once more"), false, "declined: not asked again this turn");
+  assert.equal(events.filter((e) => e.type === "permission").length, count);
+  runtime.turns[0].resolve({ conversationId: "s1", stop: "end" });
+  await tick();
+  await methods["chat.send"]({ prompt: "b", provider: "claude", sessions: {}, chatId: "c1" });
+  const after = chat.ask("c1", "image_generator", "next message");
+  await tick();
+  assert.equal(events.filter((e) => e.type === "permission").length, count + 1, "asked again after the next message");
+  chat.answerPermission(events.findLast((e) => e.type === "permission").requestId, null);
+  assert.equal(await after, false);
+});

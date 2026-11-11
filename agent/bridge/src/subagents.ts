@@ -10,7 +10,7 @@ import { AcpRunner } from "./acp.js";
 import type { ImageBlock } from "./attachments.js";
 import type { ChatEvent } from "./chat.js";
 import { CRITIC_PROMPT } from "./critic.js";
-import type { CriticSession } from "./tool.js";
+import type { CriticRunner, CriticSession, SubAgentRunner } from "./tool.js";
 import { toChatEvent } from "./chat.js";
 import type { AgentProvider } from "./providers/agent_provider.js";
 import { providerFor } from "./providers/index.js";
@@ -76,16 +76,32 @@ export class SubAgents {
     private readonly endpoint: { url: string; token: string; askUrl?: string; criticUrl?: string },
     /** The document's state block, sent with each sub-agent's task. */
     private readonly stateBlock: () => Promise<string>,
-    /** The provider of the running chat turn (sub-agents use the same agent). */
-    private readonly providerFor: () => AgentProvider,
+    /** The provider of a chat's running turn (sub-agents use the same agent). */
+    private readonly providerFor: (chat?: string) => AgentProvider,
     /** Shows sub-agent steps in the chat panel. */
     private readonly emit: (ev: ChatEvent) => void,
   ) {}
 
-  async run(tasks: SubTask[], parallel = 4): Promise<SubResult[]> {
-    const provider = this.providerFor();
+  /**
+   * This runner for one chat (#90): its sub-agents and critics use that chat's agent, their tool calls run on that
+   * chat's sprite, and their steps show in that chat.
+   */
+  forChat(chat: string): SubAgentRunner & CriticRunner {
+    return { run: (tasks, parallel) => this.run(tasks, parallel, chat), open: (label) => this.open(label, chat) };
+  }
+
+  /** The chat's address on an endpoint URL, and its id on events. */
+  private chatUrl(url: string, chat?: string): string {
+    return chat ? `${url}${url.includes("?") ? "&" : "?"}chat=${encodeURIComponent(chat)}` : url;
+  }
+  private send(ev: ChatEvent, chat?: string): void {
+    this.emit(chat ? { ...ev, chatId: chat } : ev);
+  }
+
+  async run(tasks: SubTask[], parallel = 4, chat?: string): Promise<SubResult[]> {
+    const provider = this.providerFor(chat);
     const state = await this.stateBlock().catch(() => "");
-    return pool(tasks, parallel, (task) => this.runOne(provider, task, state));
+    return pool(tasks, parallel, (task) => this.runOne(provider, task, state, chat));
   }
 
   /**
@@ -93,11 +109,11 @@ export class SubAgents {
    * no critique, ab_compare or spawn_agents), with the critic prompt and none of the conversation. Each ask is one
    * prompt in the same ACP session, so a retry can say what was wrong with the last reply.
    */
-  open(label: string): CriticSession {
+  open(label: string, chat?: string): CriticSession {
     // ASEPRITE_AGENT_CRITIC=claude|codex picks the critic's agent outside a chat turn (live tests over MCP).
     const forced = process.env.ASEPRITE_AGENT_CRITIC;
-    const provider = forced ? providerFor(forced) : this.providerFor();
-    const url = this.endpoint.criticUrl ?? this.endpoint.askUrl ?? this.endpoint.url;
+    const provider = forced ? providerFor(forced) : this.providerFor(chat);
+    const url = this.chatUrl(this.endpoint.criticUrl ?? this.endpoint.askUrl ?? this.endpoint.url, chat);
     let texts: string[] = [];
     let failed: string | undefined;
     let conversationId: string | undefined;
@@ -115,15 +131,15 @@ export class SubAgents {
           }
           if (ev.type === "error") {
             failed = ev.text;
-            this.emit({ type: "status", text: `${label}: ${ev.text}` });
+            this.send({ type: "status", text: `${label}: ${ev.text}` }, chat);
             return;
           }
-          this.emit({ ...toChatEvent(ev, provider.id), agent: label });
+          this.send({ ...toChatEvent(ev, provider.id), agent: label }, chat);
         },
         onPermission: async () => ({ outcome: "cancelled" }),
       },
     );
-    this.emit({ type: "status", text: `${label} started` });
+    this.send({ type: "status", text: `${label} started` }, chat);
     return {
       ask: async (message: string, images: ImageBlock[] = []) => {
         texts = [];
@@ -139,7 +155,7 @@ export class SubAgents {
     };
   }
 
-  private async runOne(provider: AgentProvider, task: SubTask, state: string): Promise<SubResult> {
+  private async runOne(provider: AgentProvider, task: SubTask, state: string, chat?: string): Promise<SubResult> {
     const label = scopeLabel(task);
     const id = randomBytes(9).toString("hex");
     scopes.set(id, { frames: task.frames, layers: task.layers, label });
@@ -148,7 +164,7 @@ export class SubAgents {
     let failed: string | undefined;
     const runner = new AcpRunner(
       provider,
-      { url: `${this.endpoint.url}/scope/${id}`, token: this.endpoint.token },
+      { url: this.chatUrl(`${this.endpoint.url}/scope/${id}`, chat), token: this.endpoint.token },
       join(sessionDir, "workspace"),
       SUBAGENT_PROMPT,
       {
@@ -158,16 +174,16 @@ export class SubAgents {
           if (ev.type === "error") {
             // Not a chat "error": that would end the lead agent's turn.
             failed = ev.text;
-            this.emit({ type: "status", text: `Sub-agent ${label}: ${ev.text}` });
+            this.send({ type: "status", text: `Sub-agent ${label}: ${ev.text}` }, chat);
             return;
           }
-          this.emit({ ...toChatEvent(ev, provider.id), agent: label });
+          this.send({ ...toChatEvent(ev, provider.id), agent: label }, chat);
         },
         // Sub-agents only have the aseprite tools, which need no permission.
         onPermission: async () => ({ outcome: "cancelled" }),
       },
     );
-    this.emit({ type: "status", text: `Sub-agent ${label} started` });
+    this.send({ type: "status", text: `Sub-agent ${label} started` }, chat);
     try {
       const scopeText = `Your scope: ${label}${task.layers?.length ? ` (layers ${task.layers.join(", ")})` : ""}.`;
       const { stopReason } = await runner.prompt(`${state ? `${state}\n\n` : ""}${scopeText}\n\n${task.prompt}`);

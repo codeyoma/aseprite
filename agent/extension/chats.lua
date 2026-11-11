@@ -1,11 +1,9 @@
--- Chats (#89): the chat panel's chats and every decision about them, with no
--- UI. Each open sprite has a list of chats; one chat is on screen (current)
--- and at most one runs a turn (running). A message for any chat waits in
--- that chat's queue while a turn runs; the next turn takes the chat on
--- screen first, then the others by age. The running chat's tool requests
--- wait while its sprite is not the active one (the agent's tools act on the
--- active sprite), and a request that makes another sprite active moves the
--- running chat there.
+-- Chats (#89, #90): the chat panel's chats and every decision about them,
+-- with no UI. Each open sprite has a list of chats; one chat is on screen
+-- (current). Chats run their turns at the same time (chat.busy); a message
+-- for a chat that is working waits in that chat's queue and goes when its
+-- turn ends. A chat's tool requests run on its own sprite (route), and a
+-- request that makes another sprite active moves the chat there.
 --
 --   local Chats = dofile("chats.lua")
 --   local chats = Chats.new{
@@ -14,10 +12,10 @@
 --   }
 --   chats:make(spriteId, first)       -- a new chat for a sprite (nil: no sprite)
 --   chats:show(chat) / chats:close(id) / chats:siteChanged(spriteId) / chats:rehome(chat, spriteId)
---   chats:enqueue(chat, r) / chats:nextToSend() / chats:sendNow(i) / chats:removeQueued(i) / chats:stop()
---   chats:start(chat) / chats:finish(chat) / chats:gate(activeSpriteId)
+--   chats:enqueue(chat, r) / chats:nextToSend() / chats:sendNow(i) / chats:removeQueued(i) / chats:stop(chat)
+--   chats:start(chat) / chats:finish(chat) / chats:anyBusy() / chats:route(chatId)
 --
--- Fields read by the panel: chats.current, chats.running, chats:list().
+-- Fields read by the panel: chats.current, chat.busy, chats:list().
 
 local Chats = {}
 Chats.__index = Chats
@@ -30,7 +28,6 @@ function Chats.new(opts)
     byId = {},
     nextId = 0,
     current = nil,     -- the chat on screen
-    running = nil,     -- the chat whose turn runs
   }, Chats)
 end
 
@@ -78,7 +75,7 @@ end
 function Chats:close(id)
   local chat = self.byId[id]
   if not chat then return false, "No such chat" end
-  if chat == self.running then return false, "Stop this chat's turn before closing it" end
+  if chat.busy then return false, "Stop this chat's turn before closing it" end
   local group = self.groups[chat.key]
   remove(group.list, chat)
   self.byId[id] = nil
@@ -97,7 +94,7 @@ function Chats:siteChanged(spriteId)
     if key ~= "none" and first and not self.spriteExists(first.spriteId) then
       local keep = {}
       for _, c in ipairs(group.list) do
-        if c == self.running then keep[#keep + 1] = c else self.byId[c.id] = nil end
+        if c.busy then keep[#keep + 1] = c else self.byId[c.id] = nil end
       end
       if #keep == 0 then self.groups[key] = nil else group.list, group.current = keep, keep[1] end
     end
@@ -137,20 +134,21 @@ function Chats:enqueue(chat, r)
   chat.queue[#chat.queue + 1] = r
 end
 
--- The next message to send when no turn runs: the chat on screen first,
--- then the others by age. Returns chat, r (taken off the queue) or nil.
+-- The next message to send: a queued one of a chat that isn't working, the
+-- chat on screen first, then the others by age. Returns chat, r (taken off
+-- the queue) or nil; call again for the next.
 function Chats:nextToSend()
-  if self.running then return nil end
+  local function ready(c) return #c.queue > 0 and not c.queuePaused and not c.busy end
   local pick
   local cur = self.current
-  if cur and #cur.queue > 0 and not cur.queuePaused then pick = cur end
+  if cur and ready(cur) then pick = cur end
   if not pick then
     local ids = {}
     for id in pairs(self.byId) do ids[#ids + 1] = id end
     table.sort(ids, function(a, b) return tonumber(a:sub(2)) < tonumber(b:sub(2)) end)
     for _, id in ipairs(ids) do
       local c = self.byId[id]
-      if #c.queue > 0 and not c.queuePaused then pick = c; break end
+      if ready(c) then pick = c; break end
     end
   end
   if not pick then return nil end
@@ -168,7 +166,7 @@ function Chats:sendNow(index)
   table.remove(q, index)
   table.insert(q, 1, item)
   self.current.queuePaused = false
-  return true, self.running ~= nil
+  return true, self.current.busy == true
 end
 
 function Chats:removeQueued(index)
@@ -179,36 +177,37 @@ function Chats:removeQueued(index)
   return true
 end
 
--- Stop: the running chat (or the one on screen) pauses its queue, so its
--- next message doesn't start on its own.
-function Chats:stop()
-  local chat = self.running or self.current
+-- Stop: the chat (default: the one on screen) pauses its queue, so its next
+-- message doesn't start on its own.
+function Chats:stop(chat)
+  chat = chat or self.current
   if chat and #chat.queue > 0 then chat.queuePaused = true end
 end
 
 -- Turns -----------------------------------------------------------------
 
-function Chats:start(chat) self.running = chat end
+function Chats:start(chat) chat.busy = true end
 
--- A chat's turn ended; true when it was the running one.
+-- A chat's turn ended; true when it was working.
 function Chats:finish(chat)
-  if self.running ~= chat then return false end
-  self.running = nil
-  chat.waiting = false
+  if not chat.busy then return false end
+  chat.busy = false
   return true
 end
 
--- Whether a chat request may run now, given the active sprite: true,
--- "hold" while the running chat's sprite is another one, or an error when
--- that sprite was closed. Also returns whether the waiting state changed.
-function Chats:gate(activeSpriteId)
-  local chat = self.running
-  if not chat or not chat.spriteId then return true, false end
-  if not self.spriteExists(chat.spriteId) then return "The sprite this chat works on was closed", false end
-  local ok = activeSpriteId == chat.spriteId
-  local changed = (chat.waiting or false) ~= not ok
-  chat.waiting = not ok
-  return ok or "hold", changed
+function Chats:anyBusy()
+  for _, c in pairs(self.byId) do if c.busy then return true end end
+  return false
+end
+
+-- Where a chat request runs: the chat and its sprite id (nil: the active
+-- sprite, for a chat with no sprite yet or a request without a chat), or
+-- nil and an error when that sprite was closed.
+function Chats:route(chatId)
+  local chat = chatId and self.byId[chatId]
+  if not chat or not chat.spriteId then return chat, nil end
+  if not self.spriteExists(chat.spriteId) then return nil, "The sprite this chat works on was closed" end
+  return chat, chat.spriteId
 end
 
 return Chats

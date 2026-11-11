@@ -4,6 +4,7 @@ title: Work on many frames at once
 description: Split a job over many frames (shading, redrawing, cleanup) across sub-agents that work in parallel, each on its own frames.
 category: Animation
 triggers: [every frame, all frames]
+intents: [every frame, all frames, each frame]
 tools: [spawn_agents, snapshot]
 ---
 # Work on many frames at once

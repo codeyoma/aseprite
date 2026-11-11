@@ -247,6 +247,41 @@ export interface ReviewCheckpoint {
   composite: Map<number, Rgba>;
   /** Image layers by id: name and pixels per frame. */
   layers: Map<string, { name: string; images: Map<number, Rgba> }>;
+  /** Timing at the checkpoint (#98): every frame's duration and the tags' ranges and playback direction. */
+  durations?: number[];
+  tags?: { name: string; from: number; to: number; direction?: string }[];
+}
+
+/**
+ * What changed in timing since a checkpoint (#98): frame count, per-frame durations, and tag ranges or playback
+ * direction. A timing-only fix changes no pixel, so the A/B would otherwise see "nothing changed".
+ */
+export function timingChanges(cp: Pick<ReviewCheckpoint, "durations" | "tags">, now: { durations: number[]; tags: { name: string; from: number; to: number; direction?: string }[] }): string[] {
+  const out: string[] = [];
+  if (!cp.durations) return out;
+  if (cp.durations.length !== now.durations.length) out.push(`frames ${cp.durations.length} -> ${now.durations.length}`);
+  for (let i = 0; i < Math.min(cp.durations.length, now.durations.length); i++) {
+    if (cp.durations[i] !== now.durations[i]) out.push(`frame ${i + 1}: ${cp.durations[i]} -> ${now.durations[i]} ms`);
+  }
+  const key = (t: { from: number; to: number; direction?: string }) => `${t.from}-${t.to} ${t.direction ?? "forward"}`;
+  const before = new Map((cp.tags ?? []).map((t) => [t.name, t]));
+  for (const t of now.tags) {
+    const b = before.get(t.name);
+    if (!b) out.push(`tag ${t.name} added (${key(t)})`);
+    else if (key(b) !== key(t)) out.push(`tag ${t.name}: ${key(b)} -> ${key(t)}`);
+    before.delete(t.name);
+  }
+  for (const t of before.values()) out.push(`tag ${t.name} removed`);
+  return out;
+}
+
+/** "durations 100, 100, 300 ms", or "100 ms each". */
+const timingText = (d: number[]) => (d.length && d.every((x) => x === d[0]) ? `${d[0]} ms each` : `durations ${d.join(", ")} ms`);
+
+/** One version's timing for the A/B critic: durations, and tags with their playback direction. */
+export function describeTiming(d: number[], tags: { name: string; from: number; to: number; direction?: string }[]): string {
+  const t = tags.map((x) => `${x.name} ${x.from}-${x.to}${x.direction && x.direction !== "forward" ? ` ${x.direction}` : ""}`);
+  return `${timingText(d)}${t.length ? `, tags ${t.join(", ")}` : ""}`;
 }
 
 const checkpoints = new Map<string, ReviewCheckpoint>();
@@ -274,6 +309,7 @@ export async function saveReviewCheckpoint(aseprite: AsepriteRequester, name: st
   const frames = (imageLayers.length + 1) * all.length <= CHECKPOINT_CELLS ? all : [info.frame];
   const cp: ReviewCheckpoint = {
     name, title: info.title, width: info.width, height: info.height, frames, composite: new Map(), layers: new Map(),
+    durations: [...info.durations], tags: info.tags.map((t) => ({ name: t.name, from: t.from, to: t.to, direction: t.direction })),
   };
   for (const f of frames) cp.composite.set(f, await doc.pixels(undefined, f));
   for (const l of imageLayers) {
@@ -614,6 +650,7 @@ export const CRITIC_TOOLS: Tool[] = [
     async run(input, ctx) {
       const doc = documentOf(ctx);
       let A: Rgba[], B: Rgba[], nameA: string, nameB: string, guardText = "";
+      let timingSides: { a: string; b: string } | undefined;
       if (input.checkpoint !== undefined) {
         if (input.a || input.b) return failure("Pass checkpoint, or a and b, not both.");
         let cp: ReviewCheckpoint;
@@ -630,11 +667,15 @@ export const CRITIC_TOOLS: Tool[] = [
         const now = new Map<number, Rgba>();
         for (const f of cp.frames) if (f <= info.durations.length) now.set(f, await doc.pixels(undefined, f));
         let frames: number[];
+        const timing = timingChanges(cp, info);
+        if (timing.length) timingSides = { a: describeTiming(cp.durations ?? [], cp.tags ?? []), b: describeTiming(info.durations, info.tags) };
         if (input.frames !== undefined) {
           frames = resolveFrames(input.frames, info.durations.length, info.frame, "all").filter((f) => cp.composite.has(f) && now.has(f));
           if (!frames.length) return failure(`Checkpoint "${cp.name}" kept frames ${cp.frames.join(",")} only.`);
         } else {
           frames = [...now.keys()].filter((f) => changedPixels(cp.composite.get(f)!, now.get(f)!).changed > 0);
+          // A timing-only change: compare every kept frame, with the timing in the prompt.
+          if (!frames.length && timing.length) frames = [...now.keys()];
           if (!frames.length) return { content: [text(`Nothing changed since checkpoint "${cp.name}"; there is nothing to compare.`)] };
         }
         frames = frames.slice(0, AB_FRAMES);
@@ -654,9 +695,13 @@ export const CRITIC_TOOLS: Tool[] = [
       const rec = drawOrder(ctx.random ?? Math.random);
       const shownA = rec.shown.A === "a" ? A : B, shownB = rec.shown.B === "a" ? A : B;
       const { image, zoom } = abSheet(shownA, shownB);
-      const layout = shownA.length > 1 || shownB.length > 1
+      // Timing per shown version, in the shown order, so the comparison stays blind (#98).
+      const timingLine = timingSides
+        ? ` The versions play with different timing: A ${rec.shown.A === "a" ? timingSides.a : timingSides.b}; B ${rec.shown.A === "a" ? timingSides.b : timingSides.a}. Judge the motion with that timing, not only the poses.`
+        : "";
+      const layout = (shownA.length > 1 || shownB.length > 1
         ? `The attached image has two rows at ${zoom}x on a checker (the checker is transparency): the top row is version A (frames A1, A2, ...), the bottom row is version B, frame for frame.`
-        : `The attached image shows version A on top and version B below, at ${zoom}x on a checker (the checker is transparency).`;
+        : `The attached image shows version A on top and version B below, at ${zoom}x on a checker (the checker is transparency).`) + timingLine;
       const session = await openCritic(ctx, "A/B critic");
       if (!session) return failure("The critic is not available in this bridge.");
       let parsed;

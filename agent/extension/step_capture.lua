@@ -136,6 +136,9 @@ function M:around(method, fn, ...)
       local d = M.measure(okBefore and before or nil, after)
       table.insert(self.steps, lazyDiff{
         seq = self.seqNo, method = method, frame = frame,
+        -- Which chat's request made it, and on which sprite (#90): chats run
+        -- at the same time, so each claims only its own steps.
+        chat = self.chat, spriteId = app.sprite and app.sprite.id or nil,
         before = okBefore and before or nil, after = after,
         bounds = d.bounds, changed = d.changed,
       })
@@ -150,10 +153,10 @@ end
 -- apply_color_map) is one chat step. Steps on the same frame become one
 -- capture from the first one's "before" to the last one's "after";
 -- otherwise the newest step stands for them.
-function M:claim(sinceSeq)
+function M:claim(sinceSeq, chat)
   local open = {}
   for _, s in ipairs(self.steps) do
-    if s.seq > (sinceSeq or 0) and not s.claimed then
+    if s.seq > (sinceSeq or 0) and not s.claimed and (chat == nil or s.chat == chat) then
       s.claimed = true
       open[#open + 1] = s
     end
@@ -173,6 +176,18 @@ function M:claim(sinceSeq)
 end
 
 function M:last() return self.steps[#self.steps] end
+
+-- Whether another chat (or the user's own commands) changed this sprite
+-- after step `sinceSeq` (#90): then a reply's undo range holds their edits
+-- too, and reverting it would undo them.
+function M:othersSince(sinceSeq, chat, spriteId)
+  for _, s in ipairs(self.steps) do
+    if s.seq > (sinceSeq or 0) and s.chat ~= chat and s.chat ~= nil and (spriteId == nil or s.spriteId == spriteId) then
+      return true
+    end
+  end
+  return false
+end
 
 -- Saves the current canvas as a named checkpoint.
 function M:saveCheckpoint(name)

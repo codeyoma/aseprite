@@ -47,8 +47,10 @@ const parallel = await chat(`${TASK} Use spawn_agents with 4 sub-agents of 2 fra
 check("all 8 frames shaded (parallel)", (await changedFrames()) === 8, await changedFrames());
 const entries = await lua("return AsepriteAgent.entries()");
 console.log("spawn_agents result:", entries.filter((e) => e.kind === "tool" && /sub-agents/.test(e.text ?? "")).map((e) => e.result).join("\n"));
-const subSteps = entries.filter((e) => e.kind === "tool" && /^\[frames /.test(e.text ?? ""));
-check("the log shows sub-agents and their steps", new Set(subSteps.map((e) => e.text.match(/^\[(.*?)\]/)[1])).size >= 4, subSteps.map((e) => e.text));
+// A sub-agent's steps start with its label: "frames 1-2" by default, or the label the agent gave the task.
+const subSteps = entries.filter((e) => e.kind === "tool" && /^\[[^\]]+\] /.test(e.text ?? ""));
+check("the log shows sub-agents and their steps", new Set(subSteps.map((e) => e.text.match(/^\[(.*?)\]/)[1])).size >= 4,
+  subSteps.length ? subSteps.map((e) => e.text) : entries.map((e) => `${e.kind}: ${String(e.text ?? "").slice(0, 80)}`).slice(-40));
 check("the timeline highlighted a sub-agent's frames while it worked",
   ranges.some((r) => r.range === 2 || r.cursor?.set === 2), ranges.slice(-6));
 

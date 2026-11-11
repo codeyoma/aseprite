@@ -209,7 +209,16 @@ for (const bench of benches) {
     if (["frames", "size", "tag", "distinct", "layers", "palette"].includes(crit.type)) {
       if (!factsCache.has(idx)) factsCache.set(idx, await spriteFacts());
       facts.sprite = factsCache.get(idx);
-    } else if (crit.type === "check") facts.text = textOf(await c.call("check", crit.rules ? { rules: crit.rules } : {}));
+    } else if (crit.type === "check") {
+      // tag: only that tag's frames (an idle may hold a frame on purpose; a walk may not) (#98).
+      const args = crit.rules ? { rules: crit.rules } : {};
+      if (crit.tag) {
+        const t = (await spriteFacts()).tags.find((x) => x.name === crit.tag);
+        if (!t) { criteria.push({ id: crit.id, type: crit.type, desc: crit.desc ?? null, pass: false, detail: `no tag ${crit.tag}` }); continue; }
+        args.frames = `${t.from}-${t.to}`;
+      }
+      facts.text = textOf(await c.call("check", args));
+    }
     else if (crit.type === "check_fx") facts.text = textOf(await c.call("check_fx", {}));
     else if (crit.type === "lua") facts.lua = await safeLua(linesOf(crit.code));
     result = evaluate(crit, facts, { skill: bench.skill });

@@ -9,6 +9,7 @@ import {
   localhostOriginValidation,
 } from "@modelcontextprotocol/node";
 import type { SavedCommands } from "./saved_commands.js";
+import type { ImageJobs } from "./image_gen.js";
 import { toolContext, type AsepriteRequester, type SubAgentRunner, type CriticRunner } from "./tool.js";
 import { log } from "./aseprite.js";
 import { createMcpServer } from "./server.js";
@@ -30,6 +31,10 @@ export interface HttpEndpointOptions {
   subAgents?: () => SubAgentRunner | undefined;
   /** critique's and ab_compare's critics (#76), for the lead agent's endpoints. */
   critic?: () => CriticRunner | undefined;
+  /** Asks a chat's user a yes/no question (#102), for the lead agent's tools. */
+  ask?: (chat: string, kind: string, title: string) => Promise<boolean>;
+  /** Image generation jobs (#102), for the lead agent's tools. */
+  images?: ImageJobs;
 }
 
 /** A chat turn's request may wait for the user to come back to its sprite's tab. */
@@ -59,15 +64,21 @@ export async function startHttpEndpoint(link: AsepriteRequester, token: string, 
     }
     // Stateless: one MCP server and transport per request.
     // Every request here comes from a chat turn (the agent, its sub-agents
-    // and critics), so it is marked: the panel holds it while that chat's
-    // sprite is not the active tab, which can take a while.
+    // and critics), so it is marked with its origin and chat.
+    // ?chat=<id>: the panel's chat whose agent (or sub-agent, or critic)
+    // calls; the extension runs the request on that chat's sprite.
+    const chat = new URL(req.url ?? "/", "http://localhost").searchParams.get("chat") ?? undefined;
     const requester: AsepriteRequester = {
       request: (method, params = {}, timeoutMs) =>
-        link.request(method, scope ? { ...params, scope } : params, Math.max(timeoutMs ?? 0, CHAT_REQUEST_TIMEOUT_MS), "chat"),
+        link.request(method, scope ? { ...params, scope } : params, Math.max(timeoutMs ?? 0, CHAT_REQUEST_TIMEOUT_MS), { origin: "chat", chat }),
     };
     const lead = !scope && !critic;
+    const bind = <T>(r: T | undefined): T | undefined =>
+      r && chat && typeof (r as { forChat?: unknown }).forChat === "function" ? ((r as any).forChat(chat) as T) : r;
     const ctx = toolContext(requester, {
-      commands: opts.commands, subAgents: lead ? opts.subAgents?.() : undefined, critic: lead ? opts.critic?.() : undefined,
+      commands: opts.commands, subAgents: lead ? bind(opts.subAgents?.()) : undefined, critic: lead ? bind(opts.critic?.()) : undefined,
+      ask: lead && opts.ask ? (kind, title) => opts.ask!(chat ?? "", kind, title) : undefined,
+      images: lead ? opts.images : undefined,
     });
     const mcp = createMcpServer(ctx, { readOnly: path === "/mcp/ask" || critic, subAgent: !!scope, critic });
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });

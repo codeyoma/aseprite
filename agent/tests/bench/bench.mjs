@@ -26,7 +26,7 @@ export const CRITERIA = {
   tag: { name: "required", minFrames: "optional" },
   distinct: { min: "required", tag: "optional" },
   layers: { match: "required", min: "optional" },
-  check: { rules: "optional", maxErrors: "optional", maxWarnings: "optional" },
+  check: { rules: "optional", maxErrors: "optional", maxWarnings: "optional", tag: "optional" },
   check_fx: { maxErrors: "optional" },
   palette: { colors: "required" },
   sprites: { title: "optional", minFrames: "optional", width: "optional", height: "optional", nineSlice: "optional", tilemap: "optional", min: "optional" },

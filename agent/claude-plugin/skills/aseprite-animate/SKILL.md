@@ -4,6 +4,7 @@ title: Animate a character or object
 description: Make walk, run, idle, attack, jump and hit animations with proper keyframes, timing, arcs, squash and stretch and smears.
 category: Animation
 triggers: [animate, animation, walk cycle, run cycle, idle animation, attack animation, jump animation, smear]
+intents: [animate, cycle]
 tools: [read_guide, apply_timeline_text, get_timeline_text, execute_lua, read_pixels, write_pixels, transform_layer, rotate_layer, squash_stretch, smear_frame, subpixel_move, spawn_agents, check, snapshot]
 ---
 # Animate a character or object
@@ -12,10 +13,15 @@ tools: [read_guide, apply_timeline_text, get_timeline_text, execute_lua, read_pi
 1. Read the timing table before you plan: `read_guide("rules/animation")` (`rule:anim.timing` for frames, durations and key poses per animation; `rule:anim.budget` for how many frames the sprite's size can carry). Don't plan from memory.
 2. Pick the animation's row, then write the frames and timing as timeline text (`apply_timeline_text`): add frames, a tag, and durations in one call. Use at least two durations (`rule:anim.ticks`).
 
-## Draw
-1. A walk or run needs arms that read: if the sprite has none, or they are lost in the body's color, draw a near arm in front of the body (a darker step of the clothing, or skin for the hand) and let the far arm show only past the body's edge. Split the character into parts on layers when it helps (body, near arm, far arm, weapon), so rigid parts can move with `transform_layer` (moves/rotates a part from one frame to another along an arc, eased, no new colors) or `rotate_layer`.
-2. Draw keyframes (contacts, passing poses, the strike) with `execute_lua` using the sprite's palette, then fill in-betweens. For small sprites, start each new frame from a copy of the last one: `read_pixels` the part's layer in frame N, `write_pixels` the same rows into frame N+1, then change only the keys that move, so limbs keep their length. Many frames of drawing work: hand them to `spawn_agents`, one or two frames each, with the template's description of each frame.
-3. `squash_stretch` for weight (jump take-off and landing; amounts in `rule:anim.squash`); `smear_frame` for fast swings and dashes; `subpixel_move` for moves smaller than a pixel per frame (breathing, bobbing, a slow drift, an eye sliding) in small sprites, so they shift shade instead of jumping.
+## Block the key poses first (#99)
+1. The first frame is the reference: keep it as it is. Its palette, height, facing and which parts are near and far stay the same in every frame; if the state block has a pixel spec, follow it.
+2. Mark the landmarks on the reference before drawing: the ground row, the hip height, and for a walk the support foot. Every key keeps the hips at the table's height (`rule:anim.walk.limbs`, the Hip column), and a foot carrying weight stays on the ground row and slides back the same number of pixels each frame (the walk's ground speed, `rule:anim.timing.walk`), never forward or by a jump.
+3. Draw only the key poses first, as flat silhouettes in one dark color on a layer `AI: Keys` (`aiLayer`): for a walk the two contacts and the two passing poses (contacts 1 and 4, passing 3 and 6 of 6: `rule:anim.walk.limbs`); for an attack or impact the anticipation, the hit and the hold. Look at them with `snapshot` `view: "filmstrip"` and fix proportions and arm and leg opposition now: flat shapes show limbs that cross or merge, which colors later hide.
+4. Then draw the keys in color on the character's layers (split into parts when it helps: body, near arm, far arm, legs, weapon), over the silhouettes, using the sprite's palette. A walk needs arms that read: the near arm in front of the body (a darker step of the clothing, or skin for the hand), the far arm only past the body's edge.
+5. In-betweens last: each one from both keys beside it (`snapshot` `view: "onion"` on that frame shows them ghosted), halfway in position and shape; redraw only the parts that drift or overlap. For small sprites start from a copy of a key: `read_pixels` its rows, `write_pixels` them into the new frame, then change only what moves, so limbs keep their length. Rigid parts and props move with `transform_layer` (eased, along an arc, no new colors) or `rotate_layer`.
+6. Delete `AI: Keys` when the frames are done. A held pose is one frame with a longer duration, never a repeated frame.
+7. Many frames of drawing work: split them across sub-agents as `read_guide("parallel-frames")` says, with each frame's key or in-between described in the shared instruction.
+8. `squash_stretch` for weight (jump take-off and landing; amounts in `rule:anim.squash`); `smear_frame` for fast swings and dashes; `subpixel_move` for moves smaller than a pixel per frame (breathing, bobbing, a slow drift, an eye sliding) in small sprites, so they shift shade instead of jumping.
 
 ## Check
 1. `check` with rules `duplicate-frame` and `ground-jitter`: no frame should repeat the one before, and feet must stay on the same row while touching the ground. For an attack, also `check` with `expect: {must_not_overlap: [["Weapon", "Head"]]}` (your layer names).

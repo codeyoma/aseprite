@@ -4,6 +4,7 @@ title: Export for a game engine
 description: Export sprites as sheets with animations and import settings for Godot, Unity, Phaser/PixiJS or Tiled, with crisp pixels and no edge bleeding.
 category: Export
 triggers: [export for godot, export for unity, export for phaser, export to engine, spritesheet export, game export, atlas]
+intents: [export, for godot, for unity, for phaser, engine, ship]
 tools: [export_for_engine, get_timeline_text, apply_timeline_text, check]
 ---
 # Export for a game engine

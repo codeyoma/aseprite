@@ -16,7 +16,7 @@ Aseprite (C++ fork)  ──  Lua extension (agent/extension)  ──WebSocket JS
 
 - **Wire protocol**: `extension/protocol.json` is the single definition (version 34). The bridge's requests to the extension go through `document_handlers.lua`. The panel's calls to the bridge are `chat.*`, `commands.*`, `dev.*`, `skills.list` and `import.animation`. Chat turn requests carry `origin: "chat"`.
 - **Bridge** (`bridge/src`, ~10.8k lines of TS):
-  - `chat.ts` (ChatRunner, one turn at a time, events tagged with `chatId`);
+  - `chat.ts` (ChatRunner: chats run their turns at the same time, events tagged with `chatId`, `ask` for a tool's yes/no question);
   - `acp.ts` and `runtime.ts` (ACP sessions, warm start, a stream fallback);
   - `providers/` (lean sessions: only the aseprite MCP server, #87);
   - `http.ts` and `server.ts` (the MCP endpoint per mode, read-only for Ask/Plan);
@@ -27,7 +27,7 @@ Aseprite (C++ fork)  ──  Lua extension (agent/extension)  ──WebSocket JS
 - **Extension** (`extension`, ~8.4k lines of Lua):
   - `agent.lua` is the entry point; file, shell and socket access stay in it, because Aseprite asks permission per script file.
   - `chat_panel.lua` draws the panel.
-  - `chats.lua` holds the chats per sprite, queues and the request gate.
+  - `chats.lua` holds the chats per sprite, their queues and busy state, and routes a chat's requests to its sprite.
   - `composer.lua` is the draft; `conversation.lua` and `turns.lua` handle the log and reply revert/restore through the undo history.
   - `step_capture.lua` keeps a before/after of every edit.
   - `mascot.lua` and `mascot_mood.lua` draw the mascot and pick its mood from chat events.
@@ -57,12 +57,13 @@ Aseprite (C++ fork)  ──  Lua extension (agent/extension)  ──WebSocket JS
 
 ## Where to look hardest in a review
 
-- `chat_panel.lua` and `chats.lua`: the routing of one turn at a time and the request gate. A chat's tool requests wait while its sprite isn't the active tab; a request that opens or makes a sprite moves the chat there.
+- `chat_panel.lua` and `chats.lua`: parallel chats. Each chat request runs with that chat's sprite made active for the one call (`Panel.handleRequest`), then the user's sprite, frame and layer come back; a request that opens or makes a sprite moves the chat there. Turns of two chats on the same sprite are marked mixed and can't be reverted.
 - `acp.ts`: the spare session made at warm start, mode switches, and cancellation.
 - `providers/agent_home.ts`: the agent's private Codex home (a symlink to the user's `auth.json`), and the Claude options that load no settings files.
 - `step_capture.lua`: the change count from row bytes, and the lazy diff image.
 - `handlers_check.lua`: findings only for the 32 most used off-palette colors.
 - **Known gaps**:
-  - Every tool, including agent-written Lua, acts on the *active* sprite (#90).
+  - Every tool, including agent-written Lua, acts on the *active* sprite; parallel chats swap it per request (#90), so document-scoped handlers remain open.
+  - `generate_image` (#102) spends the user's Codex plan limits; it asks first and runs one job at a time.
   - Windows passes unit tests in CI but has not run the app yet (`docs/BUILD-windows.md`).
 - Two instances (user's stable, agent's dev) are described in `docs/INSTANCES.md`; tests only touch dev.

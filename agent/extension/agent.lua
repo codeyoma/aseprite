@@ -102,11 +102,11 @@ function init(plugin)
     -- Through the panel, which moves the running chat to a sprite the
     -- request opens or makes; the gate holds requests while the running
     -- chat's sprite isn't the active tab.
-    onRequest = function(method, params, origin)
-      if Panel and origin == "chat" then return Panel.handleRequest(handlers.call, method, params) end
+    -- A chat turn's request (origin "chat") runs on its chat's sprite.
+    onRequest = function(method, params, origin, chat)
+      if Panel and origin == "chat" then return Panel.handleRequest(handlers.call, chat, method, params) end
       return handlers.call(method, params)
     end,
-    gate = function() return not Panel or Panel.gate() end,
     onNotification = function(method, params)
       if method == "chat.event" and Panel then Panel.onEvent(params) end
     end,
@@ -141,8 +141,7 @@ function init(plugin)
     newTurns = function(sprite)
       return Turns.new{ Conversation = Conversation, clock = os.time, history = TurnHistory, capture = capture, sprite = sprite }
     end,
-    retryHeld = function() connection.retryHeld() end,
-    onTurnEnd = function() connection.failHeld("The chat's turn ended") end,
+    setCaptureChat = function(chat) capture.chat = chat end,
     prompter = prompter,
     request = connection.request,
     isConnected = connection.isConnected,
@@ -215,6 +214,8 @@ function init(plugin)
       return false
     end,
     isBusy = function() return Panel.isBusy() end,
+    busyChats = function() return Panel.busyChats() end,
+    lastTurnView = function() return Panel.lastTurnView() end,
     placeholder = function() return Panel.placeholder() end,
     -- The / picker (#35): type into the prompt as the user would, read the matches.
     typePrompt = function(text) Panel.setPrompt(text); Panel.onPromptChange() end,

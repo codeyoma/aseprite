@@ -6,11 +6,21 @@ import type { Reply } from "./aseprite.js";
 import type { ImageBlock } from "./attachments.js";
 import { SavedCommands } from "./saved_commands.js";
 import type { SubResult, SubTask } from "./subagents.js";
+import type { ImageJobs } from "./image_gen.js";
 
 /** The seam tools use to reach Aseprite: AsepriteLink in the bridge, a fake in tests. */
+/** Where a request comes from: a chat turn (and which chat). Sent in the JSON-RPC envelope, not the params. */
+export interface RequestRoute {
+  origin: "chat";
+  chat?: string;
+}
+
 export interface AsepriteRequester {
-  /** origin "chat" marks a chat turn's request: the extension holds it while the chat's sprite isn't the active tab. */
-  request(method: string, params?: Record<string, unknown>, timeoutMs?: number, origin?: "chat"): Promise<Reply>;
+  /**
+   * route: a chat turn's request (origin "chat", and the chat's id): the extension runs it on that chat's sprite,
+   * whichever tab is active.
+   */
+  request(method: string, params?: Record<string, unknown>, timeoutMs?: number, route?: RequestRoute): Promise<Reply>;
 }
 
 /** Runs spawn_agents' sub-tasks (SubAgents in the bridge, a fake in tests). */
@@ -40,6 +50,10 @@ export interface ToolContext extends AsepriteRequester {
   subAgents?: SubAgentRunner;
   /** Fresh critics for critique and ab_compare; absent where they can't run (CLI, sub-agents, critics themselves). */
   critic?: CriticRunner;
+  /** Asks the chat's user a yes/no question (#102); absent outside the panel's chats. kind: what is asked, for "don't ask again this turn". */
+  ask?: (kind: string, title: string) => Promise<boolean>;
+  /** Image generation jobs (#102); absent where there is no generator. */
+  images?: ImageJobs;
   /** ab_compare's coin flip; default Math.random (tests pass a seeded one). */
   random?: () => number;
 }
@@ -47,9 +61,11 @@ export interface ToolContext extends AsepriteRequester {
 /** A ToolContext over `aseprite`; the commands store defaults to the user's folder. */
 export function toolContext(
   aseprite: AsepriteRequester,
-  opts: { commands?: SavedCommands; subAgents?: SubAgentRunner; critic?: CriticRunner } = {},
+  opts: { commands?: SavedCommands; subAgents?: SubAgentRunner; critic?: CriticRunner; ask?: ToolContext["ask"]; images?: ImageJobs } = {},
 ): ToolContext {
   return {
+    ask: opts.ask,
+    images: opts.images,
     request: (method, params, timeoutMs) => aseprite.request(method, params, timeoutMs),
     commands: opts.commands ?? new SavedCommands(),
     subAgents: opts.subAgents,

@@ -42,6 +42,11 @@ export interface Skill {
   needs: string[];
   /** Tools the skill relies on. */
   tools: string[];
+  /**
+   * Words that say this skill is the user's intent when its triggers tie with another skill's (#100), e.g. export-game:
+   * [export], import-sheet: [import, slice]. A message that names one ranks the skill first.
+   */
+  intents: string[];
   body: string; // markdown without frontmatter
   source: "guide" | "built-in" | "user";
 }
@@ -81,6 +86,7 @@ export function parseSkill(text: string, fallbackName: string, source: Skill["so
     triggers: (lists.triggers ?? []).map((t) => t.toLowerCase()),
     needs: lists.needs ?? (meta.needs ? [meta.needs] : []),
     tools: lists.tools ?? [],
+    intents: (lists.intents ?? []).map((t) => t.toLowerCase()),
     body,
     source,
   };
@@ -193,11 +199,20 @@ export function readGuide(topic: string): string | undefined {
 /** Skills inlined into a message are capped at this many characters; longer ones get a hint. */
 export const INLINE_SKILL_CHARS = 2000;
 
+/** How well a skill fits a message: trigger hits (longer phrases count more) and intent words (#100). 0: no trigger. */
+export function skillScore(s: Skill, words: string): { score: number; hit?: string } {
+  const has = (t: string) => new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRe(t)}`, "u").test(words);
+  const hits = s.triggers.filter(has);
+  if (!hits.length) return { score: 0 };
+  const score = hits.reduce((n, t) => n + 1 + t.split(/\s+/).length, 0) + 4 * s.intents.filter(has).length;
+  return { score, hit: hits.sort((a, b) => b.length - a.length)[0] };
+}
+
 /**
- * What a chat message adds for skills: "/skill:name rest" forces a skill,
- * and user skills whose trigger words appear in the message are suggested
- * (inlined when short). Returns the message without the /skill prefix and
- * the text to add before it.
+ * What a chat message adds for skills (#100). "/skill:name rest" follows that skill; otherwise the skills whose trigger
+ * words appear are ranked (skillScore) and the best one is the primary workflow: inlined when short, else read with
+ * read_guide. The others that matched are only named, so the agent can read one if the task needs it. Returns the
+ * message without the /skill prefix and the text to add before it.
  */
 export function skillContext(message: string, skills = allSkills()): { message: string; context: string; used: string[] } {
   const parts: string[] = [];
@@ -215,10 +230,14 @@ export function skillContext(message: string, skills = allSkills()): { message: 
     }
   }
   const words = rest.toLowerCase();
-  for (const s of skills.values()) {
-    if (used.includes(s.name) || !s.triggers.length) continue;
-    const hit = s.triggers.find((t) => new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRe(t)}`, "u").test(words));
-    if (!hit) continue;
+  const ranked = [...skills.values()]
+    .filter((s) => !used.includes(s.name) && s.triggers.length)
+    .map((s) => ({ s, ...skillScore(s, words) }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score || a.s.name.localeCompare(b.s.name));
+  // Without an explicit skill, the best match leads.
+  if (!forced && ranked.length) {
+    const { s, hit } = ranked.shift()!;
     used.push(s.name);
     if (s.body.length <= INLINE_SKILL_CHARS) {
       parts.push(`<skill name="${s.name}" note="matched '${hit}'; follow it where it applies">\n${s.body.trim()}\n</skill>`);
@@ -226,6 +245,8 @@ export function skillContext(message: string, skills = allSkills()): { message: 
       parts.push(`Relevant skill: ${s.name}${s.description ? ` (${s.description})` : ""}. Call read_guide("${s.name}") before you start.`);
     }
   }
+  const others = ranked.slice(0, 3).map((r) => r.s.name);
+  if (others.length) parts.push(`Other skills that may help (read_guide("<name>") if the task needs one): ${others.join(", ")}.`);
   return { message: rest, context: parts.join("\n"), used };
 }
 
