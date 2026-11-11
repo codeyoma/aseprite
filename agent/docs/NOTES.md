@@ -43,7 +43,7 @@ One short entry per change: how it works, why it was done this way, and where it
 ## Juice and the sprite-effect core (#104)
 - **How:**
   - `sprite_fx/curves.ts` has Penner's easings, a closed-form damped spring, a decaying bounce and a seeded shake.
-  - `sprite_fx/raster.ts` has the pixel-safe warp (inverse map over an 8x Scale2x upscale) and the hit flash.
+  - `sprite_fx/raster.ts` has the pixel-safe warp and the hit flash. Rotations sample an 8x Scale2x upscale; other warps sample the source, and shrinks keep thin details (eyes, 1 px lines) found in their footprint. EPX rounds the corners of 1-2 px details, so scales through the upscale lost eyes.
   - `sprite_fx/juice.ts` turns an effect into one warp per frame. `juice_tools.ts` reads the layer, warps, and writes through `sprite_fx/write.ts`.
   - `put_images` items accept `hide_source` (protocol v36), so the copy layer and the hidden source land in one request.
 - **Why:** the user bought CodeManu's FX tools and asked for the same kinds of effects built in, from public algorithms (research in `docs/fx-algorithms-research.md`). Juice comes first because smears and pipelines reuse its core.

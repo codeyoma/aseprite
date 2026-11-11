@@ -1,7 +1,8 @@
 // Pixel-safe geometric transforms for the sprite effects (#104). A transform is an inverse map: each output pixel
-// finds its source point and takes one source pixel, so no new colors appear. Rotation and fractional scales sample
-// an 8x upscale made by three passes of Scale2x (EPX, reimplemented from Mazzoleni's description), the idea behind
-// Xenowhirl's RotSprite (2007): diagonals stay clean instead of breaking into stairs. No GPL/AGPL code is used.
+// finds its source point and takes one source pixel, so no new colors appear. Rotations sample an 8x upscale made by
+// three passes of Scale2x (EPX, reimplemented from Mazzoleni's description), the idea behind Xenowhirl's RotSprite
+// (2007): diagonals stay clean instead of breaking into stairs. Shrinks keep thin details (an eye, a 1 px line) that
+// a nearest sample would skip. No GPL/AGPL code is used.
 import { blank, bounds, OPAQUE, type Rect, type Rgba } from "../image.js";
 
 /** Where a transform pivots, in sprite pixels (a point between pixels: 10 means the left edge of pixel 10). */
@@ -75,9 +76,12 @@ export function warp(src: Rgba, w: Warp, pivot: Point, big?: Rgba): Rgba {
     }
     return out;
   }
-  const B = big ?? upscale8(src);
+  const B = w.rot ? big ?? upscale8(src) : undefined;
   const sxv = w.sx ?? 1, syv = w.sy ?? 1, kx = w.kx ?? 0, rot = w.rot ?? 0;
   const cos = Math.cos(-rot), sin = Math.sin(-rot);
+  // Shrinking (no rotation): keep thin details the footprint would otherwise skip.
+  const shrinks = !rot && (Math.abs(sxv) < 0.999 || Math.abs(syv) < 0.999);
+  const thin = shrinks ? thinDetails(src, Math.abs(syv) < 0.999, Math.abs(sxv) < 0.999) : undefined;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     // Output pixel centre relative to the pivot, then each step undone in reverse order.
     let px = x + 0.5 - pivot.x - dx, py = y + 0.5 - pivot.y - dy;
@@ -88,11 +92,58 @@ export function warp(src: Rgba, w: Warp, pivot: Point, big?: Rgba): Rgba {
     px /= sxv; py /= syv;
     const fx = px + pivot.x, fy = py + pivot.y;
     if (fx < 0 || fy < 0 || fx >= W || fy >= H) continue;
-    const X = Math.min(B.width - 1, Math.floor(fx * 8)), Y = Math.min(B.height - 1, Math.floor(fy * 8));
-    const i = (Y * B.width + X) * 4;
-    if (B.data[i + 3]) out.data.set(B.data.subarray(i, i + 4), (y * W + x) * 4);
+    // Rotations sample the Scale2x upscale; scales, leans and waves take the nearest source pixel (EPX rounds the
+    // corners of 1-2 px details, which a plain scale would then lose).
+    const S = rot ? B! : src, k = rot ? 8 : 1;
+    const X = Math.min(S.width - 1, Math.floor(fx * k)), Y = Math.min(S.height - 1, Math.floor(fy * k));
+    const i = (Y * S.width + X) * 4;
+    const o = (y * W + x) * 4;
+    if (S.data[i + 3]) out.data.set(S.data.subarray(i, i + 4), o);
+    if (shrinks) {
+      const d = detailIn(src, thin, fx, fy, 0.5 / Math.abs(sxv), 0.5 / Math.abs(syv), S.data[i + 3] ? key(S, i) : 0);
+      if (d >= 0) out.data.set(src.data.subarray(d, d + 4), o);
+    }
   }
   return out;
+}
+
+const key = (img: Rgba, i: number) => {
+  const d = img.data;
+  return d[i + 3] < OPAQUE ? 0 : ((d[i] << 24) | (d[i + 1] << 16) | (d[i + 2] << 8) | d[i + 3]) >>> 0;
+};
+
+/**
+ * Thin details of the source along the axes a shrink compresses: opaque pixels whose color differs from both
+ * neighbours across that axis (an eye, a 1 px line). A plain nearest sample would skip them when the footprint of
+ * an output pixel covers more than one source pixel.
+ */
+function thinDetails(src: Rgba, vertical: boolean, horizontal: boolean): Uint8Array {
+  const { width: W, height: H } = src, out = new Uint8Array(W * H);
+  const at = (x: number, y: number) => (x < 0 || y < 0 || x >= W || y >= H ? 0 : pixel(src, x, y));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = at(x, y);
+    if (!p) continue;
+    if ((vertical && at(x, y - 1) !== p && at(x, y + 1) !== p) || (horizontal && at(x - 1, y) !== p && at(x + 1, y) !== p)) out[y * W + x] = 1;
+  }
+  return out;
+}
+
+/** The byte index of the thin detail pixel nearest (fx, fy) whose centre lies in the footprint and whose color differs from `center`, or -1. */
+function detailIn(src: Rgba, thin: Uint8Array | undefined, fx: number, fy: number, hx: number, hy: number, center: number): number {
+  if (!thin) return -1;
+  const { width: W, height: H } = src;
+  let best = -1, bd = Infinity;
+  for (let y = Math.max(0, Math.floor(fy - hy)); y < Math.min(H, Math.ceil(fy + hy)); y++) {
+    if (y + 0.5 < fy - hy || y + 0.5 >= fy + hy) continue;
+    for (let x = Math.max(0, Math.floor(fx - hx)); x < Math.min(W, Math.ceil(fx + hx)); x++) {
+      if (x + 0.5 < fx - hx || x + 0.5 >= fx + hx || !thin[y * W + x]) continue;
+      const i = (y * W + x) * 4;
+      if (key(src, i) === center) continue;
+      const dd = (x + 0.5 - fx) ** 2 + (y + 0.5 - fy) ** 2;
+      if (dd < bd) { bd = dd; best = i; }
+    }
+  }
+  return best;
 }
 
 /** Every opaque pixel turned to `color` (alpha kept): a hit flash. */

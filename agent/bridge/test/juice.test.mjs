@@ -67,6 +67,18 @@ test("squash keeps the area near constant and the feet planted", () => {
   assert.ok(Math.abs(lit(out) - lit(man)) / lit(man) < 0.2, `area ${lit(out)} vs ${lit(man)}`);
 });
 
+test("squash, stretch and pop keep a 1 px eye in every frame", () => {
+  const face = img(48, 48, [12, 25, 35, 44], [70, 200, 90]);
+  face.data.set([10, 30, 10, 255], (32 * 48 + 19) * 4);
+  const { pivot, box: b } = pivotOf(face, "bottom");
+  for (const e of ["squash", "stretch", "pop_in", "pulse"]) {
+    for (const p of juicePlan(e, 6, b)) {
+      const out = warp(face, p.warp, pivot);
+      assert.ok(colors(out).has("10,30,10"), `${e} lost the eye`);
+    }
+  }
+});
+
 test("every effect makes the asked number of frames", () => {
   for (const e of JUICE_EFFECTS) assert.equal(juicePlan(e, 5, { x: 0, y: 0, w: 8, h: 8 }).length, 5, e);
 });

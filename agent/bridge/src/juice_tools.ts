@@ -22,8 +22,8 @@ export const JUICE_TOOLS: Tool[] = [
       "Default placement inserts the effect's frames right after `frame` (other layers' cels there are linked to it, " +
       "tags covering it grow); `over` instead transforms existing frames (each frame's own art, e.g. a wobble across " +
       "an idle). The result goes on 'AI: juice <layer>' above the layer, which is hidden; every frame the effect does " +
-      "not touch gets a copy of the layer, so nothing else changes. Transforms only move existing pixels (rotation " +
-      "and fractional scales sample a Scale2x upscale, RotSprite's idea), so no new colors appear except flash's. " +
+      "not touch gets a copy of the layer, so nothing else changes. Transforms only move existing pixels (rotations " +
+      "sample a Scale2x upscale, RotSprite's idea; shrinks keep 1 px details like eyes), so no new colors appear except flash's. " +
       "Returns a contact sheet of the effect's frames. preview: true shows it without changing the sprite.",
     input: z.object({
       effect: z.enum(JUICE_EFFECTS as [JuiceEffect, ...JuiceEffect[]]),

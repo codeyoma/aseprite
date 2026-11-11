@@ -260,7 +260,7 @@ const pattern = (p: string | undefined): Pattern | undefined => (p && p !== "non
 
 registerStep({
   type: "outline",
-  what: "outline: outer (around the shape) or inner (its edge pixels), color (palette step, '#hex', 'darkest' or 'selout': a darker shade of the color it borders), thickness 1-8, neighbors 4 or 8",
+  what: "outline: mode outer (around the shape) or inner (its edge pixels), color (palette step, '#hex', 'darkest' or 'selout': a darker shade of the color it borders), thickness 1-8, neighbors 4 or 8",
   schema: z.object({
     mode: z.enum(["outer", "inner"], "mode must be 'outer' or 'inner'").optional(),
     color: colorRef("color", ["darkest", "selout"]).optional(),

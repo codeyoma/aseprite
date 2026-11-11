@@ -71,8 +71,8 @@ export function juicePlan(effect: JuiceEffect, frames: number, box: Rect, o: Jui
         out.push({ warp: keepArea((o.amount ?? 0.35) * spring(decay, cycles ?? 1.5, damping ?? 0.35)) });
         break;
       case "wobble": {
-        const h = Math.max(1, box.h), amp = o.px ?? Math.max(1, Math.round(box.h * 0.15 * ((o.amount ?? 0.5) / 0.5)));
-        const c = cycles ?? 2, z = damping ?? 0.25;
+        const h = Math.max(1, box.h), amp = o.px ?? Math.max(1, Math.round(box.h * 0.25 * ((o.amount ?? 0.5) / 0.5)));
+        const c = cycles ?? 2, z = damping ?? 0.15;
         // Higher rows lag a little behind (phase delay), which reads as jelly rather than a lean.
         out.push({
           warp: {
