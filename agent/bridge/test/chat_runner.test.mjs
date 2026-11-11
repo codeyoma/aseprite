@@ -111,7 +111,7 @@ test("Developer mode needs the ACP runtime", () => {
 
 test("chat.send passes structured parts through", async () => {
   const { runtime, methods } = setup();
-  methods["chat.send"]({ prompt: "hi", state: "<s/>", changes: "<c/>", provider: "codex", mode: "plan", sessions: { codex: "x9" } });
+  await methods["chat.send"]({ prompt: "hi", state: "<s/>", changes: "<c/>", provider: "codex", mode: "plan", sessions: { codex: "x9" } });
   const t = runtime.turns[0].turn;
   assert.equal(t.conversationId, "x9");
   assert.match(t.message, /<c\/>\n<s\/>\n\nhi$/);

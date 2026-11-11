@@ -1,11 +1,14 @@
 -- Attachments (#21): render what the user wants the agent to see (the
--- selection, the active layer, the active frame) to a PNG, or take an image
--- file, so the chat can send it with the next message.
+-- selection, the active layer, the active frame, the clipboard image) to a
+-- PNG, or take an image file, so the chat can send it with the next message.
+-- Any file Aseprite opens can be attached; the bridge converts what the
+-- model can't take as it is (animations become a sheet of frames).
 --
 --   local Attachments = dofile("attachments.lua").new{ dir = ..., snapshot = H.snapshot, Uri = H.Uri,
 --                                                       writeImage = function(img, path) ... end }
 --   local a, err = Attachments:make("selection")  -- { label, path, uri } or nil, error
---   Attachments:file("/path/ref.png")              -- an image file the user picked
+--   Attachments:file("/path/ref.gif")              -- an image file the user picked
+--   Attachments:clipboard()                        -- the image on the clipboard
 --
 -- Rendered images are upscaled with nearest neighbor to at most 512 px.
 -- Writing files goes through opts.writeImage, which agent.lua provides:
@@ -22,6 +25,9 @@ function M.new(opts)
     snapshot = assert(opts.snapshot, "snapshot required"),
     Uri = assert(opts.Uri, "Uri required"),
     writeImage = assert(opts.writeImage, "writeImage required"),
+    -- Returns the clipboard Image or nil; agent.lua reads it (Aseprite asks
+    -- permission per script file).
+    clipboardImage = opts.clipboardImage or function() return nil end,
     counter = 0,
   }, M)
 end
@@ -79,15 +85,36 @@ function M:make(kind)
   return result, err
 end
 
+-- File types the panel offers; the bridge (attachments.ts) accepts the same.
+M.EXTENSIONS = { "png", "jpg", "jpeg", "gif", "webp", "bmp", "tga", "pcx", "qoi", "ico",
+                 "psd", "psb", "flc", "fli", "ase", "aseprite" }
+
+local function isImageExtension(ext)
+  for _, e in ipairs(M.EXTENSIONS) do if e == ext then return true end end
+  return false
+end
+
 -- An image file the user picked.
 function M:file(path)
   if not path or path == "" then return nil, "No file" end
-  local ext = app.fs.fileExtension(path):lower()
-  if not (ext == "png" or ext == "jpg" or ext == "jpeg" or ext == "gif" or ext == "webp") then
-    return nil, "Attach a PNG, JPEG, GIF or WebP image"
+  if not isImageExtension(app.fs.fileExtension(path):lower()) then
+    return nil, "Attach an image file (" .. table.concat(M.EXTENSIONS, ", ") .. ")"
   end
   if not app.fs.isFile(path) then return nil, "File not found" end
   return { label = "image " .. app.fs.fileName(path), path = path }
+end
+
+-- The image on the clipboard (a screenshot, a copied reference).
+function M:clipboard()
+  local ok, img = pcall(self.clipboardImage)
+  if not ok then return nil, "Could not read the clipboard: " .. tostring(img) end
+  if not img then return nil, "The clipboard has no image" end
+  if img.colorMode ~= ColorMode.RGB then
+    local rgb = Image(img.width, img.height, ColorMode.RGB)
+    rgb:drawImage(img)
+    img = rgb
+  end
+  return { label = string.format("pasted image %dx%d", img.width, img.height), path = self:save(img) }
 end
 
 return M

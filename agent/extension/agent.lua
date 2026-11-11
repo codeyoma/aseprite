@@ -140,6 +140,10 @@ function init(plugin)
         app.fs.makeAllDirectories(app.fs.filePath(path))
         img:saveAs(path)
       end,
+      clipboardImage = function()
+        if not app.clipboard.hasImage then return nil end
+        return app.clipboard.image
+      end,
     },
     ensureBridge = connection.ensureBridge,
     preferences = plugin.preferences,
@@ -201,6 +205,7 @@ function init(plugin)
     applyEvent = function(ev) Panel.onEvent(ev) end,
     -- Attach "selection" | "layer" | "frame", or { path = "ref.png" } (#21).
     attach = function(kind) return Panel.attach(kind) end,
+    clearAttachments = function() Panel.clearAttachments() end,
     pendingAttachments = function() return Panel.pendingAttachments() end,
     -- The newest before/after capture of an edit request (#23).
     lastCapture = function()
@@ -309,6 +314,7 @@ function init(plugin)
   attachCommand("AgentAttachSelection", "Attach Selection to Chat", "ai_agent_menu", "selection")
   attachCommand("AgentAttachLayer", "Attach Active Layer to Chat", "ai_agent_menu", "layer")
   attachCommand("AgentAttachFrame", "Attach Active Frame to Chat", "ai_agent_menu", "frame")
+  attachCommand("AgentAttachClipboard", "Attach Clipboard Image to Chat", "ai_agent_menu", "clipboard")
   attachCommand("AgentAttachCel", "Attach to AI Chat", "cel_popup_properties", "layer")
   attachCommand("AgentAttachLayerPopup", "Attach to AI Chat", "layer_popup_properties", "layer")
   attachCommand("AgentAttachFramePopup", "Attach to AI Chat", "frame_popup_properties", "frame")

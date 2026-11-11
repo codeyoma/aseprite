@@ -6,8 +6,10 @@ local P = (function()
   local p = json.decode(f:read("a")); f:close(); return p
 end)()
 local H = dofile(app.fs.joinPath(extDir, "document_handlers.lua")).new{ chunkDir = extDir, protocol = P }
+local clip -- what the fake clipboard holds
 local A = dofile(app.fs.joinPath(extDir, "attachments.lua")).new{ dir = tmp, snapshot = H.snapshot, Uri = H.Uri,
-  writeImage = function(img, path) img:saveAs(path) end }
+  writeImage = function(img, path) img:saveAs(path) end,
+  clipboardImage = function() return clip end }
 
 local failures = 0
 local function check(name, cond, detail)
@@ -37,6 +39,16 @@ local l = A:make("layer")
 check("layer", l and l.label == "layer Layer 1 (frame 1)" and l.uri:match("^aseprite://layer/L%d+$"), l and l.label)
 
 check("file", A:file(a.path).label:match("^image ") ~= nil)
-check("file type", select(2, A:file(app.fs.joinPath(tmp, "x.txt"))) == "Attach a PNG, JPEG, GIF or WebP image")
+check("file type", (select(2, A:file(app.fs.joinPath(tmp, "x.txt"))) or ""):match("^Attach an image file %(png, jpg") ~= nil)
+local gif = app.fs.joinPath(tmp, "anim.gif")
+sprite:saveCopyAs(gif)
+check("gif file", A:file(gif) and A:file(gif).label == "image anim.gif")
+check("aseprite file", select(2, A:file(app.fs.joinPath(tmp, "none.aseprite"))) == "File not found")
+
+check("empty clipboard", select(2, A:clipboard()) == "The clipboard has no image")
+clip = Image(300, 200, ColorMode.INDEXED)
+local c = A:clipboard()
+local ci = c and Image{ fromFile = c.path }
+check("clipboard", c and c.label == "pasted image 300x200" and ci.width == 300, c and c.label or select(2, A:clipboard()))
 
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

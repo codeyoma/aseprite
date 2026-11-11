@@ -2,6 +2,19 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Attach images in any format Aseprite opens, and the clipboard image
+- **How:**
+  - `loadAttachments` (bridge) is now async. It reads each file's header (`sniffImage`: PNG/APNG, JPEG, GIF frame count, WebP VP8/VP8L/VP8X) and sends a still PNG, JPEG, WebP or GIF of 256 to 2048 px as it is.
+  - Everything else goes through `asepriteFrames`: `aseprite -b <file> --sheet --data --format json-array`, cut back into frames in Node. `renderFrames` turns one frame into a PNG (pixel art scaled up nearest to about 512 px, large images box-shrunk to 1280 px) and an animation into a `contactSheet` with frame numbers, ms notes when timing is mixed, and the `filmstripLayout` zoom.
+  - The block's label says what it shows ("animation, 6 frames of 24x24 px (durations ...), shown as a sheet ..."); `chat.send` puts that label into the message text.
+  - The extension offers the same extension list (`Attachments.EXTENSIONS`), a "Paste image from clipboard" menu item and the "Attach Clipboard Image to Chat" command. `agent.lua` reads `app.clipboard.image` (Aseprite asks permission per script file); `attachments.lua` converts an indexed image to RGB and saves it.
+  - `AsepriteAgent.clearAttachments()` was added for tests. The live test is `tests/image_attach_live.mjs`.
+- **Why:**
+  - Providers take only PNG, JPEG, WebP and still GIF, and see only the first frame of an animated GIF. Aseprite itself already decodes every format users have, and gives frame durations, so one decoder path covers them all with no new dependency.
+  - A sheet with numbered frames and times is how the agent already reads animations (the filmstrip), so attached animations read the same way.
+  - Tiny pixel art upscaled matches what panel renders already did (512 px).
+- **Architecture:** the decoder is a `FrameDecoder` parameter, so unit tests inject frames and never need Aseprite; `asepriteBin` is imported lazily from `cli.ts` to keep `attachments.ts` free of the CLI's imports.
+
 ## Low-scoring skills: tool fixes, sizing rules, a fairer judge (#82 follow-up)
 - **How:**
   - `fx_overlay` takes `recipe` as well as `id`. Library-less effects (frost) can now land on the hit frame and extend past the tag; the recipe is stored in the FX record.

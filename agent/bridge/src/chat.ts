@@ -320,16 +320,18 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
     "chat.send": (p: {
       prompt: string; state?: string; changes?: string; context?: string; provider?: string;
       sessions?: Record<string, string>; sessionId?: string; attachments?: (Attachment & { uri?: string })[]; mode?: string;
-    }) => {
+    }) => (async () => {
       if (!p.prompt?.trim()) throw new Error("Empty prompt");
-      const images = loadAttachments(p.attachments);
+      const images = await loadAttachments(p.attachments);
+      // The converted label says what the image shows (size, frames, scale).
+      const attachments = p.attachments?.map((a, i) => ({ ...a, label: images[i]?.label ?? a.label }));
       chat.send({
         prompt: p.prompt, state: p.state ?? (p.context ? `[Context] ${p.context}` : ""), changes: p.changes,
-        attachments: p.attachments, mode: chatMode(p.mode), provider: providerFor(p.provider),
+        attachments, mode: chatMode(p.mode), provider: providerFor(p.provider),
         sessions: p.sessions, sessionId: p.sessionId || undefined,
       }, images);
       return { started: true };
-    },
+    })(),
     "chat.permission": (p: { requestId: string; optionId?: string | null }) => ({
       answered: chat.answerPermission(String(p.requestId), p.optionId ?? null),
     }),

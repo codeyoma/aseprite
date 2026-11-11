@@ -756,6 +756,7 @@ return function(deps)
     Panel.open()
     local a, err
     if type(kind) == "table" then a, err = deps.attachments:file(kind.path)
+    elseif kind == "clipboard" then a, err = deps.attachments:clipboard()
     else a, err = deps.attachments:make(kind) end
     if not a then prompter.tip(err or "Could not attach that"); return false end
     local ok, why = composer:addAttachment(a)
@@ -765,10 +766,11 @@ return function(deps)
   end
 
   function Panel.pendingAttachments() return composer:pendingAttachments() end
+  function Panel.clearAttachments() composer:clearAttachments(); updateAttachments() end
 
   local function pickImageFile()
     local d = Dialog{ title = "Attach image" }
-    d:file{ id = "path", label = "Image", open = true, filetypes = { "png", "jpg", "jpeg", "gif", "webp" } }
+    d:file{ id = "path", label = "Image", open = true, filetypes = deps.attachments.EXTENSIONS }
     d:button{ id = "ok", text = "&Attach", focus = true }
     d:button{ id = "cancel", text = "&Cancel" }
     d:show()
@@ -781,9 +783,10 @@ return function(deps)
     menu:menuItem{ text = "Attach active layer", onclick = function() Panel.attach("layer") end }
     menu:menuItem{ text = "Attach active frame", onclick = function() Panel.attach("frame") end }
     menu:menuItem{ text = "Attach image file...", onclick = pickImageFile }
+    menu:menuItem{ text = "Paste image from clipboard", onclick = function() Panel.attach("clipboard") end }
     if #composer:pendingAttachments() > 0 then
       menu:separator{}
-      menu:menuItem{ text = "Clear attachments", onclick = function() composer:clearAttachments(); updateAttachments() end }
+      menu:menuItem{ text = "Clear attachments", onclick = Panel.clearAttachments }
     end
     menu:showMenu()
   end
