@@ -2,6 +2,15 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Two Aseprite windows no longer fight over the bridge
+- **How:**
+  - A newer Aseprite connection still replaces the older one, but the bridge first sends it `replaced` (protocol.json handshake). The extension then closes without its automatic reconnect and waits until its user uses the agent again.
+  - A reopened socket counts as disconnected until `welcome`, so no request goes out before the hello.
+  - `recordBridge` leaves a pinned `bridge.json` alone, also when the pinned bridge itself starts.
+  - `stable.mjs` finds running stable Aseprites by executable path: `--wait` waits for all of them, and `start` does not open a second one.
+- **Why:** two stable windows (one from `stable.mjs --start`, whose pid file was stale) took the bridge from each other several times a second. Requests sent mid-handshake were rejected as `bad hello (skills.list)`, so the `/` skill picker stayed empty. The pinned bridge also rewrote `bridge.json` without `pinned`.
+- **Architecture:** one Aseprite per bridge stays the rule. The window that last used the agent owns it; the other one is told and waits.
+
 ## Sprite-effects skill: routing to juice, smear, fluid_fx and fx_pipeline
 - **How:** the built-in skill `sprite-effects` picks the tool from the request (a reaction of the art, speed, smoke or fire, a chain of looks), previews first, then applies and checks. `studio` routes game-feel requests to it, and `tests/skills/sprite-effects.eval.mjs` runs its steps on the fake document.
 - **Why:** in the live tests, Codex drew a landing squash and a chimney smoke by hand instead of calling `juice` and `fluid_fx`.

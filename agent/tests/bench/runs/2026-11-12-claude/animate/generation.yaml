@@ -1,0 +1,129 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: "4f5990f4e"
+date: "2026-11-11T15:18:59.125Z"
+seconds: 165
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 11
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 2-7
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 8-11
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 12 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 140
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: rules/animation"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: "Motion stage: keys"
+        status: ok
+      - tool: Walk key poses
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: "Motion stage: advance"
+        status: ok
+      - tool: Walk in-betweens
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: "Motion stage: done"
+        status: ok
+    reply: "I'll keep frame 1 as the base pose and put the walk on frames 2–7. First the timeline:\nKeys pass walk_check; now drawing the two \"down\" in-betweens (frames 3 and 6).\nThe orphan warnings are just the 1 px eye, so I'm leaving them. Running the final walk checks:\nI added a 6-frame walk facing right on frames 2–7, tagged [walk](aseprite://tag/walk). Frame 1 is still the original standing pose.\n\n**Frames**\n- **2, contact:** the near leg is forward with the heel down and the near arm is back.\n- **3, down:** the knees bend and the body drops 1 px lower.\n- **4, passing:** the far foot swings by the knee and the arms hang at the sides.\n- **5–7:** the same three poses with the near and far limbs swapped.\n\n**Timing:** 120 / 100 / 100 / 120 / 100 / 100 ms, 640 ms per loop. The planted foot slides back"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 25
+    header: Claude
+    tools:
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Idle breathing frames
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added a 4-frame idle loop on frames 8–11, tagged [idle](aseprite://tag/idle). The walk on frames 2–7 is unchanged.\n\n**Frames**\n- **8, rest:** standing pose, with the near arm hanging at the side.\n- **9, in-breath:** the head, torso and arm rise 1 px.\n- **10, rest:** back to the standing pose.\n- **11, out-breath:** the head, torso and arm sink 1 px.\n\nThe feet stay planted on the same row; the legs just stretch or shorten by a pixel to stay attached to the hips.\n\n**Timing:** 300 / 150 / 300 / 150 ms, 900 ms per loop. The two rest poses hold longer on purpose; that's why the check warns about uneven frame durations.\n\n**Checks:** no repeated frames next to each other and no foot jitter. Frames 8 and 10 are the same pose, but they never play back to back. The other warnings are the single-pix"
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 57
+  scores:
+    readability: 2
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 1
+  overall: 1.6
+  note: "Clean pixel clusters and opposing arm/leg poses communicate the walk, but limb overlaps become muddy and motion feels stiff. The sheet contains 11 frames instead of the requested 10, and idle breathing spans two pixels."

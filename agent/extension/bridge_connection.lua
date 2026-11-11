@@ -145,6 +145,8 @@ end
 
 local function onReceive(mt, data, err)
   if mt == WebSocketMessageType.OPEN then
+    -- A (re)opened socket is not ready until the bridge welcomes it: requests sent before the hello are rejected.
+    connected = false
     send({ jsonrpc = "2.0", method = "hello", params = {
       token = session.token,
       protocol = PROTOCOL.version,
@@ -161,6 +163,16 @@ local function onReceive(mt, data, err)
       local text = msg.params and msg.params.message or "The bridge speaks a different protocol version."
       app.alert{ title = "AI Agent", text = text }
       startReconnectTimer()
+    elseif msg.method == "replaced" then
+      -- Another Aseprite window took the bridge. Stay off it (no automatic reconnect) until this window uses the
+      -- agent again (ensureBridge reconnects); reconnecting at once would take it back and start a tug of war.
+      if ws then ws:close(); ws = nil end
+      local was = connected
+      connected = false
+      if was then
+        app.tip("AI Agent: another Aseprite window is using the agent")
+        onConnectionChange(false)
+      end
     elseif msg.method == "welcome" then
       connected = true
       app.tip("AI Agent connected")

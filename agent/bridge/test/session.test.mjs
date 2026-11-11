@@ -22,6 +22,8 @@ test("a home pinned to the stable bridge keeps its bridge.json; an unpinned home
   assert.equal(run(home, `console.log(s.homeBelongsToAnother(${JSON.stringify(stable)}))`), "false");
   run(home, `s.recordBridge(${JSON.stringify(dev)}, "d")`);
   assert.equal(JSON.parse(readFileSync(join(home, "bridge.json"), "utf8")).bridgePath, stable, "the pin stays");
+  run(home, `s.recordBridge(${JSON.stringify(stable)}, "s2")`);
+  assert.equal(JSON.parse(readFileSync(join(home, "bridge.json"), "utf8")).pinned, true, "the pinned bridge itself keeps the pin");
 
   const open = mkdtempSync(join(tmpdir(), "agent-home-"));
   writeFileSync(join(open, "bridge.json"), JSON.stringify({ bridgePath: stable, version: "s" }));

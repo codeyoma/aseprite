@@ -83,6 +83,32 @@ test("hello: matching version is welcomed, other versions are told why", async (
   }
 });
 
+test("a second Aseprite takes the bridge; the first is told 'replaced' before it closes", async () => {
+  const link = new AsepriteLink();
+  const port = await link.start(0, { publish: false });
+  const open = async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    const messages = [];
+    ws.on("message", (d) => messages.push(JSON.parse(d.toString())));
+    await new Promise((r) => ws.once("open", r));
+    ws.send(JSON.stringify({ jsonrpc: "2.0", method: "hello", params: { token: link.token, protocol: PROTOCOL.version, asepriteVersion: "test" } }));
+    await new Promise((r) => setTimeout(r, 100));
+    return { ws, messages };
+  };
+  try {
+    const a = await open();
+    const closed = new Promise((r) => a.ws.once("close", (c) => r(c)));
+    const b = await open();
+    assert.equal(await closed, 4000);
+    assert.deepEqual(a.messages.map((m) => m.method), ["welcome", "replaced"]);
+    assert.deepEqual(b.messages.map((m) => m.method), ["welcome"]);
+    assert.ok(PROTOCOL.handshake?.replaced ?? JSON.stringify(PROTOCOL).includes('"replaced"'), "replaced is in protocol.json");
+    b.ws.close();
+  } finally {
+    link.stop();
+  }
+});
+
 test("requests outside the protocol are refused before sending", async () => {
   const link = new AsepriteLink();
   await assert.rejects(link.request("format_disk"), /Not a protocol request/);

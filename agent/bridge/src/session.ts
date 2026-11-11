@@ -53,7 +53,8 @@ export function homeBelongsToAnother(self: string, pinned = pinnedBridge()): boo
 }
 
 export function recordBridge(bridgePath: string, version: string): void {
-  if (homeBelongsToAnother(bridgePath)) return;
+  // A pinned home keeps the file as the installer wrote it, whichever bridge this is (rewriting it would drop the pin).
+  if (pinnedBridge()) return;
   try {
     mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
     writeFileSync(bridgeFile, JSON.stringify({ bridgePath, version }, null, 2) + "\n");

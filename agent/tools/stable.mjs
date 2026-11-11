@@ -103,9 +103,31 @@ export function install() {
   return { installed: p.commit };
 }
 
-/** Starts the stable Aseprite (its default user folder and agent home). */
+/**
+ * Pids of the running stable Aseprite processes, found by executable path (the pid file goes stale when the app is
+ * opened another way). Windows: none (install waits for the program file to unlock instead).
+ */
+export function runningStable() {
+  if (IS_WINDOWS) return [];
+  try {
+    return execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).split("\n").flatMap((line) => {
+      const m = line.trim().match(/^(\d+)\s+(.*)$/);
+      return m && (m[2] === appBin || m[2].startsWith(appBin + " ")) ? [Number(m[1])] : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Starts the stable Aseprite (its default user folder and agent home), unless one is already running. */
 export function start() {
   if (!existsSync(appBin)) throw new Error("The stable Aseprite is not installed: run update first");
+  const running = runningStable();
+  if (running.length) {
+    // A second instance would fight the first for the agent bridge.
+    console.log(`The stable Aseprite is already running (pid ${running.join(", ")}); not starting another.`);
+    return;
+  }
   const env = { ...process.env, ASEPRITE_AGENT_HOME: STABLE.home };
   delete env.ASEPRITE_USER_FOLDER;
   const child = spawn(appBin, [], { detached: true, stdio: "ignore", env });
@@ -206,8 +228,11 @@ if (process.argv[1] && process.argv[1].endsWith("stable.mjs")) {
     else if (cmd === "prepare") console.log(JSON.stringify(prepare(), null, 2));
     else if (cmd === "install" || cmd === "update") {
       if (cmd === "update") prepare();
-      if (wait) await waitFor(wait);
-      else if (rest.includes("--wait") && IS_WINDOWS && existsSync(appBin)) await waitUnlocked(appBin);
+      if (rest.includes("--wait") && !wait && IS_WINDOWS && existsSync(appBin)) await waitUnlocked(appBin);
+      else if (wait || rest.includes("--wait")) {
+        // Every running stable Aseprite, not only the pid file's (it is stale when the app was opened another way).
+        for (const pid of new Set([...(wait ? [wait] : []), ...runningStable()])) await waitFor(pid);
+      }
       if (existsSync(preparedFile)) console.log(JSON.stringify(install(), null, 2));
       if (thenStart) start();
     } else if (cmd === "start") start();

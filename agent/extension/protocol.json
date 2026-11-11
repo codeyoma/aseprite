@@ -4,7 +4,8 @@
   "handshake": {
     "hello": "extension -> bridge, first message: { token, protocol, asepriteVersion }",
     "welcome": "bridge -> extension: the connection is accepted",
-    "incompatible": "bridge -> extension, then close: { expected, received, message }"
+    "incompatible": "bridge -> extension, then close: { expected, received, message }",
+    "replaced": "bridge -> extension, then close: another Aseprite took this bridge; the extension stays disconnected (no automatic reconnect) until the user uses the agent again"
   },
   "requests": {
     "ping": {

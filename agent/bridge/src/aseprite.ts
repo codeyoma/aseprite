@@ -177,8 +177,12 @@ export class AsepriteLink extends EventEmitter {
         }
         authed = true;
         clearTimeout(helloTimer);
-        // A newer Aseprite connection replaces the previous one.
-        if (this.client && this.client !== socket) this.client.close(4000, "replaced");
+        // A newer Aseprite connection replaces the previous one. The old one is told first, so it waits for its user
+        // instead of reconnecting at once (two windows reconnecting in turn would take the bridge from each other forever).
+        if (this.client && this.client !== socket) {
+          try { this.client.send(JSON.stringify({ jsonrpc: "2.0", method: "replaced", params: {} })); } catch { /* closing anyway */ }
+          this.client.close(4000, "replaced");
+        }
         this.client = socket;
         this.asepriteVersion = String(msg.params.asepriteVersion ?? "unknown");
         socket.send(JSON.stringify({ jsonrpc: "2.0", method: "welcome", params: {} }));
