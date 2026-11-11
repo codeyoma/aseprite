@@ -295,7 +295,7 @@ return function(handlers, D)
   -- sprite property aseprite-agent "fx.hits" (get_state's fxHits). Image
   -- frames use the final numbering.
   local IMAGE_KEYS = { width = true, height = true, rgba = true, frame = true, new_layer = true, layer = true,
-                       above = true, x = true, y = true, hide = true, blend_mode = true, opacity = true, locked = true }
+                       above = true, x = true, y = true, hide = true, hide_source = true, blend_mode = true, opacity = true, locked = true }
   local HITS_KEY = "fx.hits"
   -- A pixel spec (#79): JSON text in the sprite property aseprite-agent "concept.spec" (get_state's pixelSpec).
   local SPEC_KEY = "concept.spec"

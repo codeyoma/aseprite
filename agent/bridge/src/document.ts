@@ -162,6 +162,8 @@ export interface PutImagesItem {
   x?: number;
   y?: number;
   hide?: boolean;
+  /** With newLayer and above: hide the above layer (the source the new layer was made from). */
+  hideSource?: boolean;
   blendMode?: string;
   opacity?: number;
   /** Lock the new layer (layer.isEditable = false) after every image is written; the active layer stays (#79). */
@@ -393,7 +395,7 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       const images = items.map((it) => {
         checkSize(it.image, "put_images");
         const im: Record<string, unknown> = { width: it.image.width, height: it.image.height, rgba: encode(it.image), frame: it.frame };
-        const opt = { layer: it.layer, new_layer: it.newLayer, above: it.above, x: it.x, y: it.y, hide: it.hide, blend_mode: it.blendMode, opacity: it.opacity, locked: it.locked };
+        const opt = { layer: it.layer, new_layer: it.newLayer, above: it.above, x: it.x, y: it.y, hide: it.hide, hide_source: it.hideSource, blend_mode: it.blendMode, opacity: it.opacity, locked: it.locked };
         for (const [k, v] of Object.entries(opt)) if (v !== undefined) im[k] = v;
         return im;
       });

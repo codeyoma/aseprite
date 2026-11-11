@@ -24,6 +24,7 @@
     "import_sheet",
     "iso_grid",
     "iso_project",
+    "juice",
     "layers_to_voxels",
     "make_autotile",
     "make_masks",

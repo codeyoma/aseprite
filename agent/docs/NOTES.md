@@ -2,6 +2,15 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Juice and the sprite-effect core (#104)
+- **How:**
+  - `sprite_fx/curves.ts` has Penner's easings, a closed-form damped spring, a decaying bounce and a seeded shake.
+  - `sprite_fx/raster.ts` has the pixel-safe warp (inverse map over an 8x Scale2x upscale) and the hit flash.
+  - `sprite_fx/juice.ts` turns an effect into one warp per frame. `juice_tools.ts` reads the layer, warps, and writes through `sprite_fx/write.ts`.
+  - `put_images` items accept `hide_source` (protocol v36), so the copy layer and the hidden source land in one request.
+- **Why:** the user bought CodeManu's FX tools and asked for the same kinds of effects built in, from public algorithms (research in `docs/fx-algorithms-research.md`). Juice comes first because smears and pipelines reuse its core.
+- **Architecture:** every sprite effect writes a copy layer with the source hidden. Frames the effect does not touch hold a copy of the source, so hiding it changes nothing else. Scale2x copies existing pixels only, so transforms never add colors. RotSprite and Scale2x reference code is AGPL/GPL, so both are reimplemented from their descriptions.
+
 ## Character motions, ask_user, later layered rounds, image cards in the chat
 - **How:**
   - `generate_character` writes later rounds into the character's group. It stores the character in the pixel spec (`characters.<name>`: reference layer, palette, layers, base frame, master sheets). A later round finds the existing part layers by name inside `AI: <name>` and writes into them. It reuses the reference layer and palette, sends the base pose and the last master along as references, and adds only the new layers.

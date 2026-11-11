@@ -527,6 +527,31 @@
     ]
   },
   {
+    "name": "juice",
+    "title": "Juice",
+    "kind": "edit",
+    "label": "Juice: ",
+    "input": [
+      "amount",
+      "bounces",
+      "color",
+      "cycles",
+      "damping",
+      "duration_ms",
+      "ease",
+      "effect",
+      "frame",
+      "frames",
+      "layer",
+      "over",
+      "pivot",
+      "preview",
+      "px",
+      "seed",
+      "turns"
+    ]
+  },
+  {
     "name": "layers_to_voxels",
     "title": "Layers to isometric object",
     "kind": "edit",

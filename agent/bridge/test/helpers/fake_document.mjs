@@ -43,7 +43,7 @@ const BLEND_MODES = new Set(["normal", "multiply", "screen", "overlay", "darken"
 /** put_images item keys (handlers_sprite.lua IMAGE_KEYS). */
 /** read_pixels keys for colors in order of first use (document_handlers.lua KEY_CHARS). */
 const KEY_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-const IMAGE_KEYS = new Set(["width", "height", "rgba", "frame", "new_layer", "layer", "above", "x", "y", "hide", "blend_mode", "opacity", "locked"]);
+const IMAGE_KEYS = new Set(["width", "height", "rgba", "frame", "new_layer", "layer", "above", "x", "y", "hide", "hide_source", "blend_mode", "opacity", "locked"]);
 
 // Aseprite's normal blend (doc/blend_funcs.cpp rgba_blender_normal) at full opacity, as drawSprite composites layers.
 const mul = (a, b) => { const t = a * b + 0x80; return ((t >> 8) + t) >> 8; };
