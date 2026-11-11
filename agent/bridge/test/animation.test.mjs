@@ -1,5 +1,7 @@
 // Animation helpers (#42): RotSprite transforms, arcs, squash and stretch, smears.
 import { test } from "node:test";
+import { judgeCycle } from "../dist/walk_check.js";
+
 import assert from "node:assert/strict";
 import { along, bounds, ease, scale2x, smear, squashStretch, transform } from "../dist/animation.js";
 import { findTool, runTool } from "../dist/tools.js";
@@ -351,4 +353,15 @@ test("motion_stage advance: refuses an empty key; moves on when the walk checks 
   assert.equal(a.isError, undefined, a.content[0].text);
   assert.match(a.content[0].text, /Motion stage "inbetweens"/);
   assert.match((await runTool(findTool("motion_stage"), { action: "done" }, idle)).content[0].text, /done for "idle"/);
+});
+
+test("judgeCycle: a walk needs a bob that is low on the contacts, and near limbs that keep their size", () => {
+  const flat = [1, 2, 3, 4, 5, 6].map((frame) => ({ frame, top: 4, arm: 10, leg: 12 }));
+  assert.match(judgeCycle(flat, [1, 4]).errors.join(" "), /no bob/);
+  const wrong = flat.map((c) => ({ ...c, top: c.frame === 1 || c.frame === 4 ? 3 : 4 }));
+  assert.match(judgeCycle(wrong, [1, 4]).errors.join(" "), /highest on the contact frames 1, 4/);
+  const good = flat.map((c) => ({ ...c, top: c.frame === 3 || c.frame === 6 ? 3 : 4 }));
+  assert.deepEqual(judgeCycle(good, [1, 4]).errors, []);
+  const redrawn = good.map((c) => ({ ...c, leg: c.frame === 2 ? 25 : 12 }));
+  assert.match(judgeCycle(redrawn, [1, 4]).errors.join(" "), /near leg changes size .*12 px in frame 1, 25 px in frame 2/);
 });

@@ -170,6 +170,50 @@ export function judgeWalk(contacts: ContactReading[]): WalkVerdict {
   return { status: errors.length ? "errors" : unverifiable.length ? "unverifiable" : "ok", errors, unverifiable };
 }
 
+/** One frame of the cycle: the figure's top row (head) and the near limbs' sizes in px. */
+export interface CycleReading {
+  frame: number;
+  top?: number;
+  arm: number;
+  leg: number;
+}
+
+/** A near limb may grow or shrink by at most this factor across the cycle (foreshortening, bends) before it reads as redrawn. */
+export const MAX_LIMB_RATIO = 1.6;
+
+/**
+ * Weight and consistency over the whole cycle: the body must bob (the head's top row moves by at least 1 px, highest
+ * away from the contacts, where the weight lands), and each near limb keeps about the same size in every frame.
+ */
+export function judgeCycle(cycle: CycleReading[], contacts: number[]): { errors: string[] } {
+  const errors: string[] = [];
+  const tops = cycle.filter((c) => c.top !== undefined) as (CycleReading & { top: number })[];
+  if (tops.length >= 4) {
+    const hi = Math.min(...tops.map((c) => c.top)), lo = Math.max(...tops.map((c) => c.top));
+    if (hi === lo) {
+      errors.push(`no bob: the head's top stays on row ${hi} in every frame, so the walk has no weight; lower the body ` +
+        `1 px on the contacts and the frame after them, and raise it 1 px on the passing poses`);
+    } else {
+      const highest = tops.filter((c) => c.top === hi).map((c) => c.frame);
+      if (highest.every((f) => contacts.includes(f))) {
+        errors.push(`the body is highest on the contact frame${highest.length > 1 ? "s" : ""} ${highest.join(", ")}; ` +
+          `the weight lands there, so contacts sit low and the passing poses high`);
+      }
+    }
+  }
+  for (const [name, key] of [["near arm", "arm"], ["near leg", "leg"]] as const) {
+    const sizes = cycle.map((c) => c[key]).filter((n) => n > 0);
+    if (sizes.length < 2) continue;
+    const min = Math.min(...sizes), max = Math.max(...sizes);
+    if (max / min > MAX_LIMB_RATIO) {
+      const at = (n: number) => cycle.find((c) => c[key] === n)!.frame;
+      errors.push(`the ${name} changes size across the cycle (${min} px in frame ${at(min)}, ${max} px in frame ${at(max)}); ` +
+        `keep its length and thickness and move or rotate it instead of redrawing it`);
+    }
+  }
+  return { errors };
+}
+
 export interface WalkInput {
   tag?: string;
   facing?: "right" | "left";
@@ -181,6 +225,8 @@ export interface WalkInput {
 export interface WalkMeasure {
   contract: WalkContract;
   readings: ContactReading[];
+  /** Every frame of the tag: head row and near limb sizes (judgeCycle). */
+  cycle: CycleReading[];
   verdict: WalkVerdict;
   /** The pixel spec with this contract in it, when it differs from the stored one (to store). */
   newSpec?: string;
@@ -228,6 +274,20 @@ export async function measureWalk(doc: Document, input: WalkInput): Promise<Walk
       legLight: legLightness(whole, fromTop(legMask, legImg.width)),
     });
   }
+  const cycle: CycleReading[] = [];
+  for (let frame = tag.from; frame <= tag.to; frame++) {
+    const whole = await doc.pixels(undefined, frame);
+    let top: number | undefined;
+    for (let i = 3; i < whole.data.length; i += 4) if (whole.data[i] >= 128) { top = Math.floor((i - 3) / 4 / whole.width); break; }
+    const size = async (l: LimbSelector) => {
+      const img = l.layer ? await doc.pixels(l.layer, frame) : whole;
+      return fromTop(limbMask(img, l), img.width).filter(Boolean).length;
+    };
+    cycle.push({ frame, top, arm: await size(contract.nearArm), leg: await size(contract.nearLeg) });
+  }
+  const verdict = judgeWalk(readings);
+  const more = judgeCycle(cycle, contract.contacts).errors;
+  if (more.length) { verdict.errors.push(...more); verdict.status = "errors"; }
   const changed = JSON.stringify(spec.walk) !== JSON.stringify(contract);
-  return { contract, readings, verdict: judgeWalk(readings), ...(changed ? { newSpec: JSON.stringify({ ...spec, walk: contract }) } : {}) };
+  return { contract, readings, cycle, verdict, ...(changed ? { newSpec: JSON.stringify({ ...spec, walk: contract }) } : {}) };
 }

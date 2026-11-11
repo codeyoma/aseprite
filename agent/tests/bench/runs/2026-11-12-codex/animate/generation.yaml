@@ -1,0 +1,191 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: codex
+model: null
+commit: "825db5b06"
+date: "2026-11-11T15:25:23.135Z"
+seconds: 734
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Codex · animate"
+      - Codex
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 11
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 2-7
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 8-11
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 12 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 531
+    header: "Codex · animate"
+    tools:
+      - tool: "Read guide: rules/animation"
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Read the timeline
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: "Read guide: character-motions"
+        status: ok
+      - tool: "Read guide: concept"
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: "Motion stage: keys"
+        status: ok
+      - tool: Generate a layered character
+        status: failed
+      - tool: "Read guide: pixel-art"
+        status: ok
+      - tool: Block walk contact and passing silhouettes
+        status: ok
+      - tool: Color walk keys on separate body-part layers
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: failed
+      - tool: "Check the walk's arms and legs"
+        status: failed
+      - tool: Strengthen far-limb shadows for readable depth
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: failed
+      - tool: "Motion stage: advance"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Add down poses from key pixel grids and preserve base reference
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Look at the onion skin
+        status: ok
+      - tool: Look at the onion skin
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: "Read guide: review"
+        status: ok
+      - tool: Keep planted feet moving back three pixels each pose
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: "Motion stage: done"
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+    reply: "I’m following the animate skill to build a six-frame right-facing walk, keeping the original pose as the reference and checking the arm–leg opposition.\nThe reference has feet on row 30 and hips at row 21. I’ll keep it on frame 1 and put the six walk poses on frames 2–7, using separate torso, head, eyes, and near/far limb layers.\nI’ll draw the key poses directly in Aseprite, then add the down poses after checking them.\n\nAutomatic approval review rejected the image generator because it would send the sprite reference to an unspecified external service. Drawing locally lets me continue without that transfer.\nThe colored keys pass `walk_check`: the near arm swings opposite the near leg at both contacts. I darkened the far limbs to make that pairing clearer; next are the two down poses and the "
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 203
+    header: Codex
+    tools:
+      - tool: "Read guide: anim.timing.idle"
+        status: ok
+      - tool: Read the timeline
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Record walk pixels and timing before appending idle
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: "Motion stage: keys"
+        status: ok
+      - tool: Append four planted idle poses with one-pixel breathing
+        status: ok
+      - tool: "Motion stage: done"
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Look at the onion skin
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I’ll append four idle poses with a one-pixel breathing bob, keeping the feet planted and the walk unchanged.\nAdded [idle](aseprite://tag/idle) on frames 8–11: rest, rise 1 px, settle, lower 1 px, timed **300/150/300/150 ms**. Feet stay planted and the walk is unchanged; checks pass with intentional eye and rest-hold warnings."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: claude
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 16
+  scores:
+    readability: 1
+    form: 0
+    palette: 1
+    motion: 1
+    fit: 2
+  overall: 1
+  note: "Strength: the structure fits the request, with a 6-frame walk followed by a 4-frame idle that has a small bob and a shaded arm added. Weakness: the walk poses are tangled and look wrong; the legs loop into knots, the diagonal arm strokes run across the torso, and the bob seems to move more than one pixel, so the motion does not read as a clean stride or a subtle breath."
