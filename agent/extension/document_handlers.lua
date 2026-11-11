@@ -714,10 +714,16 @@ function M.new(opts)
   -- Areas: handler groups in their own files, registered into `handlers`
   -------------------------------------------------------------------------
 
+  -- The binary frame of the request being answered (#95), for D.bytes.
+  local blob
   local D = {
+    -- A bytes param's bytes (base64 or a slice of the request's binary frame).
+    bytes = function(v) return wireParams.bytes(v, blob, px.base64Decode) end,
     px = px, view = view, layerById = layerById, variations = variations, wireParams = wireParams,
     framesFromParam = framesFromParam, imageLayers = imageLayers,
     writePalette = opts.writePalette or function() error("Saving palettes needs agent.lua (opts.writePalette)") end,
+    -- check's pixel rules: nil uses the fork's native Image helpers when present (#95), false the Lua walk.
+    nativeCheck = nil,
   }
   loadModule("handlers_check.lua")(handlers, D)
   loadModule("handlers_color.lua")(handlers, D)
@@ -777,6 +783,8 @@ function M.new(opts)
     stateBlock = view.stateBlock,
     layerById = layerById,
     check = handlers.check,
+    -- Tests: false makes check walk pixels in Lua even where the native helpers exist (#95); nil restores.
+    setNativeCheck = function(on) D.nativeCheck = on end,
     Uri = view.Uri,
     variations = function() return variations end,
     agentCursor = function() return agentCursor end,
@@ -785,7 +793,21 @@ function M.new(opts)
   -- Answers one protocol request. Errors propagate to the caller.
   -- Wrappers, outermost first: scope guard, step capture, quiet alerts,
   -- the handler (whose own app.transaction makes one undo step).
-  function H.call(method, params)
+  -- bytes: the request's binary frame (#95), which { offset, length } params refer to.
+  -- No pcall around it, so errors keep their traceback; every call sets blob
+  -- anew, so one left after an error is never read by a later request.
+  local call
+  local function restore(outer, ...)
+    blob = outer
+    return ...
+  end
+  function H.call(method, params, bytes)
+    local outer = blob
+    blob = bytes
+    return restore(outer, call(method, params))
+  end
+
+  call = function(method, params)
     local handler = handlers[method]
     local spec = PROTOCOL.requests[method]
     if not handler or not spec then

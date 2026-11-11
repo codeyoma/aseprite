@@ -46,6 +46,7 @@
 #include <algorithm>
 #include <cstring>
 #include <memory>
+#include <unordered_map>
 
 namespace app { namespace script {
 
@@ -738,6 +739,102 @@ int Image_get_cel(lua_State* L)
   return 1;
 }
 
+// Raw pixel value at (x, y), any pixel format (aseprite-agent helpers, #95).
+inline doc::color_t raw_pixel(const doc::Image* img, int x, int y)
+{
+  const uint8_t* p = img->getPixelAddress(x, y);
+  switch (img->pixelFormat()) {
+    case doc::IMAGE_RGB:
+    case doc::IMAGE_TILEMAP:   return *(const uint32_t*)p;
+    case doc::IMAGE_GRAYSCALE: return *(const uint16_t*)p;
+    default:                   return *p;
+  }
+}
+
+// Whether a raw pixel value draws nothing: alpha 0 (RGB, grayscale), the
+// mask index (indexed), the empty tile (tilemap).
+inline bool raw_transparent(const doc::Image* img, doc::color_t c)
+{
+  switch (img->pixelFormat()) {
+    case doc::IMAGE_RGB:       return doc::rgba_geta(c) == 0;
+    case doc::IMAGE_GRAYSCALE: return doc::graya_geta(c) == 0;
+    case doc::IMAGE_INDEXED:   return c == img->maskColor();
+    default:                   return c == doc::notile;
+  }
+}
+
+// Image:histogram() -> { [pixel value] = count } over every pixel (the raw
+// values getPixel returns, transparent ones included). Fork-only
+// (aseprite-agent #95): the agent's check counts colors with it instead of a
+// per-pixel walk in Lua.
+int Image_histogram(lua_State* L)
+{
+  const auto obj = get_obj<ImageObj>(L, 1);
+  const doc::Image* img = obj->image(L);
+  if (img->pixelFormat() == doc::IMAGE_BITMAP)
+    return luaL_error(L, "histogram does not support bitmap images");
+  std::unordered_map<doc::color_t, lua_Integer> counts;
+  const int w = img->width(), h = img->height();
+  for (int y = 0; y < h; ++y)
+    for (int x = 0; x < w; ++x)
+      ++counts[raw_pixel(img, x, y)];
+  lua_createtable(L, 0, int(counts.size()));
+  for (const auto& kv : counts) {
+    lua_pushinteger(L, kv.second);
+    lua_rawseti(L, -2, lua_Integer(kv.first));
+  }
+  return 1;
+}
+
+// Image:isolatedPixels([limit]) -> count, { { x, y }, ... }: the pixels that
+// draw something and have no 8-neighbor of the same raw value (orphan
+// pixels), counted, with the first `limit` (default all) listed row by row.
+// Fork-only (aseprite-agent #95), for the agent's orphan rule.
+int Image_isolatedPixels(lua_State* L)
+{
+  const auto obj = get_obj<ImageObj>(L, 1);
+  const doc::Image* img = obj->image(L);
+  if (img->pixelFormat() == doc::IMAGE_BITMAP)
+    return luaL_error(L, "isolatedPixels does not support bitmap images");
+  const lua_Integer limit = (lua_isnoneornil(L, 2) ? LUA_MAXINTEGER : luaL_checkinteger(L, 2));
+  const int w = img->width(), h = img->height();
+  lua_Integer count = 0;
+  lua_newtable(L);
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const doc::color_t c = raw_pixel(img, x, y);
+      if (raw_transparent(img, c))
+        continue;
+      bool lonely = true;
+      for (int dy = -1; dy <= 1 && lonely; ++dy) {
+        const int ny = y + dy;
+        if (ny < 0 || ny >= h)
+          continue;
+        for (int dx = -1; dx <= 1; ++dx) {
+          const int nx = x + dx;
+          if ((dx || dy) && nx >= 0 && nx < w && raw_pixel(img, nx, ny) == c) {
+            lonely = false;
+            break;
+          }
+        }
+      }
+      if (!lonely)
+        continue;
+      if (++count <= limit) {
+        lua_createtable(L, 2, 0);
+        lua_pushinteger(L, x);
+        lua_rawseti(L, -2, 1);
+        lua_pushinteger(L, y);
+        lua_rawseti(L, -2, 2);
+        lua_rawseti(L, -2, count);
+      }
+    }
+  }
+  lua_pushinteger(L, count);
+  lua_insert(L, -2);
+  return 2;
+}
+
 int Image_get_context(lua_State* L)
 {
 #if LAF_SKIA
@@ -774,6 +871,8 @@ const luaL_Reg Image_methods[] = {
   { "resize",       Image_resize       },
   { "shrinkBounds", Image_shrinkBounds },
   { "flip",         Image_flip         },
+  { "histogram",      Image_histogram      },
+  { "isolatedPixels", Image_isolatedPixels },
   { "__gc",         Image_gc           },
   { "__eq",         Image_eq           },
   { nullptr,        nullptr            }

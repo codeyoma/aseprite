@@ -265,7 +265,12 @@ const fxWire = (f: FxInfo) => ({
   ...(f.recipe !== undefined ? { recipe: f.recipe } : {}), ...(f.render !== undefined ? { render: f.render } : {}),
 });
 
-const encode = (img: Rgba) => Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength).toString("base64");
+/**
+ * Pixels for a "bytes" param (#95): the raw bytes. The transport sends them as a binary frame (AsepriteLink) or
+ * as base64 (the Headless runner), so nothing here encodes.
+ */
+const encode = (img: Rgba): Uint8Array =>
+  img.data instanceof Uint8Array ? img.data : new Uint8Array((img.data as ArrayBufferView).buffer, (img.data as ArrayBufferView).byteOffset, (img.data as ArrayBufferView).byteLength);
 
 function checkSize(img: Rgba, what: string): void {
   if (img.data.length !== img.width * img.height * 4) {

@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import type { Reply } from "./aseprite.js";
-import { checkParams, isRequest, PROTOCOL } from "./protocol.js";
+import { base64Bytes, checkParams, isRequest, PROTOCOL } from "./protocol.js";
 import { sessionFile } from "./session.js";
 
 /** Starts every reply line, so stray lines Aseprite prints are never read as replies. */
@@ -182,7 +182,8 @@ export class HeadlessLink {
         reject(new Error(`The headless Aseprite did not answer ${method} within ${timeoutMs / 1000}s`));
       }, timeoutMs);
       this.pending.set(id, { method, resolve, reject, timer });
-      this.child!.stdin.write(encodeRequest({ id, method, params }));
+      // JSON lines carry no binary frames: raw bytes go as base64 (#95).
+      this.child!.stdin.write(encodeRequest({ id, method, params: base64Bytes(params) }));
     });
   }
 

@@ -13,6 +13,103 @@ return function(handlers, D)
   local CHECK_MAX_OFF_PALETTE = 32       -- off-palette colors with a finding each (#91)
   local CHECK_PIXEL_BUDGET = 1000000     -- skip pixel rules on huge documents
 
+  -- Native pixel helpers (#95): this fork's Image:histogram() and
+  -- Image:isolatedPixels(). Stock Aseprite lacks them; then check walks
+  -- every pixel in Lua. D.nativeCheck = false forces the Lua walk (tests).
+  local NATIVE = (function()
+    local ok, has = pcall(function()
+      local probe = Image(1, 1, ColorMode.RGB)
+      return probe.histogram ~= nil and probe.isolatedPixels ~= nil
+    end)
+    return ok and has
+  end)()
+
+  -- The first `max` positions (sprite coordinates, row by row) of pixels
+  -- whose raw RGBA value is one of `values`, found in the image's bytes:
+  -- a plain string.find per value, or for many values (a gradient of
+  -- semi-transparent colors) one walk that stops at the max-th match.
+  local FIND_VALUES_MAX = 16
+  local function positionsOf(img, bytes, ox, oy, values, max)
+    local stride, w = img.rowStride, img.width
+    if #values > FIND_VALUES_MAX then
+      local want, out = {}, {}
+      for _, v in ipairs(values) do want[v] = true end
+      for y = 0, img.height - 1 do
+        local row = y * stride
+        for x = 0, w - 1 do
+          if want[string.unpack("<I4", bytes, row + x * 4 + 1)] then
+            out[#out + 1] = { x + ox, y + oy }
+            if #out >= max then return out end
+          end
+        end
+      end
+      return out
+    end
+    local found = {}
+    for _, v in ipairs(values) do
+      local pat, init, n = string.pack("<I4", v), 1, 0
+      while n < max do
+        local i = string.find(bytes, pat, init, true)
+        if not i then break end
+        local off = i - 1
+        if off % 4 == 0 and (off % stride) // 4 < w then
+          found[#found + 1] = off
+          n = n + 1
+          init = i + 4
+        else
+          init = i + 1
+        end
+      end
+    end
+    table.sort(found)
+    local out = {}
+    for k = 1, math.min(#found, max) do
+      local off = found[k]
+      out[k] = { (off % stride) // 4 + ox, off // stride + oy }
+    end
+    return out
+  end
+
+  -- The pixel rules' data for one cel through the native helpers: the same
+  -- tables the Lua walk below builds (off-palette colors without pixels yet,
+  -- semi-transparent, orphans), so both paths give the same findings.
+  local function nativePixels(cel, palette, enabled, offPaletteOn, inPalette)
+    local l = cel.layer
+    local img = px.toRgbImage(cel.image, palette, l.isTilemap and l.tileset or nil)
+    local ox, oy = cel.position.x, cel.position.y
+    local offPalette, semiValues, semiCount = {}, {}, 0
+    for v, count in pairs(img:histogram()) do
+      local a = (v >> 24) & 0xFF
+      if a > 0 then
+        local rgb = v & 0xFFFFFF
+        if a < 255 then semiCount = semiCount + count; semiValues[#semiValues + 1] = v end
+        if offPaletteOn and not inPalette[rgb] then
+          local o = offPalette[rgb]
+          if not o then o = { count = 0, r = rgb & 0xFF, g = (rgb >> 8) & 0xFF, b = (rgb >> 16) & 0xFF, values = {} }; offPalette[rgb] = o end
+          o.count = o.count + count
+          o.values[#o.values + 1] = v
+        end
+      end
+    end
+    local bytes   -- read once, on first use
+    local function find(values)
+      bytes = bytes or img.bytes
+      return positionsOf(img, bytes, ox, oy, values, CHECK_MAX_PIXELS)
+    end
+    local semi = { count = 0, pixels = {} }
+    if enabled["semi-transparent"] and semiCount > 0 then
+      semi = { count = semiCount, pixels = find(semiValues) }
+    end
+    local orphans
+    if enabled["orphan"] then
+      local count, list = img:isolatedPixels(CHECK_MAX_PIXELS)
+      for _, p in ipairs(list) do p[1] = p[1] + ox; p[2] = p[2] + oy end
+      orphans = { count = count, pixels = list }
+    end
+    local function pixelsOf(o) return find(o.values) end
+    return offPalette, semi, orphans, pixelsOf
+  end
+
   -- Palette entries as { index, r, g, b } (opaque entries only).
   local function paletteEntries(palette)
     local out = {}
@@ -233,13 +330,21 @@ return function(handlers, D)
       for _, f in ipairs(frames) do
         local cel = layer:cel(f)
         if cel and pixelRulesHere then
-          local offPalette = {}   -- hex -> { pixels, count, r, g, b }
+          local offPaletteOn = enabled["off-palette"] and sprite.colorMode == ColorMode.RGB and #entries > 0
+          local native = D.nativeCheck
+          if native == nil then native = NATIVE end
+          local offPalette = {}   -- packed rgb -> { pixels, count, r, g, b }
           local semi = { pixels = {}, count = 0 }
+          local orphanResult     -- { count, pixels }, from the native helper
+          local pixelsOf         -- native: the pixels of an off-palette color, on demand
           -- The orphan rule's grid: packed RGBA by position (x and y kept
           -- non-negative with an offset, so one integer is the key).
           local color = {}
           local OFF = 1 << 15
           local function key(x, y) return (y + OFF) * (1 << 17) + (x + OFF) end
+          if native then
+            offPalette, semi, orphanResult, pixelsOf = nativePixels(cel, palette, enabled, offPaletteOn, inPalette)
+          else
           px.eachPixel(cel, palette, function(x, y, r, g, b, a)
             if a == 0 then return end
             local rgb = r | (g << 8) | (b << 16)
@@ -248,7 +353,7 @@ return function(handlers, D)
               semi.count = semi.count + 1
               if #semi.pixels < CHECK_MAX_PIXELS then semi.pixels[#semi.pixels + 1] = { x, y } end
             end
-            if enabled["off-palette"] and sprite.colorMode == ColorMode.RGB and #entries > 0 then
+            if offPaletteOn then
               if not inPalette[rgb] then
                 local o = offPalette[rgb]
                 if not o then o = { pixels = {}, count = 0, r = r, g = g, b = b }; offPalette[rgb] = o end
@@ -257,6 +362,7 @@ return function(handlers, D)
               end
             end
           end)
+          end
 
           -- The most used off-palette colors get a finding each (with the
           -- nearest palette entry); the rest are summed up in one (#91).
@@ -265,6 +371,7 @@ return function(handlers, D)
           table.sort(offList, function(a, b) if a.count ~= b.count then return a.count > b.count end return a.hex < b.hex end)
           for i = 1, math.min(#offList, CHECK_MAX_OFF_PALETTE) do
             local o = offList[i]
+            if pixelsOf then o.pixels = pixelsOf(o) end
             local e = nearestEntry(entries, o.r, o.g, o.b)
             add{ rule = "off-palette", severity = "error", layer = layer.name, layerId = layerId(layer), frame = f,
                  color = o.hex, count = o.count, pixels = o.pixels,
@@ -284,7 +391,13 @@ return function(handlers, D)
                  fix = "Make these pixels fully opaque or fully transparent (alpha 255 or 0); use layer opacity for see-through effects" }
           end
 
-          if enabled["orphan"] and sprite.width * sprite.height > 1 then
+          if enabled["orphan"] and sprite.width * sprite.height > 1 and orphanResult then
+            if orphanResult.count > 0 then
+              add{ rule = "orphan", severity = "warning", layer = layer.name, layerId = layerId(layer), frame = f,
+                   count = orphanResult.count, pixels = orphanResult.pixels,
+                   fix = "Single pixels with no same-colored neighbor read as noise; remove them or connect them, unless they are deliberate highlights" }
+            end
+          elseif enabled["orphan"] and sprite.width * sprite.height > 1 then
             local orphans, count = {}, 0
             local keys = {}
             for k in pairs(color) do keys[#keys + 1] = k end

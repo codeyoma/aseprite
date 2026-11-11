@@ -48,6 +48,26 @@ function M.resolveFrames(spec, count, active, default)
   return out
 end
 
+-- A bytes param (protocol.json binaryRequests): base64 text or { offset, length }.
+function M.isBytes(v)
+  if type(v) == "string" then return true end
+  if type(v) ~= "table" then return false end
+  for k in pairs(v) do if k ~= "offset" and k ~= "length" then return false end end
+  return math.type(v.offset) == "integer" and math.type(v.length) == "integer" and v.offset >= 0 and v.length >= 0
+end
+
+-- The bytes of a bytes param: base64 text decoded, or a slice of blob (the
+-- request's binary frame). decode is pixels.lua base64Decode.
+function M.bytes(v, blob, decode)
+  if type(v) == "string" then return decode(v) end
+  if not M.isBytes(v) then error("Expected pixel bytes (base64 text or { offset, length })") end
+  if not blob then error("The request refers to a binary frame it did not carry") end
+  if v.offset + v.length > #blob then
+    error(string.format("Bytes %d-%d are past the end of the binary frame (%d bytes)", v.offset, v.offset + v.length, #blob))
+  end
+  return blob:sub(v.offset + 1, v.offset + v.length)
+end
+
 local CHECK = {
   string = function(v) return type(v) == "string" end,
   integer = function(v) return type(v) == "number" and v % 1 == 0 end,
@@ -59,6 +79,8 @@ local CHECK = {
   layer = function(v) return type(v) == "string" or type(v) == "number" end,
   frame = function(v) return type(v) == "number" and v % 1 == 0 end,
   frames = function(v) return type(v) == "number" or type(v) == "string" or isList(v) end,
+  -- Pixel bytes (#95): base64 text, or { offset, length } into the request's binary frame.
+  bytes = function(v) return M.isBytes(v) end,
 }
 
 -- "frames?all" -> "frames", true, "all"

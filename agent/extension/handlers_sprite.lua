@@ -7,6 +7,7 @@
 
 return function(handlers, D)
   local px, layerById, variations = D.px, D.layerById, D.variations
+  local rgbaBytes = D.bytes
   local framesFromParam = D.framesFromParam
 
   -- An effect record for export (#71): params.fx = { layer?, id, x, y, fps, loop, windup_ms }, checked before
@@ -36,10 +37,10 @@ return function(handlers, D)
     return { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windup_ms, recipe = fx.recipe, render = fx.render }
   end
 
-  -- A new RGB sprite from RGBA bytes (base64), with an optional palette.
+  -- A new RGB sprite from RGBA bytes (a bytes param, #95), with an optional palette.
   handlers.create_sprite = function(params)
     local w, h = params.width, params.height
-    local bytes = px.base64Decode(params.rgba or "")
+    local bytes = rgbaBytes(params.rgba or "")
     if #bytes ~= w * h * 4 then error(string.format("Expected %d bytes, got %d", w * h * 4, #bytes)) end
     local sprite = Sprite(w, h, ColorMode.RGB)
     local img = Image(w, h, ColorMode.RGB)
@@ -55,7 +56,7 @@ return function(handlers, D)
     return { width = w, height = h, title = app.fs.fileTitle(sprite.filename) }
   end
 
-  -- A new animated RGB sprite: frames of RGBA bytes (base64) with durations
+  -- A new animated RGB sprite: frames of RGBA bytes (bytes params) with durations
   -- (ms) and tags (1-based frames), e.g. from import_sheet. params.fx (no
   -- layer) records an effect on its layer (new_fx_sprite, #71).
   handlers.create_animation = function(params)
@@ -66,7 +67,7 @@ return function(handlers, D)
     -- Everything is checked before the sprite is made, so an error leaves no sprite open.
     local images = {}
     for i, f in ipairs(frames) do
-      local bytes = px.base64Decode(f.rgba or "")
+      local bytes = rgbaBytes(f.rgba or "")
       if #bytes ~= w * h * 4 then error(string.format("Frame %d: expected %d bytes, got %d", i, w * h * 4, #bytes)) end
       images[i] = bytes
     end
@@ -257,13 +258,13 @@ return function(handlers, D)
     return target
   end
 
-  -- Writes RGBA pixels (base64, canvas-sized at x, y) into a frame of a layer
+  -- Writes RGBA pixels (a bytes param, canvas-sized at x, y) into a frame of a layer
   -- (#39): see putOne. hide_source hides the layer it was made from;
   -- blend_mode and opacity set up a new layer (#69). One undo step.
   handlers.put_image = function(params)
     local sprite = app.sprite
     local w, h = params.width, params.height
-    local bytes = px.base64Decode(params.rgba or "")
+    local bytes = rgbaBytes(params.rgba or "")
     if #bytes ~= w * h * 4 then error(string.format("Expected %d bytes, got %d", w * h * 4, #bytes)) end
     local mode, opacity = layerLook(params, "")
     local frame = params.frame or (app.frame and app.frame.frameNumber) or 1
@@ -419,14 +420,14 @@ return function(handlers, D)
       for k in pairs(im) do
         if not IMAGE_KEYS[k] then error(what .. "unknown param '" .. tostring(k) .. "'") end
       end
-      if math.type(im.width) ~= "integer" or math.type(im.height) ~= "integer" or type(im.rgba) ~= "string" then
+      if math.type(im.width) ~= "integer" or math.type(im.height) ~= "integer" or not D.wireParams.isBytes(im.rgba) then
         error(what .. "width, height and rgba are required")
       end
       if math.type(im.frame) ~= "integer" then error(what .. "frame is required") end
       if im.frame < 1 or im.frame > count then
         error(string.format("%sframe %d is out of range (1-%d)", what, im.frame, count))
       end
-      local bytes = px.base64Decode(im.rgba)
+      local bytes = rgbaBytes(im.rgba)
       if #bytes ~= im.width * im.height * 4 then
         error(string.format("%sexpected %d bytes, got %d", what, im.width * im.height * 4, #bytes))
       end
@@ -635,7 +636,7 @@ return function(handlers, D)
     local t, cols, count, map = params.tile, params.columns, params.count, params.map
     local rows, mapW = #map, #map[1]
     local set = Image(params.width, params.height, ColorMode.RGB)
-    local bytes = px.base64Decode(params.rgba)
+    local bytes = rgbaBytes(params.rgba)
     if #bytes ~= params.width * params.height * 4 then error("Expected " .. params.width * params.height * 4 .. " bytes, got " .. #bytes) end
     set.bytes = bytes
     local sprite = Sprite(mapW * t, rows * t, ColorMode.RGB)
