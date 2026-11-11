@@ -154,8 +154,11 @@ Every command takes `--json`. Failures print `✗ <problem>` and `Fix: <what to 
 
 ## Tools
 
+An agent connected over MCP sees 15 tools by default: the core set (`get_state`, `get_context`, `apply`, `execute_lua`, `snapshot`, `check`, `read_pixels`, `write_pixels`, `undo`, `redo`, `read_guide`, `ask_user`, `propose_variations`) plus two meta tools: find_tools (searches the other tools, or gives exact tools' full input schemas) and call_tool (runs any tool by name, its input checked against the tool's schema). Every tool below stays callable through `call_tool`; skills and the chat prompt carry the inputs of the deferred tools they use. Set `ASEPRITE_AGENT_TOOLS=all` to list every tool. The command line (`ase`) always has every tool. The core list is `CORE_TOOL_NAMES` in `bridge/src/tool_sets.ts`.
+
 | Tool | What it does |
 |---|---|
+| `apply` | The whole change as data: ops for layers (add, rename, move, hide, lock, opacity, blend, delete), pixels (grid rows, rects, lines), cels (clear, move), frames (add, delete, durations), tags and the palette, applied in one undo step; `dry_run` checks and lists the changes; every failing op is reported by its path and nothing changes; optional `look` and `check` |
 | `get_state` | Open sprites; layers, frames, tags, palette, selection, active tool and colors |
 | `get_context` | What the user selected: active layer/frame/cel, timeline range, pixel selection, tool and brush |
 | `execute_lua` | Runs Lua in Aseprite as one undo step; rolls back on error |

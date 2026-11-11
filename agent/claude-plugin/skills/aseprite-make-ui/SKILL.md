@@ -19,3 +19,10 @@ Sizes, states and bevels follow `read_guide("rules/ui")`; cite `rule:ui.panels`,
 6. Icons: `rule:ui.icons`. `snapshot` everything, go through `rule:ui.review`, and reply with the sizes and slice names for the engine.
 
 Then: `export-game`.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "make_ui", input: { ... } }). Their inputs:
+- make_ui {kind: "panel"|"button", width: integer 6-512, height: integer 6-512, fill: string, border?: string, highlight?: string, shadow?: string, radius?: integer 0-2, label?: string, label_color?: string, font?: "aseprite"|"mini", name?: string, snap_to_palette?: boolean}: Make a pixel UI element as a new sprite with a 9-patch slice (so engines can stretch it): 'panel' (a framed box) or 'button' (4 frames tagged normal, hover, …
+- draw_text {text: string, x?: integer, y?: integer, color: string, outline?: string, shadow?: string, font?: string, size?: number 4-128, scale?: integer 1-8, align?: "left"|"center", frame?: integer}: Draw text pixel-exact with no anti-aliasing, optionally with a 1 px outline and a drop shadow, at an integer scale.
+- palette_from_image {source?: "sprite"|"layer"|"selection"|"file", path?: string, layer?: string, frames?: string|integer|[integer], frame?: integer, max_colors?: integer 2-256, method?: "exact"|"median-cut"|"k-means", set_palette?: boolean, swatches?: boolean, save?: string, save_gpl?: string, ignore_alpha_below?: integer 1-255, min_share?: number 0-0.5, compare_with?: [string]}: The colors an image, layer, selection or the whole sprite uses: counts and shares, grouped into ramps (dark to light), near-duplicate colors, and the closest…
+</skill-tools>

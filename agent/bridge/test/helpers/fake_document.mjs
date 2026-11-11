@@ -1,6 +1,6 @@
 // An in-memory sprite behind the AsepriteRequester seam (#52): answers every
 // request the document module sends (get_state, snapshot, read_pixels, write_pixels, put_image,
-// put_images, create_sprite, create_animation, create_tilemap, and the color,
+// put_images, apply, create_sprite, create_animation, create_tilemap, and the color,
 // palette, mirror, split and slice requests) the way the extension's handlers do
 // (document_handlers.lua, handlers_color.lua, handlers_sprite.lua), so tool
 // modules run in unit tests.
@@ -828,6 +828,323 @@ export function fakeDocument({
       if (!leftover) detach(src);
       else src.name += " (rest)";
       return { layers: made.map((l) => l.name) };
+    },
+    // Declarative apply (#88, handlers_apply.lua): ops run in order in one step; every failing op is reported by
+    // its path; when one failed, or for a dry run, the sprite is put back as it was.
+    apply: (p) => {
+      const s = active.sprite;
+      if (!Array.isArray(p.ops) || !p.ops.length) throw new Error("ops must list at least one op");
+      const KEYS = {
+        add_layer: ["name", "group", "parent", "above", "below", "opacity", "blend", "visible"],
+        set_layer: ["layer", "name", "visible", "opacity", "blend", "locked"],
+        move_layer: ["layer", "above", "below", "parent"],
+        delete_layer: ["layer"],
+        pixels: ["layer", "frame", "x", "y", "rows", "legend"],
+        rect: ["layer", "frame", "x", "y", "w", "h", "color", "fill"],
+        line: ["layer", "frame", "points", "color"],
+        clear_cel: ["layer", "frames"],
+        move_cel: ["layer", "frames", "dx", "dy"],
+        add_frames: ["count", "after", "empty", "duration"],
+        delete_frames: ["frames"],
+        set_duration: ["frames", "ms"],
+        set_tag: ["name", "from", "to", "direction", "repeat", "rename"],
+        delete_tag: ["name"],
+        set_palette: ["colors"],
+        append_palette: ["colors"],
+      };
+      const SCOPED = new Set(["pixels", "rect", "line", "clear_cel", "move_cel"]);
+      const isInt = Number.isInteger;
+      const fail = (m) => { throw new Error(m); };
+      const saved = structuredClone({ s, nextId, frame: active.frame, layerId: active.layer?.id });
+      const startLayer = active.layer, startFrame = active.frame;
+      const count = () => s.durations.length;
+      const range = (list) => {
+        if (!list.length) return "none";
+        const out = [];
+        for (let i = 0; i < list.length;) {
+          let j = i;
+          while (j + 1 < list.length && list[j + 1] === list[j] + 1) j++;
+          out.push(i === j ? String(list[i]) : `${list[i]}-${list[j]}`);
+          i = j + 1;
+        }
+        return out.join(",");
+      };
+      const layerOf = (ref, what = "layer") => {
+        if (ref === undefined) fail(`${what} is required`);
+        const l = byRef(ref);
+        if (!l) fail(`Layer not found: ${ref}`);
+        return l;
+      };
+      const imageLayer = (ref) => {
+        const l = layerOf(ref);
+        if (l.group || l.tilemap) fail(`${l.name} is not an image layer`);
+        return l;
+      };
+      const frameOf = (f) => {
+        const n = f ?? Math.min(startFrame, count());
+        if (!isInt(n) || n < 1 || n > count()) fail(`Frame ${n} is out of range (1-${count()})`);
+        return n;
+      };
+      const framesOf = (spec, fallback) => resolveFrames(spec, count(), Math.min(startFrame, count()), fallback);
+      const blendOf = (b) => (BLEND_MODES.has(b) ? b : fail(`Unknown blend mode: ${b}`));
+      const opacityOf = (v) => (isInt(v) && v >= 0 && v <= 255 ? v : fail("opacity must be an integer from 0 to 255"));
+      // A shape's color as a write_pixels key, checked as the extension does.
+      const colorKey = (c) => {
+        if (c === undefined) fail("color is required");
+        if (c === "." || c === "transparent") return ".";
+        if (isInt(c)) {
+          if (c < 0 || c >= s.palette.length) fail(`palette index ${c} is past the palette's end (${s.palette.length} colors)`);
+          return s.colorMode === "indexed" ? String(c) : s.palette[c];
+        }
+        if (typeof c !== "string") fail("color must be a hex color, '.' or a palette index");
+        let h;
+        try { h = norm(c); } catch { fail(`${c} is not a color (use #rrggbb, #rrggbbaa, '.' or a palette index)`); }
+        if (s.colorMode === "indexed" && parse(h)[3] !== 0 && s.palette.findIndex((x, k) => k > 0 && x === h) < 0) fail(`${c.startsWith("#") ? c : "#" + c} is not in the palette (indexed sprite)`);
+        return c.startsWith("#") ? c : `#${c}`;
+      };
+      const pixelLayer = (ref, what) => {
+        const l = ref !== undefined ? byRef(ref) : startLayer;
+        if (!l) fail(ref !== undefined ? `Layer not found: ${ref}` : "No layer to write to");
+        if (l.group || l.tilemap) fail(`${what} writes into an image layer; ${l.name} is not one`);
+        return l;
+      };
+      // Writes through write_pixels' grid: rows over the written box, '-' where nothing is written.
+      const writeGrid = (op, what, rows, legend, x, y) => {
+        const l = pixelLayer(op.layer, what), f = frameOf(op.frame);
+        const r = rows.length ? handlers.write_pixels({ layer: `L${l.id}`, frame: f, rows, legend, x, y }) : { written: 0, changed: 0 };
+        return `${l.name} frame ${f}: ${r.changed} of ${r.written} pixels changed`;
+      };
+      const shape = (op, what, cells) => {
+        const key = colorKey(op.color);
+        const inside = cells.filter(([x, y]) => x >= 0 && y >= 0 && x < s.width && y < s.height);
+        if (!inside.length) return writeGrid(op, what, [], {}, 0, 0);
+        const xs = inside.map((c) => c[0]), ys = inside.map((c) => c[1]);
+        const x0 = Math.min(...xs), y0 = Math.min(...ys), w = Math.max(...xs) - x0 + 1, h = Math.max(...ys) - y0 + 1;
+        const grid = Array.from({ length: h }, () => Array(w).fill("-"));
+        for (const [x, y] of inside) grid[y - y0][x - x0] = key;
+        return writeGrid(op, what, grid.map((r) => r.join(" ")), {}, x0, y0);
+      };
+      const place = (l, op) => {
+        if (op.above !== undefined && op.below !== undefined) fail("give above or below, not both");
+        const ref = op.above !== undefined ? layerOf(op.above, "above") : op.below !== undefined ? layerOf(op.below, "below") : undefined;
+        if (ref === l) fail("a layer can't be placed next to itself");
+        let parent;
+        if (op.parent !== undefined) {
+          parent = layerOf(op.parent, "parent");
+          if (!parent.group) fail(`${parent.name} is not a group`);
+          for (let q = parent; q; q = q.parent) if (q === l) fail("a group can't go inside itself");
+          if (ref && ref.parent !== parent) fail(`${ref.name} is not in the group ${parent.name}`);
+        }
+        if (ref) {
+          detach(l);
+          const sib = siblings(ref);
+          l.parent = ref.parent;
+          sib.splice(sib.indexOf(ref) + (op.above !== undefined ? 1 : 0), 0, l);
+          return `${op.above !== undefined ? "above" : "below"} ${ref.name}`;
+        }
+        if (parent) {
+          detach(l);
+          l.parent = parent;
+          parent.layers.push(l);
+          return `into ${parent.name}`;
+        }
+      };
+      const made = [];
+      const RUN = {
+        add_layer: (op) => {
+          if (typeof op.name !== "string" || !op.name) fail("name is required");
+          const l = { id: nextId++, name: op.name, visible: true, group: !!op.group, parent: null, cels: [], blendMode: "normal", opacity: 255 };
+          if (l.group) l.layers = [];
+          s.layers.push(l);
+          const where = place(l, op);
+          if (op.blend !== undefined || op.opacity !== undefined) {
+            if (l.group) fail("blend and opacity are for image layers");
+            if (op.blend !== undefined) l.blendMode = blendOf(op.blend);
+            if (op.opacity !== undefined) l.opacity = opacityOf(op.opacity);
+          }
+          if (op.visible === false) l.visible = false;
+          made.push({ l, name: l.name });
+          return `Added ${l.group ? "group" : "layer"} ${l.name}${where ? ` ${where}` : ""}`;
+        },
+        set_layer: (op) => {
+          const l = layerOf(op.layer), old = l.name, parts = [];
+          if (op.name !== undefined) { if (typeof op.name !== "string" || !op.name) fail("name must be text"); l.name = op.name; parts.push(`renamed ${op.name}`); }
+          if (op.visible !== undefined) { l.visible = !!op.visible; parts.push(op.visible ? "shown" : "hidden"); }
+          if (op.locked !== undefined) { l.editable = !op.locked; parts.push(op.locked ? "locked" : "unlocked"); }
+          if (op.opacity !== undefined || op.blend !== undefined) {
+            if (l.group) fail(`blend and opacity are for image layers; ${l.name} is a group`);
+            if (op.opacity !== undefined) { l.opacity = opacityOf(op.opacity); parts.push(`opacity ${op.opacity}`); }
+            if (op.blend !== undefined) { l.blendMode = blendOf(op.blend); parts.push(`blend ${op.blend}`); }
+          }
+          if (!parts.length) fail("nothing to set: give name, visible, locked, opacity or blend");
+          return `Layer ${old}: ${parts.join(", ")}`;
+        },
+        move_layer: (op) => {
+          const l = layerOf(op.layer);
+          if (op.above === undefined && op.below === undefined && op.parent === undefined) fail("give above, below or parent");
+          return `Moved ${l.name} ${place(l, op)}`;
+        },
+        delete_layer: (op) => {
+          const l = layerOf(op.layer);
+          detach(l);
+          return `Deleted layer ${l.name}`;
+        },
+        pixels: (op) => writeGrid(op, "pixels", op.rows, op.legend, op.x ?? 0, op.y ?? 0),
+        rect: (op) => {
+          for (const k of ["x", "y", "w", "h"]) if (!isInt(op[k])) fail(`${k} must be a whole number`);
+          if (op.w < 1 || op.h < 1) fail("w and h must be at least 1");
+          const cells = [], x1 = op.x + op.w - 1, y1 = op.y + op.h - 1;
+          for (let y = op.y; y <= y1; y++) for (let x = op.x; x <= x1; x++) {
+            if (op.fill !== false || x === op.x || x === x1 || y === op.y || y === y1) cells.push([x, y]);
+          }
+          return shape(op, "rect", cells);
+        },
+        line: (op) => {
+          const pts = op.points;
+          if (!Array.isArray(pts) || !pts.length) fail("points must list at least one [x, y]");
+          pts.forEach((q, i) => { if (!Array.isArray(q) || !isInt(q[0]) || !isInt(q[1])) fail(`points[${i}] must be [x, y] in whole pixels`); });
+          const cells = [[pts[0][0], pts[0][1]]];
+          for (let i = 1; i < pts.length; i++) {
+            let [x0, y0] = pts[i - 1];
+            const [x1, y1] = pts[i];
+            const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+            let err = dx + dy;
+            for (;;) {
+              cells.push([x0, y0]);
+              if (x0 === x1 && y0 === y1) break;
+              const e2 = 2 * err;
+              if (e2 >= dy) { err += dy; x0 += sx; }
+              if (e2 <= dx) { err += dx; y0 += sy; }
+            }
+          }
+          return shape(op, "line", cells);
+        },
+        clear_cel: (op) => {
+          const l = imageLayer(op.layer), cleared = [];
+          for (const f of framesOf(op.frames, "active")) if (l.cels[f - 1]) { l.cels[f - 1] = undefined; cleared.push(f); }
+          return `Cleared ${l.name} in frames ${range(cleared)}`;
+        },
+        move_cel: (op) => {
+          const l = imageLayer(op.layer), dx = op.dx ?? 0, dy = op.dy ?? 0;
+          if (!isInt(dx) || !isInt(dy)) fail("dx and dy must be whole pixels");
+          const moved = [], done = new Set();
+          for (const f of framesOf(op.frames, "active")) {
+            const c = l.cels[f - 1];
+            if (c && !done.has(c)) { done.add(c); c.x += dx; c.y += dy; moved.push(f); }
+          }
+          return `Moved ${l.name} cels in frames ${range(moved)} by ${dx},${dy}`;
+        },
+        add_frames: (op) => {
+          const n = op.count ?? 1;
+          if (!isInt(n) || n < 1 || n > 256) fail("count must be from 1 to 256");
+          const at = op.after ?? count();
+          if (!isInt(at) || at < 1 || at > count()) fail(`after must be a frame from 1 to ${count()}`);
+          if (op.duration !== undefined && (!isInt(op.duration) || op.duration < 1)) fail("duration must be whole ms of at least 1");
+          const ms = op.duration ?? s.durations[at - 1];
+          s.durations.splice(at, 0, ...Array(n).fill(ms));
+          for (const l of walk(s.layers)) {
+            if (l.group) continue;
+            const c = l.cels[at - 1];
+            while (l.cels.length < at) l.cels.push(undefined);
+            l.cels.splice(at, 0, ...Array.from({ length: n }, () => (c && !op.empty ? { ...c, data: new Uint8Array(c.data) } : undefined)));
+          }
+          // Tags covering `after` grow, later tags and hits move (as put_images' insert).
+          for (const t of s.tags) { if (t.from > at) t.from += n; if (t.to >= at) t.to += n; }
+          for (const h of s.hits ?? []) if (h.frame > at) h.frame += n;
+          return `Added ${n} ${n === 1 ? "frame" : "frames"} after frame ${at} (${op.empty ? "empty" : `copies of frame ${at}`}, ${ms} ms)`;
+        },
+        delete_frames: (op) => {
+          if (op.frames === undefined) fail("frames is required");
+          const list = [...new Set(framesOf(op.frames))].sort((a, b) => a - b);
+          if (list.length >= count()) fail("can't delete every frame; a sprite keeps at least one");
+          for (const f of [...list].reverse()) {
+            s.durations.splice(f - 1, 1);
+            for (const l of walk(s.layers)) if (!l.group) l.cels.splice(f - 1, 1);
+            s.tags = s.tags.filter((t) => !(t.from === f && t.to === f));
+            for (const t of s.tags) { if (t.from > f) t.from--; if (t.to >= f) t.to--; }
+          }
+          return `Deleted frames ${range(list)}`;
+        },
+        set_duration: (op) => {
+          if (!isInt(op.ms) || op.ms < 1) fail("ms must be whole ms of at least 1");
+          const list = framesOf(op.frames, "all");
+          for (const f of list) s.durations[f - 1] = op.ms;
+          return `Frames ${range(list)}: ${op.ms} ms`;
+        },
+        set_tag: (op) => {
+          if (typeof op.name !== "string" || !op.name) fail("name is required");
+          for (const k of ["from", "to"]) if (op[k] !== undefined && (!isInt(op[k]) || op[k] < 1 || op[k] > count())) fail(`${k} must be a frame from 1 to ${count()}`);
+          const dirs = { forward: "forward", reverse: "reverse", "ping-pong": "ping-pong", "ping-pong-reverse": "ping-pong-reverse" };
+          if (op.direction !== undefined && !dirs[op.direction]) fail("direction must be forward, reverse, ping-pong or ping-pong-reverse");
+          if (op.repeat !== undefined && (!isInt(op.repeat) || op.repeat < 0)) fail("repeat must be a whole number, 0 = loop");
+          let tag = s.tags.find((t) => t.name === op.name);
+          const from = op.from ?? tag?.from, to = op.to ?? tag?.to;
+          if (!tag && (!from || !to)) fail("a new tag needs from and to");
+          if (from > to) fail(`from (${from}) is after to (${to})`);
+          const isNew = !tag;
+          if (!tag) { tag = { name: op.name, from, to, direction: "forward" }; s.tags.push(tag); }
+          else Object.assign(tag, { from, to });
+          if (op.direction !== undefined) tag.direction = dirs[op.direction];
+          if (op.repeat !== undefined) tag.repeat = op.repeat;
+          if (op.rename !== undefined) tag.name = op.rename;
+          return `${isNew ? "Added" : "Set"} tag ${tag.name} ${from}-${to}`;
+        },
+        delete_tag: (op) => {
+          const i = s.tags.findIndex((t) => t.name === op.name);
+          if (i < 0) fail(`No tag named ${op.name}`);
+          s.tags.splice(i, 1);
+          return `Deleted tag ${op.name}`;
+        },
+        set_palette: (op) => {
+          const colors = paletteList(op);
+          setPaletteOf(s, colors);
+          return `Palette set to ${colors.length} colors`;
+        },
+        append_palette: (op) => {
+          const have = new Set(s.palette), add = [];
+          for (const c of paletteList(op).map(norm)) if (!have.has(c)) { have.add(c); add.push(c); }
+          if (add.length && s.defaultPalette) throw unsupported("appending to the default palette of a new sprite");
+          s.palette.push(...add);
+          return `Palette: added ${add.length} colors`;
+        },
+      };
+      function paletteList(op) {
+        if (!Array.isArray(op.colors) || !op.colors.length) fail("colors must list at least one color");
+        op.colors.forEach((c, i) => { try { norm(c); } catch { fail(`colors[${i}]: ${c} is not a color`); } });
+        return op.colors;
+      }
+      const changes = [], errors = [];
+      p.ops.forEach((op, i) => {
+        const path = `ops[${i}]`;
+        if (!op || typeof op !== "object" || typeof op.op !== "string") { errors.push({ op: i, path, message: "expected an object with an op" }); return; }
+        const keys = KEYS[op.op];
+        if (!keys) { errors.push({ op: i, path, type: op.op, message: `unknown op '${op.op}'` }); return; }
+        const bad = Object.keys(op).find((k) => k !== "op" && !keys.includes(k));
+        if (bad) { errors.push({ op: i, path: `${path}.${bad}`, type: op.op, message: `unknown param '${bad}'` }); return; }
+        if (p.scope && !SCOPED.has(op.op)) {
+          errors.push({ op: i, path, type: op.op, message: `sub-agents can only use pixels, rect, line, clear_cel and move_cel; leave ${op.op} to the lead agent` });
+          return;
+        }
+        try { changes.push(RUN[op.op](op)); } catch (e) {
+          if (/^fake document:/.test(e.message)) throw e;
+          errors.push({ op: i, path, type: op.op, message: e.message });
+        }
+      });
+      const rollback = errors.length > 0 || !!p.dry_run;
+      if (rollback) {
+        for (const k of Object.keys(s)) delete s[k];
+        Object.assign(s, saved.s);
+        nextId = saved.nextId;
+        active.frame = saved.frame;
+        active.layer = saved.layerId !== undefined ? walk(s.layers).find((l) => l.id === saved.layerId) : undefined;
+      } else {
+        if (startLayer && !walk(s.layers).includes(startLayer)) active.layer = walk(s.layers).filter((l) => !l.group).at(-1);
+        active.frame = Math.min(startFrame, count());
+      }
+      return {
+        ok: errors.length === 0, applied: !rollback, dryRun: p.dry_run === true, errors, changes,
+        layers: rollback ? [] : made.map((m) => ({ name: m.name, id: `L${m.l.id}` })), frames: count(),
+      };
     },
     // A slice (replacing the first one of the same name). Aseprite lists the newest slice first.
     set_slice: (p) => {

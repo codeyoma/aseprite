@@ -23,3 +23,10 @@ tools: [read_guide, make_autotile, seamless_check, make_seamless, execute_lua, s
 5. Export when asked: `export_dir` writes the PNG, a Godot 4 `.tres` (terrain set with peering bits), a Tiled `.tsx` (wang set) and a JSON bitmask map. Tell the user where they went and how to load them.
 
 Then: `review`.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "make_autotile", input: { ... } }). Their inputs:
+- make_autotile {layer?: string, frame?: integer, path?: string, tile?: integer 4-256, template?: "auto"|"row"|"2x3", kind?: 47|16, columns?: integer 1-64, preview?: boolean, export_dir?: string, name?: string}: Build a terrain autotile set from a template at the top-left of a layer (or a PNG).
+- seamless_check {layer?: string, frame?: integer, path?: string}: How well a tile (a layer, or a PNG) wraps when repeated: the share of its left/right and top/bottom edge pixels that clash (0% = seamless).
+- make_seamless {layer?: string, frame?: integer, path?: string, out?: string, max_share?: number 0-1}: Fix small seams so a tile (a layer, or a PNG) repeats cleanly: where an edge pixel clashes with the opposite edge, the rarer color takes the more common one.
+</skill-tools>

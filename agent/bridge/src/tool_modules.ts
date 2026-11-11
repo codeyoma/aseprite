@@ -2,6 +2,7 @@
 // entry here, and TOOLS, the MCP server and the tests pick it up.
 import type { Tool } from "./tool.js";
 import { CORE_TOOLS } from "./core_tools.js";
+import { APPLY_TOOLS } from "./apply.js";
 import { COMMAND_TOOLS } from "./command_tools.js";
 import { TIMELINE_TOOLS } from "./timeline_tools.js";
 import { GUIDE_TOOLS } from "./guide_tools.js";
@@ -31,6 +32,7 @@ import { PIPELINE_TOOLS } from "./pipeline_tools.js";
 
 export const TOOL_MODULES: { what: string; tools: Tool[] }[] = [
   { what: "Core: state, Lua, snapshots, checks, undo, sub-agents", tools: CORE_TOOLS },
+  { what: "Declarative apply: the whole change as data, one undo step (#88)", tools: APPLY_TOOLS },
   { what: "Aseprite commands and Saved Commands (#26)", tools: COMMAND_TOOLS },
   { what: "Timeline as text", tools: TIMELINE_TOOLS },
   { what: "Guide and Skill Catalog (#35)", tools: GUIDE_TOOLS },

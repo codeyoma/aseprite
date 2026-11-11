@@ -1,0 +1,105 @@
+{
+  "scenarios": [
+    {
+      "name": "apply runs layer, pixel, frame, tag and palette ops in order, in one request",
+      "notes": "Declarative apply (#88). A layer added by an earlier op is found by name; frames added by an earlier op can be drawn on; add_frames copies the cels of `after` (default the last frame) and the tag that ends there grows, as with put_images' insert. The active layer and frame stay.",
+      "fixture": {
+        "width": 4, "height": 2,
+        "tags": [{ "name": "idle", "from": 1, "to": 1 }],
+        "layers": [{ "name": "Body", "cels": { "1": ["rr..", "...."] } }]
+      },
+      "steps": [
+        { "request": "apply", "params": { "ops": [
+          { "op": "add_layer", "name": "Shadow", "below": "Body" },
+          { "op": "rect", "layer": "Shadow", "x": 0, "y": 1, "w": 4, "h": 1, "color": "#000000" },
+          { "op": "pixels", "layer": "Body", "rows": ["- - g g"], "legend": { "g": "#00ff00" } },
+          { "op": "add_frames", "count": 2, "duration": 80 },
+          { "op": "line", "layer": "Body", "frame": 3, "points": [[0, 1], [3, 1]], "color": "#0000ff" },
+          { "op": "rect", "layer": "Shadow", "frame": 2, "x": 1, "y": 0, "w": 3, "h": 2, "color": "#ffff00", "fill": false },
+          { "op": "set_tag", "name": "walk", "from": 2, "to": 3, "direction": "ping-pong" },
+          { "op": "set_layer", "layer": "Shadow", "name": "Shade", "opacity": 128 },
+          { "op": "append_palette", "colors": ["#ff0000", "#000000"] }
+        ] },
+          "result": { "ok": true, "applied": true, "errors": [], "frames": 3,
+            "layers": [{ "name": "Shadow", "id": { "$layerId": "Shade" } }],
+            "changes": [
+              "Added layer Shadow below Body",
+              "Shadow frame 1: 4 of 4 pixels changed",
+              "Body frame 1: 2 of 2 pixels changed",
+              "Added 2 frames after frame 1 (copies of frame 1, 80 ms)",
+              "Body frame 3: 4 of 4 pixels changed",
+              "Shadow frame 2: 6 of 6 pixels changed",
+              "Added tag walk 2-3",
+              "Layer Shadow: renamed Shade, opacity 128",
+              "Palette: added 1 colors"
+            ] } },
+        { "state": {
+          "durations": [100, 80, 80], "activeFrame": 1, "activeLayer": "Body",
+          "tags": [{ "name": "idle", "from": 1, "to": 3 }, { "name": "walk", "from": 2, "to": 3, "direction": "ping-pong" }],
+          "layers": [{ "name": "Body", "cels": [1, 2, 3] }, { "name": "Shade", "cels": [1, 2, 3], "opacity": 128 }],
+          "palette": ["#000000", "#ffffff", "#ff0000"]
+        } },
+        { "pixels": { "layer": "Body", "frame": 1 }, "rows": ["rrgg", "...."] },
+        { "pixels": { "layer": "Body", "frame": 3 }, "rows": ["rrgg", "bbbb"] },
+        { "pixels": { "layer": "Shade", "frame": 2 }, "rows": [".yyy", "kyyy"] },
+        { "pixels": { "layer": "Shade", "frame": 3 }, "rows": ["....", "kkkk"] }
+      ]
+    },
+    {
+      "name": "apply reports every failing op by its path and changes nothing",
+      "notes": "Ops after a failed one still run, so all problems come back at once; then the whole transaction is rolled back.",
+      "fixture": {
+        "width": 4, "height": 2,
+        "layers": [{ "name": "Body", "cels": { "1": ["rr..", "...."] } }]
+      },
+      "steps": [
+        { "request": "apply", "params": { "ops": [
+          { "op": "add_layer", "name": "Ink" },
+          { "op": "rect", "layer": "Nope", "x": 0, "y": 0, "w": 1, "h": 1, "color": "#ff0000" },
+          { "op": "pixels", "layer": "Ink", "rows": ["z"] },
+          { "op": "delete_frames", "frames": 1 },
+          { "op": "set_tag", "name": "walk", "from": 1, "to": 9 },
+          { "op": "set_layer", "layer": "Body", "visible": false, "colour": 1 }
+        ] },
+          "result": { "ok": false, "applied": false, "changes": ["Added layer Ink"], "errors": [
+            { "path": "ops[1]", "type": "rect", "message": "Layer not found: Nope" },
+            { "path": "ops[2]", "type": "pixels", "message": "Row 1, column 1 (x=0, y=0): unknown key 'z'; add it to the legend or use '.' for transparent" },
+            { "path": "ops[3]", "type": "delete_frames", "message": "can't delete every frame; a sprite keeps at least one" },
+            { "path": "ops[4]", "type": "set_tag", "message": "to must be a frame from 1 to 1" },
+            { "path": "ops[5].colour", "type": "set_layer", "message": "unknown param 'colour'" }
+          ] } },
+        { "state": { "layers": [{ "name": "Body", "visible": true, "cels": [1] }], "durations": [100], "tags": [] } },
+        { "pixels": { "layer": "Body" }, "rows": ["rr..", "...."] }
+      ]
+    },
+    {
+      "name": "apply dry_run lists the changes and rolls them back; cel ops clear and move cels",
+      "fixture": {
+        "width": 3, "height": 2, "durations": [100, 100],
+        "layers": [
+          { "name": "Top", "cels": { "1": { "x": 0, "y": 0, "rows": ["r"] }, "2": { "x": 0, "y": 0, "rows": ["g"] } } },
+          { "name": "Bottom", "cels": { "1": ["bbb", "..."] } }
+        ]
+      },
+      "steps": [
+        { "request": "apply", "params": { "dry_run": true, "ops": [
+          { "op": "move_layer", "layer": "Bottom", "above": "Top" },
+          { "op": "delete_layer", "layer": "Top" },
+          { "op": "set_duration", "ms": 50 }
+        ] },
+          "result": { "ok": true, "applied": false, "dryRun": true, "errors": [], "layers": [],
+            "changes": ["Moved Bottom above Top", "Deleted layer Top", "Frames 1-2: 50 ms"] } },
+        { "state": { "layers": [{ "name": "Top" }, { "name": "Bottom" }], "durations": [100, 100] } },
+        { "request": "apply", "params": { "ops": [
+          { "op": "move_cel", "layer": "Top", "frames": "1-2", "dx": 2, "dy": 1 },
+          { "op": "clear_cel", "layer": "Bottom", "frames": "all" },
+          { "op": "delete_frames", "frames": [1] }
+        ] },
+          "result": { "ok": true, "applied": true, "frames": 1,
+            "changes": ["Moved Top cels in frames 1-2 by 2,1", "Cleared Bottom in frames 1", "Deleted frames 1"] } },
+        { "state": { "layers": [{ "name": "Top", "cels": [1] }, { "name": "Bottom", "cels": [] }], "durations": [100] } },
+        { "pixels": { "layer": "Top", "frame": 1 }, "rows": ["...", "..g"] }
+      ]
+    }
+  ]
+}

@@ -313,9 +313,15 @@ test("the critics' endpoint is read-only and cannot start agents; the lead's has
     const critic = await list(ep.criticUrl);
     for (const n of ["critique", "ab_compare", "spawn_agents", "execute_lua", "write_pixels"]) assert.ok(!critic.includes(n), `critic has ${n}`);
     for (const n of ["snapshot", "read_pixels", "check", "read_guide", "get_state"]) assert.ok(critic.includes(n), `critic lacks ${n}`);
+    // The lead's endpoint lists them with every tool listed (ASEPRITE_AGENT_TOOLS=all; by default they are deferred, #88).
+    process.env.ASEPRITE_AGENT_TOOLS = "all";
     const lead = await list(ep.url);
     assert.ok(lead.includes("critique") && lead.includes("ab_compare"));
+    process.env.ASEPRITE_AGENT_TOOLS = "all";
+    const criticAll = await list(ep.criticUrl);
+    for (const n of ["critique", "ab_compare", "spawn_agents", "execute_lua"]) assert.ok(!criticAll.includes(n), `critic (all) has ${n}`);
   } finally {
+    delete process.env.ASEPRITE_AGENT_TOOLS;
     ep.server.close();
   }
 });

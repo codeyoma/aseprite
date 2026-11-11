@@ -17,3 +17,9 @@ tools: [detect_pixel_grid, fix_pixel_art, check, snapshot]
 5. Reply with the native size, the number of colors and what you cleaned up.
 
 Then: `check-sprite`, then `shade-sprite` if the result looks flat.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "detect_pixel_grid", input: { ... } }). Their inputs:
+- detect_pixel_grid {source?: "sprite"|"layer"|"selection"|"file", path?: string, layer?: string, frames?: string|integer|[integer], frame?: integer}: Find the pixel grid of upscaled or AI-generated pixel art (an image file such as an attachment, or the sprite): the cell size in pixels (fractional when the …
+- fix_pixel_art {source?: "sprite"|"layer"|"selection"|"file", path?: string, layer?: string, frames?: string|integer|[integer], frame?: integer, cell?: number 1-128, offset_x?: number, offset_y?: number, max_colors?: integer 2-256, merge?: boolean, trim?: boolean, name?: string}: Turn upscaled or AI-generated pixel art into a real sprite at its native size: detect the grid (or use cell/offset), take one color per cell (the cell's domi…
+</skill-tools>

@@ -45,6 +45,7 @@ local SAMPLES = {
   put_image = { width = 2, height = 2, rgba = RGBA_2x2, x = 4, y = 4 },
   write_pixels = { rows = { "g g", "g ." }, legend = { g = "#00ff00" }, x = 5, y = 5 },
   put_images = { images = { { width = 2, height = 2, rgba = RGBA_2x2, frame = 1, x = 4, y = 4, new_layer = "fx" } } },
+  apply = { ops = { { op = "rect", frame = 1, x = 5, y = 5, w = 2, h = 2, color = "#00ff00" } } },
   split_layer_by_colors = { groups = { { name = "Red", colors = { "#ff0000" } } } },
   mirror_frames = { frames = 1 },
   draw_swatches = { colors = { "#00ff00" } },

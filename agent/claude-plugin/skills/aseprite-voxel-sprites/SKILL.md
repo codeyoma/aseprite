@@ -14,3 +14,9 @@ tools: [render_voxels, layers_to_voxels, snapshot]
 - `snapshot` the directions side by side and reply with the size and tags. Fine details (windows, faces) can be painted on afterwards on a layer above.
 
 Then: `export-game`.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "render_voxels", input: { ... } }). Their inputs:
+- render_voxels {path: string, directions?: 1|4, name?: string}: Render a MagicaVoxel .vox model as pixel-exact isometric sprites (2:1, each voxel a 4x4 block, three shades per material: lit top, mid left, dark right), in …
+- layers_to_voxels {frame?: integer, directions?: 1|4, save_vox?: string, name?: string}: Build a voxel object from the sprite's layers, bottom layer = the ground slice, each layer one voxel higher (top-down drawings: image x is width, image y is …
+</skill-tools>

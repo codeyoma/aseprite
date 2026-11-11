@@ -34,3 +34,19 @@ A character built from part layers (a group `AI: <name>`), or a new motion for o
 5. Reply with the frame list (what each frame is) and the timing.
 
 Then: `review`, then `export-game` for a game.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "generate_character", input: { ... } }). Their inputs:
+- generate_character {subject?: string, view?: string, poses?: [string], frames?: [integer], tag?: string, target_size?: [integer 1-512, integer 1-512]|object, layers?: [object], colors?: integer 4-64, name?: string, reference?: boolean, base_frame?: integer, inbetweens?: boolean, job?: string}: A new character as body-part layers from the image generator (#103): first a master sheet with the whole character in every key pose, then one image per laye…
+- motion_stage {action?: "keys"|"advance"|"done", tag?: string, keys?: [integer], walk?: boolean}: Draw an animation in stages (#99).
+- walk_check {tag?: string, facing?: "right"|"left", contacts?: [integer, integer], near_arm?: object, near_leg?: object}: Check a side-view walk's arms against its legs on the two contact frames: the near arm must swing opposite the near leg, and each must change sides between t…
+- motion_review {tag?: string}: A fresh critic looks at a walk's two contact frames (enlarged, no measurements, no brief) and says which arm it notices, which leg it pairs with that arm, an…
+- apply_timeline_text {text: string, plan?: boolean}: Change the timeline to match the text, in one undo step.
+- get_timeline_text {}: The active sprite's timeline as compact text: frame count, frame durations, tags (range, direction, repeats) and linked cels.
+- transform_layer {layer: string, from_frame: integer, to_frame: integer, move: object, arc?: number, easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out"}: Animate a rigid part (a layer: an arm, a sword, a whole small sprite) from its drawing in from_frame through to_frame: each frame gets the drawing moved/rota…
+- rotate_layer {layer: string, frames: [integer], angle: number, pivot_x?: number, pivot_y?: number}: Rotate a layer's drawing in some frames by an angle around a pivot, RotSprite-style (clean edges, no new colors).
+- squash_stretch {layer: string, frame: integer, amount: number -0.6-0.6}: Squash (amount < 0, e.g.
+- smear_frame {layer: string, frame: integer, from_frame: integer, to_frame: integer, steps?: integer 2-16}: Turn a frame into a smear: the layer's drawing at to_frame swept back along the path from from_frame, so a fast move (a swing, a dash) reads in one frame.
+- subpixel_move {layer: string, from_frame: integer, to_frame: integer, dx?: number -4-4, dy?: number -4-4, easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out"}: Move a layer's drawing by less than a pixel per frame without it jumping: each frame from from_frame+1 to to_frame shifts it a fraction further toward (dx, d…
+- spawn_agents {instruction?: string, tasks: [object], parallel?: integer 1-4}: Split a multi-frame job into sub-tasks and run them in parallel, one sub-agent each (up to 4 at once).
+</skill-tools>

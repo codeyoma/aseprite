@@ -14,6 +14,7 @@
 import { type McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { allSkills, type Skill } from "./guide.js";
+import { skillToolsNote } from "./tool_sets.js";
 
 /** Built-in and user skills by name (guide topics left out), read fresh each call. */
 export function servedSkills(skills = allSkills()): Skill[] {
@@ -28,6 +29,8 @@ export const SKILL_PREAMBLE =
 /** The prompt text: preamble, the skill, then the user's request when there is one. */
 export function skillPromptText(skill: Skill, request?: string): string {
   const parts = [SKILL_PREAMBLE, `<skill name="${skill.name}">\n${skill.body.trim()}\n</skill>`];
+  const tools = skillToolsNote(skill.tools);
+  if (tools) parts.push(tools);
   const r = request?.trim();
   if (r) parts.push(`The user's request: ${r}`);
   return parts.join("\n\n");

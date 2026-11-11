@@ -15,3 +15,9 @@ tools: [get_timeline_text, apply_timeline_text]
 5. If frames were added, they copy the last frame: say so, and offer to draw them.
 
 Then: `export-game`.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "get_timeline_text", input: { ... } }). Their inputs:
+- get_timeline_text {}: The active sprite's timeline as compact text: frame count, frame durations, tags (range, direction, repeats) and linked cels.
+- apply_timeline_text {text: string, plan?: boolean}: Change the timeline to match the text, in one undo step.
+</skill-tools>

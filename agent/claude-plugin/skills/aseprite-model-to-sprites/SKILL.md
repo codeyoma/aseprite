@@ -16,3 +16,8 @@ tools: [render_model, snapshot, check]
 - After rendering, `snapshot` the result. Small renders lose detail, so suggest a hand clean-up pass: fix eyes and faces, and remove single stray pixels. `check` finds orphan pixels and jitter.
 
 Then: `check-sprite` for the clean-up pass, then `export-game`.
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "render_model", input: { ... } }). Their inputs:
+- render_model {path: string, size?: integer 8-256, directions?: 1|4|8|16, elevation?: "side"|"three-quarter"|"isometric"|"top-down"|number 0-90, bands?: integer 2-5, animation?: string, fps?: number 1-30, outline?: "none"|"darkest"|"selout", palette?: string, preview?: boolean, name?: string}: Render a 3D model (.glb, .gltf or .obj) into pixel-art sprites: an orthographic camera at an elevation ('side', 'three-quarter', 'isometric', 'top-down' or d…
+</skill-tools>

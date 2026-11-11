@@ -34,3 +34,10 @@ For each round: the finding you fixed, what you changed, the guard's numbers and
 Then: `export-game` when the work is for a game.
 
 Adapted from aseprite-ai-artist's pixel-critic agent and studio skill, step 8 (MIT, https://github.com/with-pebbly/aseprite-ai-artist).
+
+<skill-tools>
+Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "critique", input: { ... } }). Their inputs:
+- critique {what?: string, frames?: string|integer|[integer], tag?: string, layer?: string, checkpoint?: string}: Have the sprite judged by a fresh critic agent that has not seen this conversation or the brief (read-only tools, the pixel-art rules).
+- diff_visual {checkpoint?: string, save?: string, scale?: integer 1-32}: Show what changed on the active frame: compares the canvas now with the canvas before the last edit step (default) or with a checkpoint you saved earlier (sa…
+- ab_compare {checkpoint?: string, frames?: string|integer|[integer], a?: object, b?: object, what?: string}: Ask a fresh critic which of two versions is the better pixel art, blind: they are shown as A and B in a random order only the bridge knows, and the answer is…
+</skill-tools>

@@ -84,34 +84,42 @@ return function(handlers, D)
     return { colors = out }
   end
 
-  -- Replaces the sprite's palette (one undo step). In an indexed sprite the
-  -- pixels keep their indexes, so their colors change with the palette.
+  -- Replaces the sprite's palette, or with append adds the colors it lacks
+  -- (compared as colors: "#0000FF" is "#0000ff"), inside the caller's
+  -- transaction. In an indexed sprite the pixels keep their indexes, so their
+  -- colors change with the palette. Returns how many colors were added (append).
+  local function paletteColors(sprite, colors, append)
+    local start, list = 0, colors
+    local p
+    if append then
+      local cur = sprite.palettes[1]
+      local have, add = {}, {}
+      for i = 0, #cur - 1 do local c = cur:getColor(i); have[px.hex(c.red, c.green, c.blue, c.alpha)] = true end
+      for _, h in ipairs(colors) do
+        local key = px.hex(px.parseHex(h))
+        if not have[key] then have[key] = true; add[#add + 1] = h end
+      end
+      if #add == 0 then return 0 end
+      p = Palette(cur)
+      start = #cur
+      p:resize(#cur + #add)
+      list = add
+    else
+      p = Palette(#colors)
+    end
+    for i, h in ipairs(list) do p:setColor(start + i - 1, Color(px.parseHex(h))) end
+    sprite:setPalette(p)
+    return #list
+  end
+  D.paletteColors = paletteColors
+
+  -- Replaces the sprite's palette (one undo step).
   handlers.set_palette = function(params)
     local sprite = app.sprite
     local colors = params.colors or {}
     if #colors == 0 then error("No colors") end
     app.transaction(params.label or "Set palette", function()
-      -- append: add the colors after the current palette's (skipping ones it
-      -- has, compared as colors: "#0000FF" is "#0000ff").
-      local start, list = 0, colors
-      local p
-      if params.append then
-        local cur = sprite.palettes[1]
-        local have, add = {}, {}
-        for i = 0, #cur - 1 do local c = cur:getColor(i); have[px.hex(c.red, c.green, c.blue, c.alpha)] = true end
-        for _, h in ipairs(colors) do
-          local key = px.hex(px.parseHex(h))
-          if not have[key] then have[key] = true; add[#add + 1] = h end
-        end
-        p = Palette(cur)
-        start = #cur
-        p:resize(#cur + #add)
-        list = add
-      else
-        p = Palette(#colors)
-      end
-      for i, h in ipairs(list) do p:setColor(start + i - 1, Color(px.parseHex(h))) end
-      sprite:setPalette(p)
+      paletteColors(sprite, colors, params.append)
     end)
     app.refresh()
     return { size = #colors }
