@@ -120,9 +120,10 @@ do
   check("run_command color param", res.executed and app.pixelColor.rgbaB(px) == 255 and app.pixelColor.rgbaR(px) == 0, res.note)
   A.handlers.undo{ steps = 1 }
 
-  local ctx = A.handlers.get_context()
-  check("get_context", ctx.sprite and ctx.sprite.width == 8 and ctx.layer and ctx.frame == 1 and ctx.cel ~= nil, json.encode(ctx))
-  check("get_context json", pcall(json.encode, ctx))
+  -- The user's context is part of get_state (#96; the get_context tool is a view of it on the bridge).
+  local ctx = A.handlers.get_state()
+  check("get_state context", ctx.activeSprite.width == 8 and ctx.activeLayerId and ctx.activeFrame == 1 and ctx.activeCel ~= nil, json.encode(ctx))
+  check("get_state json", pcall(json.encode, ctx))
 
   local px = A.handlers.read_pixels{ x = 0, y = 0, width = 4, height = 2 }
   check("read_pixels rows", #px.rows == 2 and px.rows[1] == ". 0 1 ." and px.rows[2] == ". 0 . .", px.rows[1] .. " / " .. px.rows[2])

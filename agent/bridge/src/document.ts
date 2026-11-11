@@ -302,7 +302,47 @@ function flatten(tree: any[], path: string[] = []): LayerInfo[] {
   return out;
 }
 
-/** Parses a get_state reply into SpriteInfo (exported for tests). */
+/**
+ * get_state's result as the user's context (the get_context tool, #96): the active layer (with its group path),
+ * frame, tag, cel, timeline range and pixel selection, the tool, brush, colors and zoom, and the sprite's summary.
+ * A view of the State that protocol.json describes; the link has checked the shape when the reply arrived.
+ */
+export function contextOf(state: any): Record<string, unknown> {
+  const s = state?.activeSprite;
+  const ctx: Record<string, unknown> = {
+    tool: state?.tool, fgColor: state?.fgColor, bgColor: state?.bgColor, brush: state?.brush, zoom: state?.zoom,
+  };
+  if (!s) return { ...ctx, sprite: null };
+  const layers = flatten(s.layers);
+  const byId = new Map(layers.map((l) => [l.id, l]));
+  const pathOf = (id: string) => {
+    const l = byId.get(id);
+    return l ? [...l.path, l.name].join("/") : id;
+  };
+  const tree = new Map<string, any>();
+  const walk = (list: any[]) => { for (const l of list ?? []) { tree.set(String(l.id), l); if (l.group) walk(l.layers); } };
+  walk(s.layers);
+  const active = tree.get(state.activeLayerId);
+  const { filename, width, height, colorMode, frameCount, layerCount, modified } = s;
+  return {
+    ...ctx,
+    sprite: { filename, width, height, colorMode, frameCount, layerCount, modified },
+    layer: active ? {
+      id: active.id, name: active.name, path: state.activeLayer, group: !!active.group, visible: active.visible,
+      editable: active.editable, ...(active.group ? {} : { opacity: active.opacity }),
+    } : undefined,
+    frame: state.activeFrame,
+    tag: state.activeTag,
+    cel: state.activeCel ? { ...state.activeCel, layer: pathOf(state.activeCel.layer), layerId: state.activeCel.layer } : undefined,
+    timelineRange: state.timelineRange ? {
+      type: state.timelineRange.type, layers: state.timelineRange.layers.map(pathOf), layerIds: state.timelineRange.layers,
+      frames: state.timelineRange.frames,
+    } : undefined,
+    selection: s.selection,
+  };
+}
+
+/** Parses a get_state reply (protocol.json shape State, checked by the link on arrival) into SpriteInfo. */
 export function parseState(state: any): SpriteInfo {
   const s = state?.activeSprite;
   if (!s) throw new Error("No active sprite");

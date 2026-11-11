@@ -20,7 +20,7 @@
 // only blend normal and addition layers (at any opacity, as drawSprite's new
 // blend method does): anything else is refused.
 import { resolveFrames } from "../../dist/document.js";
-import { checkParams, PROTOCOL } from "../../dist/protocol.js";
+import { checkParams, checkResult, PROTOCOL } from "../../dist/protocol.js";
 
 const hex = (r, g, b, a = 255) => "#" + [r, g, b, ...(a < 255 ? [a] : [])].map((v) => v.toString(16).padStart(2, "0")).join("");
 const hexAt = (d, i) => hex(d[i], d[i + 1], d[i + 2], d[i + 3]);
@@ -249,8 +249,8 @@ export function fakeDocument({
   const setPaletteOf = (s, colors) => {
     if (colors && colors.length > 0) { s.palette = colors.map(norm); s.defaultPalette = false; } else s.defaultPalette = true;
   };
-  const describe = (list) => [...list].reverse().map((l) => ({
-    id: `L${l.id}`, name: l.name, visible: l.visible, editable: l.editable !== false, group: l.group,
+  const describe = (list) => [...list].map((l, i) => [l, i + 1]).reverse().map(([l, stackIndex]) => ({
+    id: `L${l.id}`, name: l.name, stackIndex, visible: l.visible, editable: l.editable !== false, group: !!l.group,
     ...(l.group ? { layers: describe(l.layers) } : {
       opacity: l.opacity ?? 255, blendMode: l.blendMode ?? "normal",
       celFrames: l.cels.flatMap((c, i) => (c ? [i + 1] : [])),
@@ -322,13 +322,18 @@ export function fakeDocument({
   const handlers = {
     get_state: () => {
       const s = active.sprite;
+      const summary = {
+        filename: s.title, width: s.width, height: s.height, colorMode: s.colorMode,
+        frameCount: s.durations.length, layerCount: s.layers.length, modified: false,
+      };
       return {
+        // The rest of State (protocol.json shapes): what the user works on, with fixed values here.
+        asepriteVersion: "fake", apiVersion: 0, openSprites: [summary], fgColor: "#000000", bgColor: "#ffffff",
         activeFrame: active.frame,
         activeLayerId: active.layer ? `L${active.layer.id}` : undefined,
         activeLayer: active.layer ? pathOf(active.layer) : undefined,
         activeSprite: {
-          filename: s.title, width: s.width, height: s.height, colorMode: s.colorMode,
-          frameCount: s.durations.length, layerCount: s.layers.length,
+          ...summary,
           frames: s.durations.map((d, i) => ({ frame: i + 1, durationMs: d })),
           // Top layer first, as get_state reports them.
           layers: describe(s.layers),
@@ -1211,6 +1216,8 @@ export function fakeDocument({
       const h = own ?? handlers[method];
       if (!h) throw new Error(`fake document: no handler for ${method}`);
       const r = await h(own || !PROTOCOL.requests[method] ? params : wire(method, params));
+      // As the link checks a typed result when it arrives (get_state's State, #96), so the fake answers in shape.
+      if (!own) checkResult(method, Array.isArray(r) ? r[0] : r);
       if (Array.isArray(r)) return { result: r[0], binary: r[1] };
       return { result: r };
     },

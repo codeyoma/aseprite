@@ -43,7 +43,7 @@ check("unknown params are refused", not ok and tostring(err):find("unknown param
 ok, err = call("set_slice", { x = 0, y = 0, w = 1, h = 1 })
 check("required params are enforced", not ok and tostring(err):find("'name' is required", 1, true), err)
 ok, err = call("undo", { steps = "two" })
-check("types are checked", not ok and tostring(err):find("'steps' must be a integer", 1, true), err)
+check("types are checked", not ok and tostring(err):find("'steps' must be an integer", 1, true), err)
 ok, err = call("snapshot", { layer = "Nope" })
 check("a missing layer is one error", not ok and tostring(err):find("Layer not found: Nope", 1, true), err)
 ok, err = call("snapshot", { frame = 9 })
@@ -64,6 +64,51 @@ for name, req in pairs(P.requests) do
     local base = tostring(t):match("^(%a+)")
     check(name .. "." .. k .. " type " .. tostring(t), known[base] ~= nil)
   end
+end
+
+-- #96: the type grammar (lists, maps, shapes), bridge-method params and get_state's result, with the bridge's messages.
+do
+  local t = W.parseType("integer[][]?", P.shapes)
+  check("parseType: nested lists, optional", t.base == "integer" and #t.wrap == 2 and t.optional)
+  t = W.parseType("frames?all", P.shapes)
+  check("parseType: default", t.base == "frames" and t.default == "all" and t.optional)
+  check("parseType: shapes", W.parseType("Layer[]", P.shapes).base == "Layer")
+  check("parseType: unknown names fail", not pcall(W.parseType, "Nope", P.shapes) and not pcall(W.parseType, "string[", P.shapes))
+  for name, spec in pairs(P.bridgeMethods) do
+    for k, ty in pairs(spec.params) do check("bridge method " .. name .. "." .. k .. " type", pcall(W.parseType, ty, P.shapes)) end
+  end
+  for name in pairs(P.shapes) do
+    for k, ty in pairs(W.shapeFields(P.shapes, name)) do check("shape " .. name .. "." .. k .. " type", pcall(W.parseType, ty, P.shapes)) end
+  end
+  local function fails(fn, want, ...)
+    local ok2, e = pcall(fn, ...)
+    return not ok2 and tostring(e):find(want, 1, true) ~= nil, e
+  end
+  check("bridge params: a good chat.send", pcall(W.checkBridgeParams, P, "chat.send",
+    { prompt = "hi", sessions = {}, attachments = { { label = "a", path = "/x.png" } }, memory = {} }))
+  check("bridge params: a path into a list", fails(W.checkBridgeParams, "chat.send: 'attachments[0].path' must be a string",
+    P, "chat.send", { prompt = "hi", attachments = { { label = "a", path = 3 } } }))
+  check("bridge params: required", fails(W.checkBridgeParams, "chat.send: 'prompt' is required", P, "chat.send", {}))
+  check("bridge params: unknown in a shape", fails(W.checkBridgeParams, "unknown param 'attachments[0].bogus'",
+    P, "chat.send", { prompt = "hi", attachments = { { label = "a", path = "p", bogus = 1 } } }))
+  check("bridge params: map values", fails(W.checkBridgeParams, "'sessions.claude' must be a string",
+    P, "chat.send", { prompt = "hi", sessions = { claude = 5 } }))
+  check("bridge params: no scope", fails(W.checkBridgeParams, "unknown param 'scope'", P, "skills.list", { scope = {} }))
+  -- get_state answers in shape, also with groups, a selection, a tag, a slice and no sprite at all.
+  local ok2, e = pcall(W.checkResult, P, "get_state", H.call("get_state", {}))
+  check("get_state result is a State", ok2, e)
+  local spr = app.sprite
+  spr.selection = Selection(Rectangle(0, 0, 2, 2))
+  spr:newTag(1, 2).name = "walk"
+  spr:newSlice(Rectangle(1, 1, 2, 2)).name = "hit"
+  ok2, e = pcall(W.checkResult, P, "get_state", H.call("get_state", {}))
+  check("get_state result is a State (selection, tag, slice)", ok2, e)
+  local bad = H.call("get_state", {})
+  bad.activeSprite.layers[1].opacity = "full"
+  check("a wrong field is named by its path", fails(W.checkResult, "get_state result: 'result.activeSprite.layers[0]", P, "get_state", bad))
+  spr:close()
+  ok2, e = pcall(W.checkResult, P, "get_state", H.call("get_state", {}))
+  check("get_state result with no sprite is a State", ok2, e)
 end
 
 print(failures == 0 and "ALL PASS" or (failures .. " FAILED"))

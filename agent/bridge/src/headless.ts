@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import type { Reply } from "./aseprite.js";
-import { base64Bytes, checkParams, isRequest, PROTOCOL } from "./protocol.js";
+import { base64Bytes, checkResult, isRequest, PROTOCOL } from "./protocol.js";
 import { sessionFile } from "./session.js";
 
 /** Starts every reply line, so stray lines Aseprite prints are never read as replies. */
@@ -159,7 +159,16 @@ export class HeadlessLink {
     clearTimeout(p.timer);
     this.pending.delete(msg.id as number);
     if (msg.error) p.reject(new Error(msg.error.message ?? "Aseprite error"));
-    else p.resolve({ result: msg.result, binary: msg.binary !== undefined ? Buffer.from(msg.binary, "base64") : undefined });
+    else {
+      // A typed result (get_state's State) is checked as it arrives, as AsepriteLink does (#96).
+      try {
+        checkResult(p.method, msg.result);
+      } catch (err) {
+        p.reject(err as Error);
+        return;
+      }
+      p.resolve({ result: msg.result, binary: msg.binary !== undefined ? Buffer.from(msg.binary, "base64") : undefined });
+    }
   }
 
   /** A protocol request (or a runner one: open, close, shutdown). Same shape as AsepriteLink.request. */
@@ -167,8 +176,8 @@ export class HeadlessLink {
     if (RUNNER_METHODS.has(method)) {
       if (method === "open") return Promise.reject(new Error("Use HeadlessLink.open, which checks the live window"));
     } else {
+      // Params are checked by the runner's handlers on arrival (wire_params.lua), as in the live window (#96).
       if (!isRequest(method)) return Promise.reject(new Error(`Not a protocol request: ${method}`));
-      checkParams(method, params);
     }
     return this.send(method, params, timeoutMs);
   }

@@ -1,6 +1,6 @@
 {
   "description": "Wire protocol between the aseprite-agent bridge and the Aseprite extension (JSON-RPC 2.0 over WebSocket). This file is the single definition: the extension ships it, the bridge copies it, and contract tests check both sides against it. Bump version on any incompatible change.",
-  "version": 40,
+  "version": 41,
   "handshake": {
     "hello": "extension -> bridge, first message: { token, protocol, asepriteVersion }",
     "welcome": "bridge -> extension: the connection is accepted",
@@ -14,11 +14,8 @@
     },
     "get_state": {
       "kind": "read",
-      "params": {}
-    },
-    "get_context": {
-      "kind": "read",
-      "params": {}
+      "params": {},
+      "result": "State"
     },
     "execute_lua": {
       "kind": "scoped-write",
@@ -245,8 +242,13 @@
         "duration": "integer?",
         "label": "string?",
         "prompt": "string?",
-        "palette": "array?", "insert": "array?", "durations": "array?", "hit": "object?", "fx": "object?",
-        "spec": "string?", "clear": "array?"
+        "palette": "array?",
+        "insert": "array?",
+        "durations": "array?",
+        "hit": "object?",
+        "fx": "object?",
+        "spec": "string?",
+        "clear": "array?"
       }
     },
     "mirror_frames": {
@@ -307,7 +309,7 @@
     "needsSprite": "Whether the request needs an active sprite (\"No active sprite\" otherwise). Default: true for writes, false for reads."
   },
   "params": {
-    "types": "Each request lists its params as name: type. Types: string, integer, number, boolean, array, object, any, layer, frame, frames, bytes (pixel bytes: base64 text or { offset, length } into the request's binary frame, see binaryRequests). A trailing ? marks it optional. Unknown params are an error, except scope (sub-agent scopes), which any request may carry.",
+    "types": "Each request lists its params as name: type, and so does each bridge method (bridgeMethods). Types: string, integer, number, boolean, array, object, any, layer, frame, frames, bytes (pixel bytes: base64 text or { offset, length } into the request's binary frame, see binaryRequests), or the name of a shape (shapes: an object with those fields). T[] is a list of T and T{} an object whose values are T (e.g. integer[][], string{}). A trailing ? marks it optional; null counts as missing. Unknown params (and unknown fields of a shape) are an error, except scope (sub-agent scopes), which any request may carry. An empty list stands for an empty object and the other way round (Lua's json.encode writes an empty table as []). Who checks (#96): the receiver, once. The extension checks a request's params on arrival (wire_params.lua, which also resolves layers and frames); the bridge checks a bridge method's params on arrival and a request's result when the request gives its type (result), and checks tool inputs (zod) before it sends anything. Errors name the method and the param path, e.g. \"chat.send: 'attachments[0].path' must be a string\". Results are strict too: a new field in a result is a protocol change (version bump).",
     "layer": "A layer id ('L12', or 12) or a layer name (searched through groups, top first). The extension resolves it to the layer's id before the handler runs; a missing layer is an error.",
     "frame": "A 1-based frame number in range. Omitted means the active frame; the extension fills it in.",
     "frames": "A frame spec: a number, a list of numbers, 'a-b' (inclusive), or 'all'. The extension resolves it to a list of frame numbers in range; out-of-range frames are an error. 'frames?all' defaults to every frame, 'frames?active' to the active frame, plain 'frames?' leaves it out.",
@@ -405,28 +407,223 @@
   "apply": "apply (#88) runs ops (objects with an op name: add_layer, set_layer, move_layer, delete_layer, pixels, rect, line, clear_cel, move_cel, add_frames, delete_frames, set_duration, set_tag, delete_tag, set_palette, append_palette; their params are in agent/extension/handlers_apply.lua and the bridge's apply tool, agent/bridge/src/apply.ts) in order in ONE transaction (one undo step, label default 'Apply'). Frames in an op are numbered as the sprite is when that op runs; layers are ids or names, also ones added by earlier ops. Every op runs even after one failed; when any failed, or with dry_run, the transaction is rolled back. Result: { ok, applied, dryRun, errors: [{ op (0-based), path ('ops[2]' or 'ops[2].key'), type, message }], changes: [text per op that ran], layers: [{ name, id }] (layers added, when applied), frames (frame count after) }. The active layer and frame stay as they were. A scoped (sub-agent) request may only use pixels, rect, line, clear_cel and move_cel.",
   "binaryResults": "A request marked binary answers with a result containing binary: true, followed by exactly one binary WebSocket frame with the data.",
   "binaryRequests": "Requests can carry pixel bytes the same way (#95, protocol 37): a request with a top-level binary: <length> (next to id, method and params) is followed by exactly one binary WebSocket frame of that many bytes. A bytes param (rgba of put_image, create_sprite, create_tilemap, of each put_images image and each create_animation frame) is either base64 text or { offset, length }, a 0-based slice of that frame. One frame carries every image of the request, back to back. The extension holds the request until its frame arrives, answers with an error when the length differs or a text frame comes first, and accepts base64 everywhere (the Headless runner's JSON lines carry no binary frames). The bridge sends raw bytes as binary over WebSocket and as base64 to the Headless runner.",
-  "bridgeMethods": [
-    "chat.info",
-    "chat.send",
-    "chat.stop",
-    "chat.reset",
-    "chat.permission",
-    "chat.warm",
-    "commands.history",
-    "commands.revert",
-    "commands.setEnabled",
-    "dev.status",
-    "dev.apply",
-    "dev.build",
-    "dev.discard",
-    "dev.relaunch",
-    "skills.list",
-    "import.animation",
-    "update.check",
-    "update.prepare",
-    "update.install"
-  ],
+  "bridgeMethods": {
+    "chat.info": {
+      "params": {}
+    },
+    "chat.send": {
+      "params": {
+        "prompt": "string",
+        "state": "string?",
+        "changes": "string?",
+        "provider": "string?",
+        "sessions": "string{}?",
+        "attachments": "Attachment[]?",
+        "mode": "string?",
+        "chatId": "string?",
+        "history": "string?",
+        "spriteFile": "string?",
+        "memory": "MemoryEntry[]?"
+      }
+    },
+    "chat.stop": {
+      "params": {
+        "chatId": "string?"
+      }
+    },
+    "chat.reset": {
+      "params": {}
+    },
+    "chat.permission": {
+      "params": {
+        "requestId": "string",
+        "optionId": "string?"
+      }
+    },
+    "chat.warm": {
+      "params": {
+        "provider": "string?",
+        "mode": "string?",
+        "chatId": "string?",
+        "spriteFile": "string?"
+      }
+    },
+    "commands.history": {
+      "params": {
+        "name": "string"
+      }
+    },
+    "commands.revert": {
+      "params": {
+        "name": "string",
+        "rev": "string?"
+      }
+    },
+    "commands.setEnabled": {
+      "params": {
+        "name": "string",
+        "enabled": "boolean"
+      }
+    },
+    "dev.status": {
+      "params": {}
+    },
+    "dev.apply": {
+      "params": {}
+    },
+    "dev.build": {
+      "params": {}
+    },
+    "dev.discard": {
+      "params": {}
+    },
+    "dev.relaunch": {
+      "params": {}
+    },
+    "skills.list": {
+      "params": {}
+    },
+    "import.animation": {
+      "params": {
+        "path": "string",
+        "into": "string?",
+        "frame": "integer?"
+      }
+    },
+    "update.check": {
+      "params": {}
+    },
+    "update.prepare": {
+      "params": {}
+    },
+    "update.install": {
+      "params": {}
+    }
+  },
   "bridgeMethodIds": "Requests the extension sends use string ids, so they never collide with the bridge's numeric ids.",
+  "shapes": {
+    "Rect": {
+      "x": "integer",
+      "y": "integer",
+      "width": "integer",
+      "height": "integer"
+    },
+    "Attachment": {
+      "label": "string",
+      "path": "string",
+      "uri": "string?"
+    },
+    "MemoryEntry": {
+      "topic": "string",
+      "text": "string"
+    },
+    "SpriteSummary": {
+      "filename": "string",
+      "width": "integer",
+      "height": "integer",
+      "colorMode": "string",
+      "frameCount": "integer",
+      "layerCount": "integer",
+      "modified": "boolean"
+    },
+    "Sprite": {
+      "...": "SpriteSummary",
+      "layers": "Layer[]",
+      "frames": "Frame[]",
+      "tags": "Tag[]",
+      "palette": "Palette",
+      "slices": "Slice[]?",
+      "fxHits": "Hit[]?",
+      "pixelSpec": "string?",
+      "selection": "Rect?"
+    },
+    "Layer": {
+      "id": "string",
+      "name": "string",
+      "stackIndex": "integer",
+      "visible": "boolean",
+      "editable": "boolean",
+      "group": "boolean",
+      "layers": "Layer[]?",
+      "opacity": "integer?",
+      "blendMode": "string?",
+      "tilemap": "boolean?",
+      "background": "boolean?",
+      "reference": "boolean?",
+      "celFrames": "integer[]?",
+      "celLinks": "integer[][]?",
+      "fx": "FxRecord?"
+    },
+    "FxRecord": {
+      "id": "string",
+      "x": "integer",
+      "y": "integer",
+      "fps": "number",
+      "loop": "boolean",
+      "windupMs": "integer",
+      "recipe": "string?",
+      "render": "string?"
+    },
+    "Hit": {
+      "frame": "integer",
+      "freezeMs": "number",
+      "shakeMs": "number?",
+      "amp": "number?"
+    },
+    "Frame": {
+      "frame": "integer",
+      "durationMs": "integer"
+    },
+    "Tag": {
+      "name": "string",
+      "from": "integer",
+      "to": "integer",
+      "direction": "string",
+      "repeat": "integer"
+    },
+    "Palette": {
+      "size": "integer",
+      "colors": "string[]"
+    },
+    "Slice": {
+      "name": "string",
+      "bounds": "Rect?",
+      "center": "Rect?"
+    },
+    "Brush": {
+      "size": "integer",
+      "type": "string",
+      "angle": "number"
+    },
+    "Cel": {
+      "layer": "string",
+      "frame": "integer",
+      "bounds": "Rect",
+      "opacity": "integer"
+    },
+    "TimelineRange": {
+      "type": "string",
+      "layers": "string[]",
+      "frames": "integer[]"
+    },
+    "State": {
+      "asepriteVersion": "string",
+      "apiVersion": "integer",
+      "openSprites": "SpriteSummary[]",
+      "tool": "string?",
+      "fgColor": "string",
+      "bgColor": "string",
+      "brush": "Brush?",
+      "zoom": "number?",
+      "activeSprite": "Sprite?",
+      "activeLayer": "string?",
+      "activeLayerId": "string?",
+      "activeFrame": "integer?",
+      "activeTag": "string?",
+      "activeCel": "Cel?",
+      "timelineRange": "TimelineRange?"
+    }
+  },
   "notifications": {
     "chat.event": {
       "types": [
@@ -464,5 +661,6 @@
         "topic"
       ]
     }
-  }
+  },
+  "stateNotes": "get_state's result (State, #96) is the one description of the document and of what the user works on: the open sprites (SpriteSummary), the active one in full (Sprite: layers top first, groups nesting theirs), the active layer (path and id), frame, tag and cel, the timeline range (layer ids, frame numbers), the tool, brush, colors and zoom. The get_context tool and the panel's context line are views of it; there is no get_context request since protocol 41."
 }

@@ -49,7 +49,7 @@ test("tools without run forward to Aseprite", async () => {
 });
 
 test("errors become MCP error results", async () => {
-  const res = await runTool(findTool("get_context"), {}, fakeAseprite({ get_context: new Error("Aseprite is not connected") }));
+  const res = await runTool(findTool("get_context"), {}, fakeAseprite({ get_state: new Error("Aseprite is not connected") }));
   assert.equal(res.isError, true);
   assert.match(textOf(res), /not connected/);
 });
@@ -198,7 +198,7 @@ test("check: expect is checked in the bridge, sent as given, and overlaps name b
   ]) assert.equal(tool.input.safeParse({ expect: bad }).success, false, JSON.stringify(bad));
   const { checkParams } = await import("../dist/protocol.js");
   checkParams("check", { expect });
-  assert.throws(() => checkParams("check", { expect: [["Weapon", "Head"]] }), /'expect' must be a object/);
+  assert.throws(() => checkParams("check", { expect: [["Weapon", "Head"]] }), /'expect' must be an object/);
 
   const result = {
     errors: 2, warnings: 0, checked: { layers: 3, frames: 6, rules: ["layer-frames", "overlap"] },

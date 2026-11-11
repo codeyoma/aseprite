@@ -1,13 +1,15 @@
 // Replays the document contract scenarios (agent/tests/contract/*.json)
 // against the fake document. agent/tests/contract_test.lua replays the same
 // scenarios against the extension's handlers in a headless Aseprite, so the
-// fake answers the way Aseprite does. The format is in contract/legend.json.
+// fake answers the way Aseprite does. Typed results (get_state: State) are
+// checked against protocol.json by the fake itself, as the bridge's link does. The format is in contract/legend.json.
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { fakeDocument } from "./helpers/fake_document.mjs";
+import { checkBridgeParams } from "../dist/protocol.js";
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), "../../tests/contract");
 const { legend: LEGEND } = JSON.parse(readFileSync(join(DIR, "legend.json"), "utf8"));
@@ -169,6 +171,14 @@ for (const file of files) {
       };
       for (const [n, step] of sc.steps.entries()) {
         const where = `step ${n + 1}`;
+        // A bridge method's params, checked as the bridge checks them on arrival (#96); the Lua runner checks the
+        // same step with wire_params.lua.
+        if (step.bridgeMethod) {
+          const run = () => checkBridgeParams(step.bridgeMethod, step.params ?? {});
+          if (step.error) assert.throws(run, (e) => e.message.includes(step.error), `${where}: expected an error containing '${step.error}'`);
+          else assert.doesNotThrow(run, `${where} (${step.bridgeMethod})`);
+          continue;
+        }
         let method, params;
         if (step.request) { method = step.request; params = await prepare(step.params ?? {}); }
         else if (step.pixels) { method = "snapshot"; params = await prepare(step.pixels); }

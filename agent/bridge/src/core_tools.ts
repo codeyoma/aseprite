@@ -8,6 +8,7 @@ import { saveReviewCheckpoint } from "./critic.js";
 import { failure, text, type Content, type Tool, type ToolContext, type ToolResult } from "./tool.js";
 import { framesSpec } from "./tool_inputs.js";
 import { snapshotView } from "./views.js";
+import { contextOf } from "./document.js";
 
 const steps = z.object({ steps: z.number().int().min(1).max(100).optional() });
 
@@ -82,6 +83,11 @@ export const CORE_TOOLS: Tool[] = [
     input: z.object({}),
     kind: "read",
     label: () => "Read selection",
+    // A view of get_state (#96): the context is part of the one State description.
+    async run(_input, ctx) {
+      const { result } = await ctx.request("get_state", {});
+      return { content: [text(contextOf(result))] };
+    },
   },
   {
     name: "execute_lua",

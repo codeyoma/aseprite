@@ -32,6 +32,7 @@ end
 local P = plain(readJson(app.fs.joinPath(extDir, "protocol.json")))
 local H = dofile(app.fs.joinPath(extDir, "document_handlers.lua")).new{ chunkDir = extDir, protocol = P }
 local px = dofile(app.fs.joinPath(extDir, "pixels.lua"))
+local W = dofile(app.fs.joinPath(extDir, "wire_params.lua"))
 local LEGEND = plain(readJson(app.fs.joinPath(contractDir, "legend.json"))).legend
 local pc = app.pixelColor
 
@@ -323,6 +324,19 @@ local function runScenario(sc)
   end
   for n, step in ipairs(sc.steps) do
     local where = "step " .. n
+    -- A bridge method's params against protocol.json (#96): the bridge checks them on arrival; this runner holds
+    -- the extension's copy of the rules (wire_params.lua) to the same results.
+    if step.bridgeMethod then
+      local ok, err = pcall(W.checkBridgeParams, P, step.bridgeMethod, step.params or {})
+      if step.error then
+        if ok then return where .. ": expected an error containing '" .. step.error .. "'" end
+        if not errorText(err):find(step.error, 1, true) then
+          return where .. ": expected an error containing '" .. step.error .. "', got '" .. errorText(err) .. "'"
+        end
+      elseif not ok then return where .. " (" .. step.bridgeMethod .. "): " .. errorText(err) end
+      goto continue
+    end
+    do
     local method, params
     if step.request then method, params = step.request, prepare(step.params or {})
     elseif step.pixels then method, params = "snapshot", prepare(step.pixels)
@@ -335,6 +349,9 @@ local function runScenario(sc)
       end
     else
       if not res[1] then return where .. " (" .. method .. "): " .. errorText(res[2]) end
+      -- A typed result (get_state: State) must match protocol.json, as the bridge checks on arrival (#96).
+      local typed, shapeErr = pcall(W.checkResult, P, method, res[2])
+      if not typed then return where .. " (" .. method .. "): " .. errorText(shapeErr) end
       local ids = idsIn(state())
       local problems = {}
       if step.request and step.result then problems = match(step.result, res[2], ids)
@@ -345,6 +362,8 @@ local function runScenario(sc)
       elseif step.state then problems = match(step.state, normalize(res[2]), ids) end
       if #problems > 0 then return where .. " (" .. method .. "): " .. table.concat(problems, "; ") end
     end
+    end
+    ::continue::
   end
 end
 

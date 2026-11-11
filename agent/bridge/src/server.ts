@@ -19,7 +19,7 @@ Workflow:
 1. Before your first edit in a session, call read_guide("basics"). Use read_guide("recipes") for tested
    snippets (pixelate, retime, idle animation, outline, sprite sheet export) and read_guide("pixel-art") when drawing.
    Numeric pixel-art rules (timing tables, proportions, tiles, isometric, effects, UI) are in read_guide("rules").
-2. Call get_state to see the document and get_context to see what the user has selected.
+2. Call get_state to see the document and what the user has selected (get_context shows only the selection part).
 3. Make changes with apply (layers, cels, pixels, rects, lines, frames, tags and palette as a list of ops: one undo
    step, dry_run to check first) or execute_lua for anything else. Each call is one undo step and rolls back on error.
    Pass look: true and check: true to get the snapshot and the check findings with the edit.
