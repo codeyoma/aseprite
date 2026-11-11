@@ -137,6 +137,22 @@ function Turns:view(header)
   return status, action, turn.mixed == true
 end
 
+-- Restores the conversation to just before the user message `entry` (#93):
+-- Conversation:truncateAt, and "the last reply" becomes the last one kept,
+-- so the next message's changes are measured from it. Returns the removed
+-- message's text, or nil and why.
+function Turns:truncateAt(entry)
+  local text, why = self.conversation:truncateAt(entry)
+  if not text then return nil, why end
+  self.current, self.last = nil, nil
+  local list = self.conversation:entries()
+  for i = #list, 1, -1 do
+    local t = list[i].kind == "header" and self.byHeader[list[i]]
+    if t and t.finish then self.last = t; break end
+  end
+  return text
+end
+
 -- Reverts or restores a whole reply. Returns ok, why and, when a revert is
 -- refused only because the user edited after the reply, needsForce = true:
 -- ask the user, then call again with force (those edits stay redoable).

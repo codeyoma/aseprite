@@ -17,6 +17,14 @@
 --   { kind = "plan", items = { { content, status = "pending"|"in_progress"|"completed" }, ... } }
 --   { kind = "question", text, options = { "label", ... }, answered = nil|"label" }   (ask_user)
 --   { kind = "variations", task, items = { { name, image }, ... }, prompt, resolved = nil|"Kept v2"|"Discarded" }
+--   { kind = "memory", topic, text, answered = nil|"Remember"|"Don't remember" }   (remember_style, #93)
+-- A user entry that started an Agent turn carries checkpoint = { path, undoId, spriteId, ... } (#93).
+--
+-- Rewind (#93): truncateAt(userEntry) drops that message and everything after
+-- it and forgets the provider conversation ids; the kept messages become a
+-- recap (recapToSend) that goes with the next message until the agent starts
+-- its new conversation. branchData(userEntry) is the same cut as data for a
+-- new chat.
 
 local PROVIDER_NAMES = { claude = "Claude", codex = "Codex" }
 local MODE_NAMES = { ask = "Ask", plan = "Plan", developer = "Developer" }   -- Agent mode is not labeled
@@ -130,6 +138,12 @@ function Conversation:apply(ev)
   end
   if t == "session" then
     if ev.provider then self.ids[ev.provider] = ev.sessionId end
+    -- The agent has its new conversation, with the recap in it.
+    self.needsRecap = nil
+  elseif t == "memory" then
+    -- remember_style (#93): a proposed style memory entry; the user approves it with a button.
+    sinceLast(self)
+    push(self, { kind = "memory", topic = tostring(ev.topic or "note"), text = ev.text or "" })
   elseif t == "question" then
     -- ask_user: a question with option buttons; the answer is the user's next message.
     sinceLast(self)
@@ -230,15 +244,17 @@ function Conversation:serialize()
   for _, e in ipairs(self.list) do
     if SAVED[e.kind] then
       list[#list + 1] = { kind = e.kind, text = e.text, secs = e.secs, id = e.id, name = e.name, toolKind = e.toolKind,
-        detail = e.detail, status = e.status, result = e.result, check = e.check, items = e.items, mode = e.mode, images = e.images }
+        detail = e.detail, status = e.status, result = e.result, check = e.check, items = e.items, mode = e.mode, images = e.images,
+        checkpoint = e.checkpoint }
     end
   end
   local ids = {}
   for k, v in pairs(self.ids) do ids[k] = v end
-  return { entries = list, ids = ids }
+  return { entries = list, ids = ids, carried = self.carried, needsRecap = self.needsRecap }
 end
 
 local FIELDS = { "kind", "text", "secs", "id", "name", "toolKind", "detail", "status", "result", "mode" }
+local CHECKPOINT_FIELDS = { "path", "undoId", "spriteId", "key", "at", "turnSeq", "title", "source" }
 
 -- Accepts plain tables or the JSON objects json.decode returns (copied
 -- into plain tables, so the panel can annotate entries).
@@ -256,12 +272,18 @@ function Conversation:restore(data)
       e.items = {}
       for _, it in ipairs(src.items) do e.items[#e.items + 1] = { content = it.content, status = it.status } end
     end
+    if src.checkpoint ~= nil and type(src.checkpoint) ~= "string" then
+      e.checkpoint = {}
+      for _, f in ipairs(CHECKPOINT_FIELDS) do e.checkpoint[f] = src.checkpoint[f] end
+    end
     self.list[#self.list + 1] = e
   end
   -- Conversation keys belong to the bridge; keep every one.
   for k, v in pairs(data.ids or {}) do
     if type(k) == "string" and type(v) == "string" then self.ids[k] = v end
   end
+  self.carried = type(data.carried) == "string" and data.carried or nil
+  self.needsRecap = data.needsRecap == true or nil
   self.turnStart = nil
 end
 
@@ -269,8 +291,111 @@ end
 function Conversation:reset()
   self.list = {}
   self.ids = {}
+  self.carried, self.needsRecap = nil, nil
   self.turnStart = nil
   self.lastEvent = nil
+end
+
+---------------------------------------------------------------------------
+-- Rewind (#93): restore the conversation to before a message, or branch
+---------------------------------------------------------------------------
+
+-- The position of an entry in the list, or nil.
+function Conversation:indexOf(entry)
+  for i, e in ipairs(self.list) do if e == entry then return i end end
+  return nil
+end
+
+-- The newest user entry (the message of the running or last turn).
+function Conversation:lastUser()
+  for i = #self.list, 1, -1 do if self.list[i].kind == "user" then return self.list[i] end end
+end
+
+local RECAP_TEXT = 1200   -- longest reply or message kept whole in a recap
+
+local function short(text, max)
+  text = tostring(text or ""):gsub("%s+$", "")
+  if #text <= max then return text end
+  local cut = utf8.offset(text, max) or max
+  return text:sub(1, cut - 1) .. " [...]"
+end
+
+-- The entries before position `upto` (all when nil) as a recap: who said
+-- what, the agent's steps as one line per turn, no thoughts or tool output.
+-- What a branch carried over from its parent chat beyond the copied entries
+-- (`carried`) comes first.
+function Conversation:recapText(upto)
+  local out = {}
+  if self.carried and self.carried ~= "" then out[#out + 1] = self.carried end
+  local steps = {}
+  local function flushSteps()
+    if #steps > 0 then out[#out + 1] = "Agent steps: " .. table.concat(steps, "; ") end
+    steps = {}
+  end
+  local last = (upto or (#self.list + 1)) - 1
+  for i = 1, last do
+    local e = self.list[i]
+    if e.kind == "user" then
+      flushSteps()
+      local images = (e.images and #e.images > 0) and string.format(" [%d image%s attached]", #e.images, #e.images == 1 and "" or "s") or ""
+      out[#out + 1] = "User: " .. short(e.text, RECAP_TEXT) .. images
+    elseif e.kind == "tool" then
+      steps[#steps + 1] = tostring(e.text or e.name or "tool") .. (e.status == "failed" and " (failed)" or "")
+    elseif e.kind == "text" then
+      flushSteps()
+      out[#out + 1] = "Agent: " .. short(e.text, RECAP_TEXT)
+    elseif e.kind == "question" then
+      flushSteps()
+      out[#out + 1] = "Agent asked: " .. short(e.text, 300) .. (e.answered and (" (user picked: " .. e.answered .. ")") or "")
+    elseif e.kind == "memory" and e.answered then
+      out[#out + 1] = string.format("Style memory proposal (%s: %s): %s", e.topic or "note", short(e.text, 300), e.answered)
+    elseif e.kind == "error" then
+      flushSteps()
+      out[#out + 1] = "Error: " .. short(e.text, 300)
+    end
+  end
+  flushSteps()
+  return table.concat(out, "\n")
+end
+
+-- The recap to send with the message of the turn being started (the newest
+-- user entry), or nil. Needed after truncateAt or a branch, until the agent
+-- reports its new conversation.
+function Conversation:recapToSend()
+  if not self.needsRecap then return nil end
+  local last = self:lastUser()
+  local text = self:recapText(last and self:indexOf(last) or nil)
+  return text ~= "" and text or nil
+end
+
+-- Restores the conversation to just before the user message `entry`: that
+-- message and everything after it go, the provider conversation ids are
+-- forgotten, and the kept messages go as a recap with the next message.
+-- Returns the removed message's text, or nil and why.
+function Conversation:truncateAt(entry)
+  if self:isBusy() then return nil, "Stop this chat's turn first" end
+  local i = self:indexOf(entry)
+  if not i or entry.kind ~= "user" then return nil, "Not a message of this chat" end
+  for j = #self.list, i, -1 do self.list[j] = nil end
+  self.ids = {}
+  self.needsRecap = true
+  self.lastEvent = nil
+  return entry.text or ""
+end
+
+-- Data for a new chat that branches from just before the user message
+-- `entry`: the earlier entries (as serialize() makes them), no conversation
+-- ids, and a recap to send first. Returns data, the message text; or nil and why.
+function Conversation:branchData(entry)
+  local i = self:indexOf(entry)
+  if not i or entry.kind ~= "user" then return nil, "Not a message of this chat" end
+  local all = self:serialize()
+  local kept, n = {}, 0
+  for j = 1, i - 1 do
+    local e = self.list[j]
+    if SAVED[e.kind] then n = n + 1; kept[n] = all.entries[n] end
+  end
+  return { entries = kept, ids = {}, carried = self.carried, needsRecap = true }, entry.text or ""
 end
 
 ---------------------------------------------------------------------------

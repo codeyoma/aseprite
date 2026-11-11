@@ -120,6 +120,43 @@ function init(plugin)
     openSocket = function(args) return WebSocket(args) end,
   }
 
+  -- Checkpoints (#93): a copy of a chat's sprite before each Agent turn, in
+  -- ~/.aseprite-agent/checkpoints/<sprite>/ (the last 20 per sprite). Saving
+  -- and removing files stays in this script.
+  local checkpoints = load("checkpoints.lua").new{
+    dir = app.fs.joinPath(agentHome(), "checkpoints"), keep = 20,
+    save = function(sprite, path) sprite:saveCopyAs(path) end,
+    remove = function(path) os.remove(path) end,
+    makeDirs = function(dir) app.fs.makeAllDirectories(dir) end,
+    listFiles = function(dir) return app.fs.isDirectory(dir) and app.fs.listFiles(dir) or {} end,
+    isFile = function(path) return path ~= nil and app.fs.isFile(path) end,
+    join = function(a, b) return app.fs.joinPath(a, b) end,
+    clock = os.time,
+  }
+  -- Opens a checkpoint as a new tab under a name of its own next to the
+  -- original ("hero-branch.aseprite", "-branch-2", ...), so Save never writes
+  -- into the checkpoints folder or over the user's file.
+  local function openCheckpoint(rec, kind)
+    if not rec or not app.fs.isFile(rec.path) then return nil end
+    local sprite = app.open(rec.path)
+    if not sprite then return nil end
+    local source = tostring(rec.source or "")
+    local dir = app.fs.filePath(source)
+    local title = app.fs.fileTitle(source ~= "" and source or rec.path)
+    local base = title .. "-" .. kind
+    if dir ~= "" and app.fs.isDirectory(dir) then
+      local name, n = app.fs.joinPath(dir, base .. ".aseprite"), 1
+      while app.fs.isFile(name) do
+        n = n + 1
+        name = app.fs.joinPath(dir, base .. "-" .. n .. ".aseprite")
+      end
+      sprite.filename = name
+    else
+      sprite.filename = base
+    end
+    return sprite
+  end
+
   local Conversation = load("conversation.lua")
   local Turns, TurnHistory = load("turns.lua"), load("turn_history.lua")
   local turns = Turns.new{ Conversation = Conversation, clock = os.time,
@@ -153,6 +190,10 @@ function init(plugin)
     savedCommands = saved,
     saveForRelaunch = function(conversation) saveForRelaunch(conversation) end,
     variations = handlers.variations,
+    -- Project memory and checkpoints (#93).
+    memory = load("project_memory.lua"),
+    checkpoints = checkpoints,
+    openCheckpoint = openCheckpoint,
     attachments = load("attachments.lua").new{
       dir = app.fs.joinPath(agentHome(), "attachments"),
       snapshot = handlers.snapshot, Uri = view.Uri,
@@ -259,6 +300,11 @@ function init(plugin)
       return c and { seq = c.seq, method = c.method, changed = c.changed, claimed = c.claimed or false } or nil
     end,
     stop = function() Panel.stop() end,
+    -- #93: answer the newest style memory proposal (1 Remember, 2 Don't remember); rewind to the i-th user
+    -- message of the chat on screen ("sprite" | "conversation" | "both" | "branch"); the sprite's style memory.
+    answerMemory = function(index) return Panel.answerLastMemory(index) end,
+    rewind = function(i, choice) return Panel.rewindUser(i, choice) end,
+    styleMemory = function() return app.sprite and load("project_memory.lua").entries(app.sprite) or {} end,
     lastTurnStatus = function() return Panel.lastTurnStatus() end,
   }
 

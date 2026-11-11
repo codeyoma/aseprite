@@ -959,6 +959,16 @@
     ]
   },
   {
+    "name": "remember_style",
+    "title": "Propose a style memory entry",
+    "kind": "read",
+    "label": "Propose style memory",
+    "input": [
+      "text",
+      "topic"
+    ]
+  },
+  {
     "name": "render_model",
     "title": "Render 3D model to sprites",
     "kind": "edit",

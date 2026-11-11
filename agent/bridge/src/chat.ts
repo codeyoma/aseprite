@@ -17,6 +17,7 @@ import { describeTool, inputDetail, resultDetail, toolKind } from "./tool_labels
 import type { ChatMode, PermissionOutcome, PermissionRequest } from "./acp.js";
 import type { PlanEntry } from "./providers/acp_mapper.js";
 import { LOOK_NUDGE } from "./look.js";
+import { ConversationDirs, ensureProject, turnDir, type MemoryEntry } from "./project.js";
 
 export type { ProviderId as Provider } from "./providers/index.js";
 
@@ -24,7 +25,7 @@ export type { ProviderId as Provider } from "./providers/index.js";
 export interface ChatEvent {
   /** The chat whose turn this event belongs to (absent outside a turn). */
   chatId?: string;
-  type: "status" | "text" | "thinking" | "tool" | "tool_result" | "done" | "error" | "session" | "plan" | "permission" | "build";
+  type: "status" | "text" | "thinking" | "tool" | "tool_result" | "done" | "error" | "session" | "plan" | "permission" | "build" | "question" | "memory";
   text?: string;
   /** Step label, e.g. "Add Shadow layer". */
   tool?: string;
@@ -45,6 +46,8 @@ export interface ChatEvent {
   entries?: PlanEntry[];
   /** "question" (ask_user): the answers offered as buttons. */
   choices?: string[];
+  /** "memory" (remember_style, #93): the proposed entry's topic (palette, outline, scale, note); its text is `text`. */
+  topic?: string;
   /** "permission": the request to answer with chat.permission, and its options. */
   requestId?: string;
   options?: { optionId: string; name: string; kind: string }[];
@@ -60,6 +63,7 @@ If the user changed the document after your last reply, the message also starts 
 The user may mention objects as "Body (aseprite://layer/L12)"; URIs are aseprite://layer/L<id>, frame/<n>, tag/<name>, cel/L<id>:<frame>, palette/<index>, slice/<name> and selection. When you refer to an object in a reply, cite it as a markdown link like [Body](aseprite://layer/L12) so the user can click it.
 For frame counts, durations, tags and linked cels, read get_timeline_text and change it with one apply_timeline_text call.
 Put content you generate or redraw on a new layer with aiLayer(task, prompt) in execute_lua, not over the user's pixels, unless they ask you to edit a layer in place. When they ask for variations or options, build each with variationLayer(task, i) and then call propose_variations(task); the user picks one.
+The state block's "style memory" lines are conventions the user approved for this project (palette roles, outline rule, pixel scale, notes): follow them. When the user settles on such a convention, propose it with remember_style (one entry per call) and carry on.
 You also have a shell for work outside the document (files, converters, image tools, git); the user approves each command, so use it only when the aseprite tools can't do the job, and say why.
 ${LOOK_NUDGE} Then run check: fix its errors, and mention any warning you leave on purpose. Save round trips: pass look: true (or "filmstrip") and check: true to execute_lua so the snapshot and the findings come back with the edit. Keep replies short: say what you changed in one or two sentences.
 
@@ -104,6 +108,11 @@ export interface MessageParts {
   changes?: string;
   /** Skill instructions for this message. */
   skills?: string;
+  /**
+   * The conversation so far, as the panel recaps it (#93), when this message starts a new agent conversation that
+   * continues an earlier one: after "restore conversation" or "branch from here".
+   */
+  history?: string;
   attachments?: (Attachment & { uri?: string })[];
   mode?: ChatMode;
 }
@@ -114,10 +123,24 @@ export interface MessageParts {
  * and a line per attached image (its path lets tools read it).
  */
 export function composeMessage(p: MessageParts): string {
-  const head = [MODE_NOTES[p.mode ?? "agent"], p.changes?.trim(), p.state?.trim(), p.skills?.trim()].filter(Boolean).join("\n");
+  const head = [MODE_NOTES[p.mode ?? "agent"], earlierConversation(p.history), p.changes?.trim(), p.state?.trim(), p.skills?.trim()]
+    .filter(Boolean).join("\n");
   const attached = (p.attachments ?? []).map((a, i) => `\n[Attached image ${i + 1}: ${a.label}${a.uri ? ` (${a.uri})` : ""}, file ${a.path}]`).join("");
   const body = p.prompt + attached;
   return head ? `${head}\n\n${body}` : body;
+}
+
+/** The longest recap sent; an older start is cut. */
+export const HISTORY_MAX = 8000;
+
+/** The recap of an earlier conversation (#93) as a fenced block, or undefined. */
+export function earlierConversation(history?: string): string | undefined {
+  const h = history?.trim();
+  if (!h) return undefined;
+  const body = h.length > HISTORY_MAX ? "[...]\n" + h.slice(h.length - HISTORY_MAX) : h;
+  return '<earlier-conversation note="what was said before this message, in a session you no longer have. The user ' +
+    'rewound or branched the chat to here, so nothing said after it happened. Layer ids and the document may have ' +
+    'changed since: trust the state block below.">\n' + body + "\n</earlier-conversation>";
 }
 
 /** Maps a provider event to the event the panel shows. */
@@ -140,6 +163,10 @@ export interface ChatRequest extends MessageParts {
   sessions?: Record<string, string>;
   /** The panel's chat (one per tab); every event of the turn carries it. */
   chatId?: string;
+  /** The chat's sprite file (#93): a new conversation starts in its folder when it is saved. */
+  spriteFile?: string;
+  /** The sprite's approved style memory, mirrored into the project's AGENTS.md. */
+  memory?: MemoryEntry[];
 }
 
 export interface ChatRunnerOptions {
@@ -149,6 +176,8 @@ export interface ChatRunnerOptions {
   runtimes?: Runtime[];
   /** Developer mode setup: the repository to work in, on a dev/ branch. */
   developer?: (prompt: string) => { cwd: string; branch: string };
+  /** Where conversations' folders are recorded (default: conversation-dirs.json in the agent home; null: in memory only). */
+  dirsFile?: string | null;
 }
 
 export class ChatRunner {
@@ -163,6 +192,8 @@ export class ChatRunner {
   // passes them with each message; new ones are reported with "session".
   private conversations: Record<string, string | undefined> = {};
   private readonly cwd = join(sessionDir, "workspace");
+  /** Which folder each conversation started in (#93). */
+  private readonly dirs: ConversationDirs;
   private readonly developer: (prompt: string) => { cwd: string; branch: string };
 
   constructor(
@@ -172,6 +203,7 @@ export class ChatRunner {
   ) {
     const recordDir = opts.recordDir ?? process.env.ASEPRITE_AGENT_RECORD;
     mkdirSync(this.cwd, { recursive: true });
+    this.dirs = new ConversationDirs(opts.dirsFile === null ? undefined : opts.dirsFile ?? join(sessionDir, "conversation-dirs.json"));
     if (recordDir) mkdirSync(recordDir, { recursive: true });
     const acp = new AcpRuntime(endpoint, recordDir), stream = new StreamRuntime(endpoint, recordDir);
     this.runtimes = opts.runtimes ?? (process.env.ASEPRITE_AGENT_RUNTIME === "stream" ? [stream] : [acp, stream]);
@@ -190,11 +222,13 @@ export class ChatRunner {
    * and a spare session the next new conversation takes, so the first turn
    * doesn't wait for them.
    */
-  warm(provider: AgentProvider, mode: ChatMode = "agent", chatId?: string): void {
+  warm(provider: AgentProvider, mode: ChatMode = "agent", chatId?: string, spriteFile?: string): void {
     if (this.turns.has(chatId ?? "")) return;
     const runtime = this.runtimes.find((r) => r.supports(provider));
     if (!runtime?.warm) return;
-    void runtime.warm({ key: conversationKey(provider.id, mode), chatId, provider, mode, cwd: this.cwd, systemPrompt: SYSTEM_PROMPT })
+    // The spare session is for a new conversation, so it starts where one would (#93).
+    const cwd = turnDir({ dirs: this.dirs, spriteFile, workspace: this.cwd }).cwd;
+    void runtime.warm({ key: conversationKey(provider.id, mode), chatId, provider, mode, cwd, systemPrompt: SYSTEM_PROMPT })
       .catch((err) => log(`chat: warming ${provider.id} failed: ${err instanceof Error ? err.message : String(err)}`));
   }
 
@@ -322,7 +356,10 @@ export class ChatRunner {
     else delete this.conversations[convKey];
     const runtime = this.runtimeFor(provider);
     if (mode === "developer" && runtime.name !== "acp") throw new Error("Developer mode needs the ACP runtime (unset ASEPRITE_AGENT_RUNTIME)");
-    let cwd = this.cwd;
+    // A known conversation runs in the folder it started in; a new one in the sprite's project folder (#93).
+    const place = turnDir({ conversationId: this.conversations[convKey], dirs: this.dirs, spriteFile: req.spriteFile, workspace: this.cwd });
+    let cwd = place.cwd;
+    if (place.project && mode !== "developer") ensureProject(place.project, req.memory);
     if (mode === "developer") {
       const dev = this.developer(skills.message);
       cwd = dev.cwd;
@@ -357,6 +394,7 @@ export class ChatRunner {
     runtime
       .start({ key, provider, message, conversationId: this.conversations[convKey], images, mode, cwd, chatId, systemPrompt: mode === "developer" ? DEVELOPER_PROMPT : SYSTEM_PROMPT }, sink)
       .then((r) => {
+        if (r.conversationId && mode !== "developer") this.dirs.set(r.conversationId, cwd);
         if (r.conversationId) {
           if (mode === "ask" || mode === "plan") this.readOnly.add(r.conversationId);
           else this.readOnly.delete(r.conversationId);
@@ -377,6 +415,17 @@ export class ChatRunner {
   }
 }
 
+/** The panel's style memory list, checked (#93); undefined when it sent none. */
+function memoryList(value: unknown): MemoryEntry[] | undefined {
+  // Lua's json.encode writes an empty table as {}.
+  if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0) return [];
+  if (!Array.isArray(value)) return undefined;
+  return value
+    .filter((m) => m && typeof m.topic === "string" && typeof m.text === "string")
+    .slice(0, 50)
+    .map((m) => ({ topic: m.topic.slice(0, 20), text: m.text.slice(0, 300) }));
+}
+
 function rejectOutcome(options: PermissionRequest["options"]): PermissionOutcome {
   const reject = options.find((o) => o.kind === "reject_once") ?? options.find((o) => o.kind?.startsWith("reject"));
   return reject ? { outcome: "selected", optionId: reject.optionId } : { outcome: "cancelled" };
@@ -393,7 +442,7 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
     "chat.send": (p: {
       prompt: string; state?: string; changes?: string; provider?: string;
       sessions?: Record<string, string>; attachments?: (Attachment & { uri?: string })[]; mode?: string;
-      chatId?: string;
+      chatId?: string; history?: string; spriteFile?: string; memory?: MemoryEntry[];
     }) => (async () => {
       if (!p.prompt?.trim()) throw new Error("Empty prompt");
       const images = await loadAttachments(p.attachments);
@@ -403,11 +452,15 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
         prompt: p.prompt, state: p.state ?? "", changes: p.changes,
         attachments, mode: chatMode(p.mode), provider: providerFor(p.provider),
         sessions: p.sessions, chatId: p.chatId ? String(p.chatId) : undefined,
+        history: typeof p.history === "string" ? p.history : undefined,
+        spriteFile: typeof p.spriteFile === "string" && p.spriteFile ? p.spriteFile : undefined,
+        memory: memoryList(p.memory),
       }, images);
       return { started: true };
     })(),
-    "chat.warm": (p: { provider?: string; mode?: string; chatId?: string }) => {
-      chat.warm(providerFor(p.provider), chatMode(p.mode), p.chatId ? String(p.chatId) : undefined);
+    "chat.warm": (p: { provider?: string; mode?: string; chatId?: string; spriteFile?: string }) => {
+      chat.warm(providerFor(p.provider), chatMode(p.mode), p.chatId ? String(p.chatId) : undefined,
+        typeof p.spriteFile === "string" && p.spriteFile ? p.spriteFile : undefined);
       return { warming: true };
     },
     "chat.permission": (p: { requestId: string; optionId?: string | null }) => ({

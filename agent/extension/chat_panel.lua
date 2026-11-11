@@ -30,6 +30,8 @@
 
 -- The input box's hint text.
 local PLACEHOLDER = "Draw, edit or animate..."
+-- The buttons of a style memory proposal (#93); the first approves it.
+local MEMORY_OPTIONS = { "Remember", "Don't remember" }
 
 -- composer.lua and prompter.lua sit next to this file.
 local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
@@ -76,6 +78,13 @@ return function(deps)
   local function spriteById(id)
     if not id then return nil end
     for _, s in ipairs(app.sprites) do if s.id == id then return s end end
+    return nil
+  end
+  -- The sprite's file when it was saved somewhere (a full path), else nil.
+  local function spriteFileOf(sprite)
+    local ok, name = pcall(function() return sprite and sprite.filename end)
+    if not ok or type(name) ~= "string" then return nil end
+    if name:match("^/") or name:match("^%a:[/\\]") then return name end
     return nil
   end
   local chats = Chats.new{
@@ -366,6 +375,53 @@ return function(deps)
       end
     end
 
+    -- A card: text with an accent bar, then option buttons (wrapped to the
+    -- width); the chosen one stays highlighted. ask_user and remember_style.
+    local function cardRows(e, text, options, action, hint)
+      local lines = wrapCached(gc, e, "text", text, textW - u * 4)
+      local qh = 0
+      for _, l in ipairs(lines) do qh = qh + lineHeight(l) + u // 2 end
+      addRow(qh + u * 2, function(y)
+        gc.color = C.accent
+        gc:fillRect(Rectangle(pad, y, u, qh + u))
+        gc.color = C.text
+        local ty = y + u // 2
+        for _, l in ipairs(lines) do gc:fillText(l, pad + u * 3, ty); ty = ty + lineHeight(l) + u // 2 end
+      end, nil, u)
+      local rowsOf, row, rowW = {}, {}, 0
+      for i, label in ipairs(options) do
+        local bw = gc:measureText(label).width + u * 6
+        if #row > 0 and rowW + bw > textW then rowsOf[#rowsOf + 1] = row; row, rowW = {}, 0 end
+        row[#row + 1] = { label = label, w = bw, index = i }
+        rowW = rowW + bw + u * 2
+      end
+      if #row > 0 then rowsOf[#rowsOf + 1] = row end
+      for _, r in ipairs(rowsOf) do
+        addRow(lh + u * 2, function(y)
+          local x = pad + u * 3
+          for _, b in ipairs(r) do
+            local chosen = e.answered == b.label
+            gc.color = chosen and C.accent or C.rule
+            gc:beginPath()
+            gc:roundedRect(Rectangle(x, y, b.w, lh + u), u * 2, u * 2)
+            gc:fill()
+            gc.color = (e.answered and not chosen) and C.faint or C.text
+            gc:fillText(b.label, x + u * 3, y + u // 2)
+            if not e.answered then
+              hitButtons[#hitButtons + 1] = { x0 = x, y0 = y, x1 = x + b.w, y1 = y + lh + u, action = action, entry = e, index = b.index }
+            end
+            x = x + b.w + u * 2
+          end
+        end, nil, u)
+      end
+      if not e.answered and hint then
+        addRow(lh, function(y)
+          gc.color = C.faint
+          gc:fillText(hint, pad + u * 3, y)
+        end, nil, u * 2)
+      end
+    end
+
     local busy = conv:isBusy()
     local turnUndone = false     -- steps of a reverted reply are drawn faint
     for _, e in ipairs(conv:entries()) do
@@ -386,6 +442,15 @@ return function(deps)
           gc:beginPath()
           gc:roundedRect(Rectangle(x0, y, bw, bh), u * 4, u * 4)
           gc:fill()
+          -- Rewind (#93): restore the sprite or the conversation to before this message, or branch from here.
+          if not busy then
+            local mark = "↶"
+            local mw = gc:measureText(mark).width
+            local mx, my = x0 - mw - u * 3, y + (bh - lh) // 2
+            gc.color = e.checkpoint and C.dim or C.faint
+            gc:fillText(mark, mx, my)
+            hitButtons[#hitButtons + 1] = { x0 = mx - u, y0 = my - u, x1 = mx + mw + u, y1 = my + lh + u, action = "rewind", entry = e }
+          end
           gc.color = C.bubbleText
           local ty = y + u * 2
           for _, l in ipairs(lines) do
@@ -480,49 +545,12 @@ return function(deps)
 
       elseif k == "question" then
         -- ask_user: the question, then its options as buttons; a click sends the option as the user's message.
-        local lines = wrapCached(gc, e, "text", e.text, textW - u * 4)
-        local qh = 0
-        for _, l in ipairs(lines) do qh = qh + lineHeight(l) + u // 2 end
-        addRow(qh + u * 2, function(y)
-          gc.color = C.accent
-          gc:fillRect(Rectangle(pad, y, u, qh + u))
-          gc.color = C.text
-          local ty = y + u // 2
-          for _, l in ipairs(lines) do gc:fillText(l, pad + u * 3, ty); ty = ty + lineHeight(l) + u // 2 end
-        end, nil, u)
-        -- Option buttons, wrapped onto rows that fit the width.
-        local rowsOf, row, rowW = {}, {}, 0
-        for i, label in ipairs(e.options or {}) do
-          local bw = gc:measureText(label).width + u * 6
-          if #row > 0 and rowW + bw > textW then rowsOf[#rowsOf + 1] = row; row, rowW = {}, 0 end
-          row[#row + 1] = { label = label, w = bw, index = i }
-          rowW = rowW + bw + u * 2
-        end
-        if #row > 0 then rowsOf[#rowsOf + 1] = row end
-        for _, r in ipairs(rowsOf) do
-          addRow(lh + u * 2, function(y)
-            local x = pad + u * 3
-            for _, b in ipairs(r) do
-              local chosen = e.answered == b.label
-              gc.color = chosen and C.accent or C.rule
-              gc:beginPath()
-              gc:roundedRect(Rectangle(x, y, b.w, lh + u), u * 2, u * 2)
-              gc:fill()
-              gc.color = (e.answered and not chosen) and C.faint or C.text
-              gc:fillText(b.label, x + u * 3, y + u // 2)
-              if not e.answered then
-                hitButtons[#hitButtons + 1] = { x0 = x, y0 = y, x1 = x + b.w, y1 = y + lh + u, action = "answer_question", entry = e, index = b.index }
-              end
-              x = x + b.w + u * 2
-            end
-          end, nil, u)
-        end
-        if not e.answered then
-          addRow(lh, function(y)
-            gc.color = C.faint
-            gc:fillText("Pick one, or type your own answer below.", pad + u * 3, y)
-          end, nil, u * 2)
-        end
+        cardRows(e, e.text, e.options or {}, "answer_question", "Pick one, or type your own answer below.")
+
+      elseif k == "memory" then
+        -- remember_style (#93): the proposed entry, kept only when the user approves it.
+        cardRows(e, "Remember for this project? " .. (e.topic or "note") .. ": " .. (e.text or ""),
+          MEMORY_OPTIONS, "answer_memory", "Approved entries show in the State block of every message.")
 
       elseif k == "text" then
         -- Replies may cite objects as [label](aseprite://...) links (#20).
@@ -982,7 +1010,7 @@ return function(deps)
   local function warm()
     if not dlg or chats.current.busy then return end
     deps.request("chat.warm", { provider = dlg.data.provider or providers[1], mode = (dlg.data.mode or "Agent"):lower(),
-      chatId = chats.current.id }, function() end)
+      chatId = chats.current.id, spriteFile = spriteFileOf(spriteById(chats.current.spriteId)) }, function() end)
   end
   Panel.warm = warm
 
@@ -1224,7 +1252,13 @@ return function(deps)
     for _, im in ipairs(r.images or {}) do
       if im.path and im.thumb and thumbCache[im.path] == nil then thumbCache[im.path] = im.thumb end
     end
-    chat.turns:start(spriteById(chat.spriteId) or app.sprite, { text = r.shown, provider = p.provider, mode = p.mode, skill = r.skillTitle, images = r.images })
+    local sprite = spriteById(chat.spriteId) or app.sprite
+    -- A checkpoint of the sprite before an Agent turn writes (#93), on the message's entry.
+    local checkpoint = (p.mode == "agent" or p.mode == "developer") and Panel.takeCheckpoint(sprite) or nil
+    chat.turns:start(sprite, { text = r.shown, provider = p.provider, mode = p.mode, skill = r.skillTitle, images = r.images })
+    local userEntry = chat.conv:lastUser()
+    if userEntry then userEntry.checkpoint = checkpoint end
+    if deps.checkpoints and sprite then deps.checkpoints:noteTurn(sprite.id, chat.id) end
     -- Turns overlapping on one sprite share its undo history: neither reply
     -- can be reverted alone (#90), so both are marked.
     for _, other in pairs(chats.byId) do
@@ -1255,6 +1289,10 @@ return function(deps)
         attachments = p.attachments,
         mode = p.mode,
         chatId = chat.id,
+        -- #93: the recap after a rewind or branch; the sprite's file (the chat works in its folder) and style memory.
+        history = chat.conv:recapToSend(),
+        spriteFile = spriteFileOf(sprite),
+        memory = deps.memory and sprite and deps.memory.entries(sprite) or nil,
       }, function(_, error)
         if error then
           fail(error.message or tostring(error))
@@ -1577,6 +1615,8 @@ return function(deps)
       if dlg then dlg:repaint() end
       return ok and true or false
     end
+    if action == "answer_memory" then return Panel.answerMemory(entry, index) end
+    if action == "rewind" then return Panel.rewindMenu(entry) end
     if action == "answer_question" then
       if not entry or entry.answered then return false end
       local label = entry.options and entry.options[index]
@@ -1592,6 +1632,195 @@ return function(deps)
       return true
     end
     return false
+  end
+
+  ---------------------------------------------------------------------------
+  -- Project memory and checkpoints (#93)
+  ---------------------------------------------------------------------------
+
+  -- A checkpoint of the sprite (Checkpoints:take), or nil when there is none
+  -- to take or it failed (said in the status line; the turn still runs).
+  function Panel.takeCheckpoint(sprite)
+    if not deps.checkpoints or not sprite then return nil end
+    local rec, why = deps.checkpoints:take(sprite)
+    if not rec and why then updateStatus(why) end
+    return rec
+  end
+
+  -- The user answered a style memory proposal: Remember stores it with the
+  -- chat's sprite (one undo step), the other button drops it.
+  function Panel.answerMemory(entry, index)
+    if not entry or entry.kind ~= "memory" or entry.answered then return false end
+    local label = MEMORY_OPTIONS[index]
+    if not label then return false end
+    if index == 1 then
+      local sprite = spriteById(chats.current.spriteId) or app.sprite
+      if not deps.memory or not sprite then prompter.tip("Open the sprite to remember its style"); return false end
+      local ok, err = pcall(deps.memory.remember, sprite, entry.topic, entry.text)
+      if not ok then prompter.tip(tostring(err)); return false end
+      conv:note("status", "Remembered for this project: " .. (entry.topic or "note") .. ": " .. (entry.text or ""))
+    end
+    entry.answered = label
+    refreshContext()
+    changed()
+    return true
+  end
+
+  -- The checkpoint for "before this message": the message's own, else the
+  -- first one after it in the chat (a message that ran no Agent turn changed
+  -- nothing, so the sprite was the same until the next one).
+  local function checkpointFor(c, entry)
+    local i = c:indexOf(entry)
+    if not i then return nil end
+    local list = c:entries()
+    for j = i, #list do
+      if list[j].kind == "user" and list[j].checkpoint then return list[j].checkpoint, j == i end
+    end
+    return nil
+  end
+
+  -- What a rewind to this message would do, for the question and its checks.
+  local function rewindInfo(entry)
+    local chat = chats.current
+    local info = { chat = chat, entry = entry, warnings = {} }
+    info.checkpoint, info.own = checkpointFor(chat.conv, entry)
+    local cp = deps.checkpoints
+    if cp and info.checkpoint then
+      info.sprite = spriteById(info.checkpoint.spriteId) or spriteById(chat.spriteId)
+      info.plan, info.why = cp:restorePlan(info.checkpoint, info.sprite)
+      local names = {}
+      for _, id in ipairs(cp:othersAfter(info.checkpoint, chat.id)) do
+        local other = chats:get(id)
+        names[#names + 1] = (other and other.title and other.title ~= "") and ("'" .. other.title .. "'") or "another chat"
+      end
+      if #names > 0 then
+        info.warnings[#info.warnings + 1] = "Other chats edited this sprite after this message (" .. table.concat(names, ", ") ..
+          "): restoring the sprite undoes their edits too."
+      end
+      for _, c in pairs(chats.byId) do
+        if c.busy and info.checkpoint and c.spriteId == info.checkpoint.spriteId then info.running = true end
+      end
+    else
+      info.why = cp and "No Agent turn ran from this message on, so there is no sprite to go back to" or "Checkpoints are off"
+    end
+    return info
+  end
+
+  -- Restores the sprite to the checkpoint: back through the undo history when
+  -- it still reaches it (Redo brings the later work back until the next edit),
+  -- else the checkpoint opens as a new tab. Returns ok.
+  local function restoreSprite(info)
+    if info.running then prompter.tip("Stop the turns working on this sprite first"); return false end
+    if not info.plan then prompter.tip(info.why or "Nothing to restore"); return false end
+    local rec = info.checkpoint
+    if info.plan == "undo" then
+      -- A copy of the work as it is now, in case Redo is lost to a later edit.
+      Panel.takeCheckpoint(info.sprite)
+      local ok = info.sprite:undoTo(rec.undoId)
+      if not ok then prompter.tip("Could not go back in the undo history"); return false end
+      info.chat.conv:note("status", "Restored the sprite to before this message. Edit > Redo brings the later work " ..
+        "back until you change something; a copy of it is also kept with the checkpoints.")
+      return true
+    end
+    local sprite = deps.openCheckpoint and deps.openCheckpoint(rec, "restored")
+    if not sprite then prompter.tip("Could not open the checkpoint"); return false end
+    info.chat.conv:note("status", "The undo history no longer reaches this message, so the sprite as it was then " ..
+      "opened as a new tab (" .. tostring(app.fs.fileTitle(sprite.filename)) .. "); your sprite is unchanged.")
+    return true
+  end
+
+  -- Puts text in a chat's prompt box (or its draft when it is not shown).
+  local function setDraft(chat, text)
+    chat.draft = text
+    if chat == promptOwner and dlg then
+      dlg:modify{ id = "prompt", text = text }
+      chat.composer:setText(text)
+    end
+  end
+
+  -- Rewind to just before a user message (#93), like Claude Code's /rewind:
+  -- choice "sprite", "conversation", "both" or "branch". Returns ok.
+  function Panel.rewind(entry, choice)
+    if not entry or entry.kind ~= "user" then return false end
+    local info = rewindInfo(entry)
+    local chat = info.chat
+    local ok = true
+    if choice == "branch" then return Panel.branchFrom(info) end
+    if (choice == "conversation" or choice == "both") and chat.busy then
+      prompter.tip("Stop this chat's turn first"); return false
+    end
+    if choice == "sprite" or choice == "both" then ok = restoreSprite(info) end
+    if ok and (choice == "conversation" or choice == "both") then
+      local text, why = chat.turns:truncateAt(entry)
+      if not text then prompter.tip(why); ok = false
+      else
+        setDraft(chat, text)
+        chat.conv:note("status", "Conversation restored to before your message; it is back in the box to edit and send.")
+      end
+    end
+    refreshContext()
+    changed()
+    return ok
+  end
+
+  -- Branch from here: a new chat with the conversation before the message,
+  -- on a copy of the sprite as it was then, in a new tab.
+  function Panel.branchFrom(info)
+    local data, text = info.chat.conv:branchData(info.entry)
+    if not data then prompter.tip(text); return false end
+    local rec = info.checkpoint
+    if not rec then
+      -- No Agent turn since: the sprite now is the sprite then.
+      rec = Panel.takeCheckpoint(spriteById(info.chat.spriteId) or app.sprite)
+    end
+    if not rec then prompter.tip(info.why or "No sprite to branch"); return false end
+    local sprite = deps.openCheckpoint and deps.openCheckpoint(rec, "branch")
+    if not sprite then prompter.tip("Could not open the checkpoint (it may have been removed)"); return false end
+    -- Opening made the copy the active sprite: show its chat (an empty one) and fill it.
+    Panel.onSiteChange()
+    local chat = chats.current
+    if chat.spriteId ~= sprite.id or #chat.conv:entries() > 0 then
+      chat = chats:make(sprite.id)
+      activate(chat)
+    end
+    chat.conv:restore(data)
+    chat.title = ((info.chat.title and info.chat.title ~= "") and info.chat.title or "Chat") .. " (branch)"
+    chat.conv:note("status", "Branched from '" .. (info.chat.title or "a chat") .. "' before this message; the sprite is a copy as it was then.")
+    setDraft(chat, text)
+    changed()
+    return true
+  end
+
+  -- Scripts and live tests: the newest unanswered style memory proposal.
+  function Panel.answerLastMemory(index)
+    local list = conv:entries()
+    for i = #list, 1, -1 do
+      if list[i].kind == "memory" and not list[i].answered then return Panel.answerMemory(list[i], index) end
+    end
+    return false
+  end
+
+  -- Scripts and live tests: rewind to the i-th user message of the chat on screen.
+  function Panel.rewindUser(i, choice)
+    local n = 0
+    for _, e in ipairs(conv:entries()) do
+      if e.kind == "user" then
+        n = n + 1
+        if n == i then return Panel.rewind(e, choice) end
+      end
+    end
+    return false
+  end
+
+  -- The rewind question for a user message, then the chosen action.
+  function Panel.rewindMenu(entry)
+    if not entry or entry.kind ~= "user" then return false end
+    local info = rewindInfo(entry)
+    local q = Prompter.rewindQuestion{ text = entry.text, plan = info.plan, why = info.why, own = info.own,
+      at = info.checkpoint and info.checkpoint.at, warnings = info.warnings, running = info.running, busy = info.chat.busy }
+    local choice = Prompter.REWIND_CHOICES[prompter.ask(q)]
+    if not choice then return false end
+    return Panel.rewind(entry, choice)
   end
 
   -- A permission request from the agent (ACP): ask, then answer the bridge.
@@ -1684,7 +1913,8 @@ return function(deps)
       out[#out + 1] = { kind = e.kind, text = e.text, status = e.status, secs = e.secs,
         changed = e.capture and e.capture.changed or nil, applyPlan = e.applyPlan, planApplied = e.planApplied,
         task = e.task, resolved = e.resolved, count = e.items and #e.items or nil, result = e.result,
-        images = e.images, options = e.options, answered = e.answered }
+        images = e.images, options = e.options, answered = e.answered, topic = e.topic,
+        checkpoint = e.checkpoint and true or nil }
     end
     return out
   end

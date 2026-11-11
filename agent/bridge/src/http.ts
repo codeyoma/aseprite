@@ -36,7 +36,7 @@ export interface HttpEndpointOptions {
   /** Image generation jobs (#102), for the lead agent's tools. */
   images?: ImageJobs;
   /** Shows an event in a chat's log (ask_user), for the lead agent's tools. */
-  post?: (chat: string, ev: { type: string; text?: string; choices?: string[] }) => void;
+  post?: (chat: string, ev: { type: string; text?: string; choices?: string[]; topic?: string }) => void;
 }
 
 /** A chat turn's request may wait for the user to come back to its sprite's tab. */

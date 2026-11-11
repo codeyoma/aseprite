@@ -41,6 +41,28 @@ export const CORE_TOOLS: Tool[] = [
     },
   },
   {
+    name: "remember_style",
+    title: "Propose a style memory entry",
+    description:
+      "Propose one entry for this project's style memory (#93): a palette role ('#2b2b45 = outline, #e8c170 = skin " +
+      "highlight'), the outline rule ('1 px dark selout, no outline on the inner shapes'), the pixel scale ('16x16 " +
+      "characters, 1 px = 1 game unit') or a free note. The chat shows it as a card; only an entry the user approves is " +
+      "kept, with the sprite, and every later message shows it in the State block's style memory. Propose what the user " +
+      "settled on or asked you to keep, not your own guesses; one entry per call. A palette, outline or scale entry " +
+      "replaces the earlier one of that topic. Do not wait for the answer: go on with the work.",
+    input: z.object({
+      topic: z.enum(["palette", "outline", "scale", "note"]).describe("palette: palette roles; outline: the outline rule; scale: pixel scale and sizes; note: anything else."),
+      text: z.string().min(1).max(300).describe("The entry as one short line, in the user's terms."),
+    }),
+    kind: "read",
+    label: (i: { topic?: string }) => (i?.topic ? `Propose style memory (${i.topic})` : "Propose style memory"),
+    async run(input, ctx) {
+      if (!ctx.post) return failure("remember_style works in the chat panel; say what you would keep in your reply instead.");
+      ctx.post({ type: "memory", topic: input.topic, text: input.text.replace(/\s+/g, " ").trim() });
+      return { content: [text("Proposed to the user (a card in the chat with Remember / Don't remember). Go on with the work; an approved entry shows in the State block from the next message.")] };
+    },
+  },
+  {
     name: "get_state",
     title: "Get Aseprite state",
     description:

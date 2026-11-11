@@ -20,7 +20,7 @@ function fakeRuntime(name = "acp") {
 function setup(runtime = fakeRuntime()) {
   const events = [];
   const chat = new ChatRunner({ notify: (_m, ev) => events.push(ev) }, { url: "", token: "" }, {
-    runtimes: [runtime], developer: () => ({ cwd: "/repo", branch: "dev/test" }),
+    runtimes: [runtime], developer: () => ({ cwd: "/repo", branch: "dev/test" }), dirsFile: null,
   });
   return { chat, runtime, events, methods: chatMethods(chat, "test") };
 }
