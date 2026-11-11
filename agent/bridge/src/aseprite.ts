@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
-import { isRequest, PROTOCOL, checkParams } from "./protocol.js";
+import { isRequest, PROTOCOL, checkParams, packBinary } from "./protocol.js";
 import { keepSessionPublished, newToken, removeSession, writeSession, type Session } from "./session.js";
 
 const HELLO_TIMEOUT_MS = 5_000;
@@ -34,7 +34,9 @@ export class AsepriteNotConnectedError extends Error {
 /**
  * WebSocket server that the Aseprite extension connects to.
  * Requests are JSON-RPC 2.0; a result with `binary: true` is followed by
- * one binary frame carrying raw pixel data.
+ * one binary frame carrying raw pixel data. A request whose params hold raw
+ * bytes (Uint8Array) carries `binary: <length>` and is followed by one binary
+ * frame with all of them; the params refer to it by {offset, length} (#95).
  */
 export class AsepriteLink extends EventEmitter {
   private wss?: WebSocketServer;
@@ -306,7 +308,11 @@ export class AsepriteLink extends EventEmitter {
         reject(new Error(`Aseprite did not answer ${method} within ${timeoutMs / 1000}s (a modal dialog may be open)`));
       }, timeoutMs);
       this.pending.set(id, { method, resolve, reject, timer });
-      this.client!.send(JSON.stringify({ jsonrpc: "2.0", id, method, params, ...(route ?? {}) }));
+      const packed = packBinary(params);
+      const body = { jsonrpc: "2.0", id, method, params: packed.params, ...(route ?? {}), ...(packed.blob ? { binary: packed.blob.length } : {}) };
+      // ws sends frames in order, so the binary frame follows its request.
+      this.client!.send(JSON.stringify(body));
+      if (packed.blob) this.client!.send(packed.blob, { binary: true });
     });
   }
 }

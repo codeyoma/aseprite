@@ -8,7 +8,8 @@ import { WebSocket } from "ws";
 import { AsepriteLink } from "../dist/aseprite.js";
 import { toChatEvent } from "../dist/chat.js";
 import { bridgeMethods } from "../dist/bridge_methods.js";
-import { checkParams, PROTOCOL } from "../dist/protocol.js";
+import { base64Bytes, checkParams, packBinary, PROTOCOL } from "../dist/protocol.js";
+import { documentOf } from "../dist/document.js";
 import { resolveFrames } from "../dist/document.js";
 import { fakeDocument, rect } from "./helpers/fake_document.mjs";
 import { PROVIDERS } from "../dist/providers/index.js";
@@ -146,4 +147,62 @@ test("every request a skill tool sends passes the schema", async () => {
   }
   assert.ok(sent.length > 20);
   for (const [method, params] of sent) assert.doesNotThrow(() => checkParams(method, params), `${method} ${JSON.stringify(params).slice(0, 120)}`);
+});
+
+// #95: pixel bytes go as one binary frame after the request (protocol.json binaryRequests).
+test("packBinary: raw bytes become {offset, length} into one blob; base64Bytes for JSON lines", () => {
+  const a = new Uint8Array([1, 2, 3, 4]), b = Buffer.from([5, 6, 7, 8, 9, 10, 11, 12]);
+  const params = { images: [{ rgba: a, frame: 1 }, { rgba: b, frame: 2 }], label: "x" };
+  const { params: packed, blob } = packBinary(params);
+  assert.deepEqual(packed, { images: [{ rgba: { offset: 0, length: 4 }, frame: 1 }, { rgba: { offset: 4, length: 8 }, frame: 2 }], label: "x" });
+  assert.deepEqual([...blob], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.ok(params.images[0].rgba instanceof Uint8Array, "the input is left as is");
+  assert.deepEqual(packBinary({ label: "x" }), { params: { label: "x" } });
+  const sub = new Uint8Array(new Uint8Array([0, 9, 9, 0]).buffer, 1, 2);
+  assert.deepEqual(base64Bytes({ images: [{ rgba: sub }] }), { images: [{ rgba: Buffer.from([9, 9]).toString("base64") }] });
+  checkParams("put_image", { width: 1, height: 1, rgba: new Uint8Array(4) });
+  assert.throws(() => checkParams("put_image", { width: 1, height: 1, rgba: [1, 2] }), /'rgba' must be a bytes/);
+});
+
+test("AsepriteLink sends pixel bytes as one binary frame after the request", async () => {
+  const link = new AsepriteLink();
+  const port = await link.start(0, { publish: false });
+  const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  const got = [];
+  ws.on("message", (d, isBinary) => got.push(isBinary ? { frame: Buffer.from(d) } : JSON.parse(d.toString())));
+  const until = async (fn) => { while (!fn()) await new Promise((r) => setTimeout(r, 10)); };
+  try {
+    await new Promise((r) => ws.once("open", r));
+    ws.send(JSON.stringify({ jsonrpc: "2.0", method: "hello", params: { token: link.token, protocol: PROTOCOL.version, asepriteVersion: "test" } }));
+    assert.ok(await link.waitForConnection(2000));
+    const img = { width: 1, height: 2, data: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]) };
+    const done = documentOf(link).putImages([{ image: img, frame: 1, newLayer: "a" }, { image: img, frame: 2, newLayer: "a" }]);
+    await until(() => got.some((m) => m.frame));
+    const i = got.findIndex((m) => m.method === "put_images");
+    const req = got[i];
+    assert.equal(req.binary, 16);
+    assert.deepEqual(req.params.images.map((im) => im.rgba), [{ offset: 0, length: 8 }, { offset: 8, length: 8 }]);
+    assert.deepEqual([...got[i + 1].frame], [1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8]);
+    ws.send(JSON.stringify({ jsonrpc: "2.0", id: req.id, result: { layers: [], frames: 2, added: 0 } }));
+    assert.equal((await done).frames, 2);
+    // A request without bytes has no binary field and no frame.
+    const state = link.request("get_state", {});
+    await until(() => got.some((m) => m.method === "get_state"));
+    const g = got.find((m) => m.method === "get_state");
+    assert.equal(g.binary, undefined);
+    ws.send(JSON.stringify({ jsonrpc: "2.0", id: g.id, result: {} }));
+    await state;
+    assert.equal(got.filter((m) => m.frame).length, 1);
+  } finally {
+    ws.close();
+    link.stop();
+  }
+});
+
+test("the fake document takes raw bytes, as the Document sends them", async () => {
+  const doc = fakeDocument({ width: 2, height: 1 });
+  const img = { width: 2, height: 1, data: new Uint8Array([255, 0, 0, 255, 0, 0, 255, 255]) };
+  await documentOf(doc).putImages([{ image: img, frame: 1, newLayer: "raw" }]);
+  const back = await documentOf(doc).pixels("AI: raw", 1);
+  assert.deepEqual([...back.data], [...img.data]);
 });

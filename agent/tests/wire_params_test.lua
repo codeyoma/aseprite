@@ -57,7 +57,7 @@ ok, err = call("snapshot", { layer = "Body", scope = { layers = { "Body" } } })
 check("scope is always allowed", ok, err)
 
 -- Every request has a params schema with known types.
-local known = { string = 1, integer = 1, number = 1, boolean = 1, array = 1, object = 1, any = 1, layer = 1, frame = 1, frames = 1 }
+local known = { string = 1, integer = 1, number = 1, boolean = 1, array = 1, object = 1, any = 1, layer = 1, frame = 1, frames = 1, bytes = 1 }
 for name, req in pairs(P.requests) do
   check(name .. " has params", req.params ~= nil)
   for k, t in pairs(req.params or {}) do

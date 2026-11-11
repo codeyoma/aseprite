@@ -103,9 +103,10 @@ function init(plugin)
     -- request opens or makes; the gate holds requests while the running
     -- chat's sprite isn't the active tab.
     -- A chat turn's request (origin "chat") runs on its chat's sprite.
-    onRequest = function(method, params, origin, chat)
-      if Panel and origin == "chat" then return Panel.handleRequest(handlers.call, chat, method, params) end
-      return handlers.call(method, params)
+    -- blob: the request's binary frame (#95), the pixels its params refer to.
+    onRequest = function(method, params, origin, chat, blob)
+      if Panel and origin == "chat" then return Panel.handleRequest(handlers.call, chat, method, params, blob) end
+      return handlers.call(method, params, blob)
     end,
     onNotification = function(method, params)
       if method == "chat.event" and Panel then Panel.onEvent(params) end

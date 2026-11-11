@@ -33,7 +33,8 @@ const parse = (h) => {
 /** Normalized hex ("#rrggbb", "#rrggbbaa" when not opaque), as the extension writes it. */
 const norm = (h) => hex(...parse(h));
 const unsupported = (what) => new Error(`fake document: ${what} not supported`);
-const decode = (s) => new Uint8Array(Buffer.from(s ?? "", "base64"));
+/** A bytes param (protocol.json binaryRequests): the raw bytes the Document passes (#95), or base64 text. */
+const decode = (s) => (s instanceof Uint8Array ? new Uint8Array(s) : new Uint8Array(Buffer.from(s ?? "", "base64")));
 /** app.fs.fileTitle: the file name without folder and extension. */
 const fileTitle = (f) => String(f).split(/[\\/]/).pop().replace(/\.[^.]*$/, "");
 const DIRECTIONS = { forward: "forward", reverse: "reverse", pingpong: "ping-pong", "ping-pong": "ping-pong" };
@@ -535,7 +536,7 @@ export function fakeDocument({
         const what = `Image ${i + 1}: `;
         if (!im || typeof im !== "object" || Array.isArray(im)) throw new Error(`${what}expected an object`);
         for (const k of Object.keys(im)) if (!IMAGE_KEYS.has(k)) throw new Error(`${what}unknown param '${k}'`);
-        if (!Number.isInteger(im.width) || !Number.isInteger(im.height) || typeof im.rgba !== "string") throw new Error(`${what}width, height and rgba are required`);
+        if (!Number.isInteger(im.width) || !Number.isInteger(im.height) || !(typeof im.rgba === "string" || im.rgba instanceof Uint8Array)) throw new Error(`${what}width, height and rgba are required`);
         if (!Number.isInteger(im.frame)) throw new Error(`${what}frame is required`);
         if (im.frame < 1 || im.frame > count) throw new Error(`${what}frame ${im.frame} is out of range (1-${count})`);
         const bytes = decode(im.rgba);

@@ -6,13 +6,14 @@
 --   local BridgeConnection = dofile("bridge_connection.lua")
 --   local conn = BridgeConnection.new{
 --     protocol = P, preferences = plugin.preferences,
---     onRequest = function(method, params) return result, bytes end,  -- may error
+--     onRequest = function(method, params, origin, chat, blob) return result, bytes end,  -- may error; blob: the request's binary frame
 --     onNotification = function(method, params) end,                  -- e.g. chat.event
 --     onConnectionChange = function(connected) end,
 --     gate = function(method) return true | "hold" | "error message" end,  -- optional; for origin "chat"
 --     readFile = function(path) return text end,   -- file and shell access go through
 --     runShell = function(command) end,             -- the plugin's trusted script
 --     openSocket = function(args) return WebSocket(args) end,
+--     sessionPath = "<file>",                       -- optional (tests); default <agent home>/session.json
 --   }
 --   conn.connect(true); conn.request("chat.send", {...}, callback)
 --   conn.retryHeld()           -- runs held requests the gate now lets through
@@ -47,6 +48,8 @@ local function agentHome()
 end
 
 local function sessionPath()
+  -- opts.sessionPath: tests use their own file, never the user's.
+  if opts.sessionPath then return opts.sessionPath end
   return app.fs.joinPath(agentHome(), "session.json")
 end
 
@@ -92,10 +95,11 @@ local function requestBridge(method, params, callback)
 end
 
   -- Answers one request from the bridge with the result of onRequest, and
-  -- the data as a binary frame when onRequest returns bytes.
-  local function handleRequest(msg)
+  -- the data as a binary frame when onRequest returns bytes. blob: the
+  -- request's own binary frame (#95), passed on to onRequest.
+  local function handleRequest(msg, blob)
     local id = msg.id
-    local ok, result, bytes = xpcall(onRequest, debug.traceback, msg.method, msg.params or {}, msg.origin, msg.chat)
+    local ok, result, bytes = xpcall(onRequest, debug.traceback, msg.method, msg.params or {}, msg.origin, msg.chat, blob)
     if not ok then
       local err = type(result) == "table" and result or { code = -32000, message = tostring(result) }
       send({ jsonrpc = "2.0", id = id, error = err })
@@ -143,7 +147,41 @@ local function startReconnectTimer()
   reconnectTimer:start()
 end
 
+-- A request with binary: <length> waits here for the binary frame that
+-- follows it (#95, protocol.json binaryRequests).
+local awaiting = nil
+
+local function replyError(msg, message)
+  send({ jsonrpc = "2.0", id = msg.id, error = { code = -32000, message = message } })
+end
+
+-- Runs a request from the bridge (with its binary frame, if any), or holds
+-- it: only a chat turn's requests (origin "chat") wait; held ones keep their order.
+local function dispatch(msg, blob)
+  local g = true
+  if msg.origin == "chat" then g = (#held == 0) and gate(msg.method) or "hold" end
+  if g == true then handleRequest(msg, blob)
+  elseif g == "hold" then held[#held + 1] = { msg = msg, blob = blob }
+  else replyError(msg, tostring(g)) end
+end
+
 local function onReceive(mt, data, err)
+  if mt == WebSocketMessageType.BINARY then
+    local msg = awaiting
+    awaiting = nil
+    if not msg then return end
+    if #data ~= msg.binary then
+      replyError(msg, string.format("The binary frame has %d bytes, the request said %d", #data, msg.binary))
+    else
+      dispatch(msg, data)
+    end
+    return
+  end
+  if awaiting and mt == WebSocketMessageType.TEXT then
+    -- The frame never came: answer the request instead of running it without its bytes.
+    replyError(awaiting, "The request's binary frame did not arrive")
+    awaiting = nil
+  end
   if mt == WebSocketMessageType.OPEN then
     send({ jsonrpc = "2.0", method = "hello", params = {
       token = session.token,
@@ -168,18 +206,20 @@ local function onReceive(mt, data, err)
     elseif msg.method and msg.id == nil then
       onNotification(msg.method, msg.params)
     elseif msg.method then
-      -- Only a chat turn's requests (origin "chat") wait; held ones keep their order.
-      local g = true
-      if msg.origin == "chat" then g = (#held == 0) and gate(msg.method) or "hold" end
-      if g == true then handleRequest(msg)
-      elseif g == "hold" then held[#held + 1] = msg
-      else send({ jsonrpc = "2.0", id = msg.id, error = { code = -32000, message = tostring(g) } }) end
+      if type(msg.binary) == "number" and msg.binary % 1 == 0 and msg.binary >= 0 then
+        msg = { id = msg.id, method = msg.method, params = msg.params, origin = msg.origin, chat = msg.chat,
+                binary = math.tointeger(msg.binary) }
+        awaiting = msg
+      else
+        dispatch(msg, nil)
+      end
     elseif type(msg.id) == "string" and pendingLocal[msg.id] then
       local cb = pendingLocal[msg.id]
       pendingLocal[msg.id] = nil
       cb(msg.result, msg.error)
     end
   elseif mt == WebSocketMessageType.CLOSE or mt == WebSocketMessageType.ERROR then
+    awaiting = nil
     if connected then
       app.tip("AI Agent disconnected")
       onConnectionChange(false)
@@ -275,20 +315,22 @@ end
 
   local function retryHeld()
     while #held > 0 do
-      local g = gate(held[1].method)
+      local g = gate(held[1].msg.method)
       if g == "hold" then return end
-      local msg = table.remove(held, 1)
-      if g == true then handleRequest(msg)
-      else send({ jsonrpc = "2.0", id = msg.id, error = { code = -32000, message = tostring(g) } }) end
+      local h = table.remove(held, 1)
+      if g == true then handleRequest(h.msg, h.blob)
+      else replyError(h.msg, tostring(g)) end
     end
   end
 
   local function failHeld(message)
-    for _, msg in ipairs(held) do send({ jsonrpc = "2.0", id = msg.id, error = { code = -32000, message = message } }) end
+    for _, h in ipairs(held) do replyError(h.msg, message) end
     held = {}
   end
 
   return {
+    -- For tests: feed a message as the WebSocket would (type, data).
+    receive = function(mt, data) onReceive(mt, data, "") end,
     retryHeld = retryHeld,
     failHeld = failHeld,
     connect = connect,
