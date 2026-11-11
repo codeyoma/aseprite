@@ -1,0 +1,114 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: b083aa4ff
+date: "2026-11-11T08:46:43.837Z"
+seconds: 106
+passed: 8
+total: 8
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 83
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: rules/animation"
+        status: failed
+      - tool: Inspect pixels
+        status: failed
+      - tool: Look at the sprite
+        status: failed
+      - tool: "Read guide: rules/animation"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Run Lua
+        status: ok
+    reply: "I drew the 6-frame walk on [Hero](aseprite://layer/L5525) and tagged it [walk](aseprite://tag/walk), facing right. Your original standing pose is gone: frame 1 is now the first step of the walk, but you can undo to get it back. The character had no arms, so I added them in the dark navy from your palette, with skin-colored hands.\n\n| Frame | Pose | Legs | Near arm | Duration |\n|---|---|---|---|---|\n| 1 | contact | near leg forward, far leg back | back (far arm forward) | 120 ms |\n| 2 | down (body 1 px lower) | far foot lifting behind | back, less | 100 ms |\n| 3 | pass (body 1 px higher) | far leg swings past | at the side | 100 ms |\n| 4 | contact | near leg back, far leg forward | forward | 120 ms |\n| 5 | down | near foot lifting behind | forward, less | 100 ms |\n| 6 | pass | near leg swing"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 23
+    header: Claude
+    tools:
+      - tool: Run Lua
+        status: ok
+      - tool: Read the timeline
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+    reply: "The walk tag grew when I added frames. Fixing it back to 1-6.\nI added a 4-frame idle loop as frames 7–10, tagged [idle](aseprite://tag/idle). The walk's drawings are unchanged. Adding the frames had stretched the [walk](aseprite://tag/walk) tag to cover them too, so I set it back to 1–6.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 7 | rest | 300 ms |\n| 8 | in-breath: head and body 1 px up | 150 ms |\n| 9 | rest | 300 ms |\n| 10 | out-breath: head and body 1 px down | 150 ms |\n\nThe idle stance has both legs straight and the near arm hanging at the side, in the same colors as the walk. The feet stay on the ground row in every frame; only the head, body and arm move.\n\nThe check found no errors. Its remaining warnings are:\n- **Eye:** the single-pixel eye is flagged in every frame; that's on pur"
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 47
+  scores:
+    readability: 3
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 2
+  overall: 2
+  note: "Clean pixel clusters and distinct stride poses keep the animation readable. The visible arm swings with the same-side leg, and the idle bob spans two pixels rather than one."

@@ -1,0 +1,112 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: "09017b614"
+date: "2026-11-11T08:43:53.839Z"
+seconds: 108
+passed: 8
+total: 8
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 73
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: anim.walk.limbs"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Draw 6-frame walk cycle
+        status: failed
+      - tool: Draw 6-frame walk cycle
+        status: ok
+      - tool: Thicker swinging arms
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Indexes off by one (arms are p[4]/p[5]); fixing.\nArms read now. Setting tag and timing, then checking.\nI made a 6-frame walk on [Hero](aseprite://layer/L5172), tagged [walk](aseprite://tag/walk) and facing right. The arms swing opposite the legs: the near arm goes forward when the near leg goes back. To do this I redrew the character in place, including frame 1, which was a standing pose and is now the first contact pose. The head and body keep their colours and size. I added arms in the palette's dark blue with skin-coloured hands. The legs use two shades so you can tell the near leg from the far one.\n\n| Frame | Pose | Legs | Arms | Body height |\n|---|---|---|---|---|\n| 1 (120 ms) | contact | near leg forward, far leg pushing off behind | far arm forward, near arm back | normal |\n| 2 (100"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 35
+    header: Claude
+    tools:
+      - tool: Draw 4-frame idle
+        status: ok
+      - tool: Fix idle bob gap
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Frame 10 shows a gap between head and body; I'll reorder the bob so the head never sits above the body.\nI added a 4-frame idle loop as frames 7–10, tagged [idle](aseprite://tag/idle). The character stands still with feet planted and arms at the sides, and moves only by a 1 px breathing bob. The pixels and timing of the 6 walk frames are unchanged. Adding frames briefly stretched the walk tag over the new frames too, so I set it back to frames 1–6.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 7 | at rest | 400 ms |\n| 8 | head drops 1 px | 200 ms |\n| 9 | head, body and arm 1 px down (exhale) | 350 ms |\n| 10 | body back up, head and arm still down; leads back into frame 7 | 200 ms |\n\nThe parts settle and recover one after another so the bob looks softer. The order also stops a gap opening bet"
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 61
+  scores:
+    readability: 3
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 2
+  overall: 2
+  note: "Clean pixel clusters preserve the character’s readability across the six walk and four idle frames. The visible arm swings with the same-side leg rather than opposite it, and stiff limb spacing and torso compression weaken the motion."
