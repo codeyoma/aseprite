@@ -1,6 +1,6 @@
 -- Document View: how the extension describes the open document, read-only.
--- Layer ids and paths, the sprite description get_state returns, the
--- context the user is working in, the State block sent with every chat
+-- Layer ids and paths, the sprite description get_state returns (with the
+-- context the user is working in, #96), the State block sent with every chat
 -- message, and aseprite:// URIs for mentions and citations. The Document
 -- Handlers answer wire requests with it; the chat panel shows it.
 --
@@ -140,19 +140,23 @@ function M.new(opts)
   -- Sprite description (get_state)
   -------------------------------------------------------------------------
 
-  -- The FX record on a layer (#71) and the hits on a sprite (#70), as stored by put_images (handlers_sprite.lua):
-  -- copied as they are; their meaning is the bridge's FX domain module (bridge/src/fx/record.ts, #97).
+  -- The FX record on a layer (#71) and the hits on a sprite (#70), as stored by put_images (handlers_sprite.lua),
+  -- copied as they are: their fields are protocol.json's FxRecord and Hit shapes, their meaning the bridge's FX
+  -- domain module (bridge/src/fx/record.ts, #97).
+  local function copy(v, depth)
+    if type(v) ~= "table" or (depth or 0) > 4 then return v end
+    local out = {}
+    for k, x in pairs(v) do out[k] = copy(x, (depth or 0) + 1) end
+    return out
+  end
   local function fxRecordOf(l)
     local fx = l.properties("aseprite-agent").fx
     if type(fx) ~= "table" or not fx.id then return nil end
-    return { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windupMs, recipe = fx.recipe, render = fx.render }
+    return copy(fx)
   end
   local function fxHitsOf(sprite)
-    local hits = {}
-    for _, h in ipairs(sprite.properties("aseprite-agent")["fx.hits"] or {}) do
-      hits[#hits + 1] = { frame = h.frame, freezeMs = h.freezeMs, shakeMs = h.shakeMs, amp = h.amp }
-    end
-    return #hits > 0 and hits or nil
+    local hits = copy(sprite.properties("aseprite-agent")["fx.hits"])
+    return type(hits) == "table" and #hits > 0 and hits or nil
   end
 
   local function describeLayers(layers)
@@ -267,37 +271,10 @@ function M.new(opts)
   end
   local describeSprite = V.describeSprite
 
-  -- The get_state result: open sprites, the active one in full.
-  function V.getState()
-    local sprites = {}
-    for _, s in ipairs(app.sprites) do
-      sprites[#sprites + 1] = describeSprite(s, false)
-    end
-
-    local state = {
-      asepriteVersion = tostring(app.version),
-      apiVersion = app.apiVersion,
-      openSprites = sprites,
-      tool = app.tool and app.tool.id or nil,
-      fgColor = px.colorHex(app.fgColor),
-      bgColor = px.colorHex(app.bgColor),
-    }
-
-    local sprite = app.sprite
-    if sprite then
-      state.activeSprite = describeSprite(sprite, true)
-      state.activeLayer = app.layer and layerPath(app.layer) or nil
-      state.activeLayerId = app.layer and layerId(app.layer) or nil
-      state.activeFrame = app.frame and app.frame.frameNumber or nil
-    end
-    return state
-  end
-
-  -------------------------------------------------------------------------
-  -- Context: what the user is working on (get_context, the context line)
-  -------------------------------------------------------------------------
-
-  function V.getContext()
+  -- What the user is working on (#96: part of get_state, protocol.json State): the tool, brush, colors and
+  -- zoom; with a sprite, the active layer (path and id), frame, tag and cel, and the timeline range. The
+  -- get_context tool (bridge), the panel's context line and the State block are views of it.
+  function V.contextOf(sprite)
     local ctx = {
       tool = app.tool and app.tool.id or nil,
       fgColor = px.colorHex(app.fgColor),
@@ -307,79 +284,76 @@ function M.new(opts)
     if brush then
       ctx.brush = { size = brush.size, type = BRUSH_TYPES[brush.type] or tostring(brush.type), angle = brush.angle }
     end
-
-    local sprite = app.sprite
-    if not sprite then
-      ctx.sprite = nil
-      return ctx
-    end
-    ctx.sprite = describeSprite(sprite, false)
+    local editor = app.editor
+    if editor then ctx.zoom = editor.zoom end
+    if not sprite then return ctx end
 
     local layer = app.layer
     if layer then
-      ctx.layer = {
-        name = layer.name,
-        path = layerPath(layer),
-        group = layer.isGroup,
-        visible = layer.isVisible,
-        editable = layer.isEditable,
-        opacity = (not layer.isGroup) and layer.opacity or nil,
-      }
+      ctx.activeLayer = layerPath(layer)
+      ctx.activeLayerId = layerId(layer)
     end
-    ctx.frame = app.frame and app.frame.frameNumber or nil
-    if app.tag then ctx.tag = app.tag.name end
-
+    ctx.activeFrame = app.frame and app.frame.frameNumber or nil
+    if app.tag then ctx.activeTag = app.tag.name end
     local cel = app.cel
     if cel then
       local b = cel.bounds
-      ctx.cel = {
-        layer = layerPath(cel.layer),
-        frame = cel.frameNumber,
-        bounds = { x = b.x, y = b.y, width = b.width, height = b.height },
-        opacity = cel.opacity,
+      ctx.activeCel = {
+        layer = layerId(cel.layer), frame = cel.frameNumber,
+        bounds = { x = b.x, y = b.y, width = b.width, height = b.height }, opacity = cel.opacity,
       }
     end
-
     local range = app.range
     if range and not range.isEmpty then
       local layers, frames = {}, {}
-      for _, l in ipairs(range.layers) do layers[#layers + 1] = layerPath(l) end
+      for _, l in ipairs(range.layers) do layers[#layers + 1] = layerId(l) end
       for _, f in ipairs(range.frames) do frames[#frames + 1] = f.frameNumber end
-      ctx.timelineRange = {
-        type = RANGE_TYPES[range.type] or tostring(range.type),
-        layers = layers,
-        frames = frames,
-      }
+      ctx.timelineRange = { type = RANGE_TYPES[range.type] or tostring(range.type), layers = layers, frames = frames }
     end
-
-    local sel = sprite.selection
-    if sel and not sel.isEmpty then
-      local b = sel.bounds
-      ctx.selection = { x = b.x, y = b.y, width = b.width, height = b.height }
-    end
-
-    local editor = app.editor
-    if editor then ctx.zoom = editor.zoom end
     return ctx
   end
+  local contextOf = V.contextOf
 
-  -- One-line description of what the user is working on, sent with prompts.
+  -- The get_state result (protocol.json State): open sprites, the active one in full, and the context.
+  function V.getState()
+    local sprites = {}
+    for _, s in ipairs(app.sprites) do
+      sprites[#sprites + 1] = describeSprite(s, false)
+    end
+    local sprite = app.sprite
+    local state = contextOf(sprite)
+    state.asepriteVersion = tostring(app.version)
+    state.apiVersion = app.apiVersion
+    state.openSprites = sprites
+    if sprite then state.activeSprite = describeSprite(sprite, true) end
+    return state
+  end
+
+  -- One-line description of what the user is working on, sent with prompts: the sprite's summary and contextOf.
   function V.contextString()
-    local ok, ctx = pcall(V.getContext)
-    if not ok or not ctx.sprite then return "no sprite open" end
-    local s = ctx.sprite
+    local sprite = app.sprite
+    if not sprite then return "no sprite open" end
+    local ok, s, ctx = pcall(function() return describeSprite(sprite, false), contextOf(sprite) end)
+    if not ok then return "no sprite open" end
+    local function pathOf(id)
+      local l = layerById(id, sprite)
+      return l and layerPath(l) or id
+    end
     local name = app.fs.fileName(s.filename ~= "" and s.filename or "Sprite")
     local parts = { string.format("sprite %s %dx%d %s, %d frame(s)", name, s.width, s.height, s.colorMode, s.frameCount) }
-    if ctx.layer then parts[#parts + 1] = "layer " .. ctx.layer.path end
-    if ctx.frame then parts[#parts + 1] = "frame " .. ctx.frame end
-    if ctx.tag then parts[#parts + 1] = "tag " .. ctx.tag end
+    if ctx.activeLayer then parts[#parts + 1] = "layer " .. ctx.activeLayer end
+    if ctx.activeFrame then parts[#parts + 1] = "frame " .. ctx.activeFrame end
+    if ctx.activeTag then parts[#parts + 1] = "tag " .. ctx.activeTag end
     local r = ctx.timelineRange
     if r and r.type ~= "empty" then
       local frames = #r.frames > 0 and (r.frames[1] .. "-" .. r.frames[#r.frames]) or "-"
-      parts[#parts + 1] = string.format("timeline selection: %s, layers [%s], frames %s", r.type, table.concat(r.layers, ", "), frames)
+      local layers = {}
+      for i, id in ipairs(r.layers) do layers[i] = pathOf(id) end
+      parts[#parts + 1] = string.format("timeline selection: %s, layers [%s], frames %s", r.type, table.concat(layers, ", "), frames)
     end
-    if ctx.selection then
-      local b = ctx.selection
+    local sel = sprite.selection
+    if sel and not sel.isEmpty then
+      local b = sel.bounds
       parts[#parts + 1] = string.format("pixel selection x=%d y=%d %dx%d", b.x, b.y, b.width, b.height)
     end
     return table.concat(parts, "; ")
@@ -462,25 +436,25 @@ function M.new(opts)
         add("tags: " .. table.concat(tags, " · "))
       end
 
+      -- The active layer, frame, cel and the timeline range: the same context get_state reports (contextOf).
+      local ctx = contextOf(sprite)
       local parts = {}
-      if active then parts[#parts + 1] = string.format("layer %s %s", layerId(active), active.name) end
-      if app.frame then parts[#parts + 1] = "frame " .. app.frame.frameNumber end
-      local cel = app.cel
+      if active then parts[#parts + 1] = string.format("layer %s %s", ctx.activeLayerId, active.name) end
+      if ctx.activeFrame then parts[#parts + 1] = "frame " .. ctx.activeFrame end
+      local cel = ctx.activeCel
       if cel then
         local b = cel.bounds
         parts[#parts + 1] = string.format("cel %d,%d %dx%d", b.x, b.y, b.width, b.height)
       end
       if #parts > 0 then add("active: " .. table.concat(parts, ", ")) end
 
-      local range = app.range
-      if range and not range.isEmpty then
-        local ids, frames = {}, {}
-        for _, l in ipairs(range.layers) do ids[#ids + 1] = layerId(l) end
-        for _, f in ipairs(range.frames) do frames[#frames + 1] = f.frameNumber end
+      local range = ctx.timelineRange
+      if range then
+        local ids, frames = range.layers, range.frames
         local frameText = #frames > 0 and (frames[1] == frames[#frames] and tostring(frames[1])
           or (frames[1] .. "-" .. frames[#frames])) or "-"
         add(string.format("timeline selection: %s, frames %s, layers %s",
-          RANGE_TYPES[range.type] or "?", frameText, #ids > 0 and table.concat(ids, " ") or "-"))
+          range.type, frameText, #ids > 0 and table.concat(ids, " ") or "-"))
       end
 
       local sel = sprite.selection

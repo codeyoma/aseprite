@@ -117,13 +117,14 @@ test("the bridge answers GET /files with the token: open sprites of the attached
   try {
     assert.equal((await fetch(url)).status, 401, "no token");
     assert.deepEqual(await (await fetch(url, auth)).json(), { connected: false, files: [] });
-    // A fake extension answering get_state.
+    // A fake extension answering get_state (protocol.json State).
+    const sprite = (filename) => ({ filename, width: 8, height: 8, colorMode: "rgb", frameCount: 1, layerCount: 1, modified: false });
     ws = new WebSocket(`ws://127.0.0.1:${port}`);
     await new Promise((r) => ws.once("open", r));
     ws.on("message", (data) => {
       const msg = JSON.parse(data.toString());
       if (msg.method === "get_state") {
-        ws.send(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { openSprites: [{ filename: "/art/hero.aseprite" }, { filename: "" }] } }));
+        ws.send(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { asepriteVersion: "test", apiVersion: 1, fgColor: "#000000", bgColor: "#ffffff", openSprites: [sprite("/art/hero.aseprite"), sprite("")] } }));
       }
     });
     ws.send(JSON.stringify({ jsonrpc: "2.0", method: "hello", params: { token: link.token, protocol: PROTOCOL.version, asepriteVersion: "test" } }));

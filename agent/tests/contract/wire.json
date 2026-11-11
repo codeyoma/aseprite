@@ -1,0 +1,89 @@
+{
+  "scenarios": [
+    {
+      "name": "get_state answers in protocol.json's State: nested and empty groups, an effect record, hits, a spec, slices, the selection (#96)",
+      "notes": "Both runners check every typed result against protocol.json (the fake as it answers, the Lua runner after each step), so a field either side adds without the protocol fails here.",
+      "fixture": {
+        "title": "wire", "width": 4, "height": 2, "durations": [100, 100],
+        "palette": ["#000000", "#ff0000", "#00ff00"],
+        "layers": [
+          { "name": "Rig", "group": true, "layers": [
+            { "name": "Arm", "group": true, "layers": [{ "name": "Hand", "cels": { "1": ["r...", "...."] } }] },
+            { "name": "Empty", "group": true, "layers": [] }
+          ] },
+          { "name": "Body", "cels": { "1": ["gggg", "gggg"], "2": ["gggg", "...."] } }
+        ],
+        "tags": [{ "name": "walk", "from": 1, "to": 2 }],
+        "slices": [{ "name": "hit", "x": 0, "y": 0, "w": 2, "h": 2 }],
+        "selection": { "x": 0, "y": 0, "w": 1, "h": 1 },
+        "activeLayer": "Hand"
+      },
+      "steps": [
+        { "request": "get_state", "params": {}, "result": {
+          "openSprites": [{ "filename": "wire", "width": 4, "height": 2, "frameCount": 2 }],
+          "activeLayerId": { "$layerId": "Hand" }, "activeLayer": "Rig/Arm/Hand", "activeFrame": 1,
+          "activeSprite": {
+            "fxHits": { "$absent": true },
+            "pixelSpec": { "$absent": true },
+            "tags": [{ "name": "walk", "from": 1, "to": 2, "repeat": 0 }]
+          }
+        } },
+        { "request": "put_images", "params": {
+          "images": [{ "new_layer": "spark", "above": "Body", "frame": 1, "width": 1, "height": 1, "x": 3, "y": 0, "rgba": { "rows": ["r"] } }],
+          "hit": { "frame": 2, "freeze_ms": 80 },
+          "fx": { "layer": "AI: spark", "id": "spark", "x": 3, "y": 0, "fps": 12, "loop": true, "windup_ms": 0 },
+          "spec": "{}"
+        } },
+        { "state": {
+          "layers": [
+            { "name": "Rig", "group": true, "layers": [
+              { "name": "Arm", "group": true, "layers": [{ "name": "Hand", "cels": [1] }] },
+              { "name": "Empty", "group": true, "layers": [] }
+            ] },
+            { "name": "AI: spark", "fx": { "id": "spark", "x": 3, "y": 0, "fps": 12, "loop": true, "windupMs": 0 } },
+            { "name": "Body", "cels": [1, 2] }
+          ],
+          "hits": [{ "frame": 2, "freezeMs": 80 }],
+          "pixelSpec": "{}",
+          "selection": { "x": 0, "y": 0, "width": 1, "height": 1 }
+        } }
+      ]
+    },
+    {
+      "name": "bridge methods: params checked against protocol.json, errors name the method and the param path (#96)",
+      "notes": "Runs no request: the bridge runner checks each step with protocol.ts checkBridgeParams, the Lua runner with wire_params.lua checkBridgeParams. Lua cannot tell an empty list from an empty object, so [] and {} stand for each other.",
+      "fixture": { "width": 1, "height": 1, "layers": [{ "name": "Body" }] },
+      "steps": [
+        { "bridgeMethod": "chat.send", "params": {
+          "prompt": "draw a cat", "state": "<aseprite-state/>", "provider": "claude", "mode": "agent", "chatId": "c1",
+          "sessions": { "claude": "s-1" }, "attachments": [{ "label": "frame 1", "path": "/tmp/a.png", "uri": "aseprite://frame/1" }],
+          "memory": [{ "topic": "palette", "text": "#000 = outline" }], "history": "", "spriteFile": "/art/cat.aseprite"
+        } },
+        { "bridgeMethod": "chat.send", "params": { "prompt": "hi", "sessions": [], "attachments": {}, "memory": [] } },
+        { "bridgeMethod": "chat.send", "params": {}, "error": "chat.send: 'prompt' is required" },
+        { "bridgeMethod": "chat.send", "params": { "prompt": 3 }, "error": "chat.send: 'prompt' must be a string" },
+        { "bridgeMethod": "chat.send", "params": { "prompt": "hi", "attachments": [{ "label": "a", "path": 1 }] },
+          "error": "chat.send: 'attachments[0].path' must be a string" },
+        { "bridgeMethod": "chat.send", "params": { "prompt": "hi", "attachments": [{ "label": "a" }] },
+          "error": "chat.send: 'attachments[0].path' is required" },
+        { "bridgeMethod": "chat.send", "params": { "prompt": "hi", "memory": [{ "topic": "note", "text": "x", "when": 1 }] },
+          "error": "chat.send: unknown param 'memory[0].when'" },
+        { "bridgeMethod": "chat.send", "params": { "prompt": "hi", "sessions": { "codex": 2 } },
+          "error": "chat.send: 'sessions.codex' must be a string" },
+        { "bridgeMethod": "chat.send", "params": { "prompt": "hi", "attachments": "a.png" },
+          "error": "chat.send: 'attachments' must be an array" },
+        { "bridgeMethod": "chat.send", "params": { "prompt": "hi", "bogus": true }, "error": "chat.send: unknown param 'bogus'" },
+        { "bridgeMethod": "chat.info", "params": {} },
+        { "bridgeMethod": "skills.list", "params": [] },
+        { "bridgeMethod": "skills.list", "params": { "scope": { "layers": ["Body"] } }, "error": "skills.list: unknown param 'scope'" },
+        { "bridgeMethod": "chat.permission", "params": { "requestId": "perm-1", "optionId": "allow" } },
+        { "bridgeMethod": "chat.permission", "params": { "optionId": "allow" }, "error": "chat.permission: 'requestId' is required" },
+        { "bridgeMethod": "commands.setEnabled", "params": { "name": "glow", "enabled": "yes" },
+          "error": "commands.setEnabled: 'enabled' must be a boolean" },
+        { "bridgeMethod": "import.animation", "params": { "path": "/a.gif", "into": "layer", "frame": "2" },
+          "error": "import.animation: 'frame' must be an integer" },
+        { "bridgeMethod": "format.disk", "params": {}, "error": "Not a bridge method: format.disk" }
+      ]
+    }
+  ]
+}

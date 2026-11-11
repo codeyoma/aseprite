@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
-import { isRequest, PROTOCOL, checkParams, packBinary } from "./protocol.js";
+import { checkBridgeParams, checkResult, isBridgeMethod, isRequest, PROTOCOL, packBinary } from "./protocol.js";
 import { keepSessionPublished, newToken, removeSession, writeSession, type Session } from "./session.js";
 
 const HELLO_TIMEOUT_MS = 5_000;
@@ -271,7 +271,10 @@ export class AsepriteLink extends EventEmitter {
     };
     if (!handler) return reply({ error: { code: -32601, message: `Unknown method: ${msg.method}` } });
     try {
-      reply({ result: (await handler(msg.params ?? {})) ?? null });
+      // The bridge's boundary for the extension's calls (#96): params checked against protocol.json bridgeMethods.
+      // Handlers registered in tests for other methods run unchecked.
+      if (isBridgeMethod(msg.method)) checkBridgeParams(msg.method, msg.params);
+      reply({ result: (await handler(Array.isArray(msg.params) || !msg.params ? {} : msg.params)) ?? null });
     } catch (err) {
       reply({ error: { code: -32000, message: err instanceof Error ? err.message : String(err) } });
     }
@@ -282,6 +285,13 @@ export class AsepriteLink extends EventEmitter {
     if (!p) return;
     clearTimeout(p.timer);
     this.pending.delete(id);
+    // A result protocol.json types (get_state's State) is checked once, here, as it arrives (#96).
+    try {
+      checkResult(p.method, reply.result);
+    } catch (err) {
+      p.reject(err as Error);
+      return;
+    }
     p.resolve(reply);
   }
 
@@ -303,7 +313,6 @@ export class AsepriteLink extends EventEmitter {
 
   async request(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000, route?: RequestRoute): Promise<Reply> {
     if (!isRequest(method)) throw new Error(`Not a protocol request: ${method}`);
-    checkParams(method, params);
     if (!(await this.waitForConnection(3_000))) throw new AsepriteNotConnectedError();
     const id = this.nextId++;
     return new Promise<Reply>((resolve, reject) => {

@@ -35,7 +35,7 @@ test("every tool only uses protocol requests", async () => {
 
 test("the bridge answers exactly the protocol's bridge methods", () => {
   const fakeChat = { providers: () => ({}), busy: false, send() {}, stop() {}, reset() {} };
-  assert.deepEqual(Object.keys(bridgeMethods(fakeChat, "0")).sort(), [...PROTOCOL.bridgeMethods].sort());
+  assert.deepEqual(Object.keys(bridgeMethods(fakeChat, "0")).sort(), Object.keys(PROTOCOL.bridgeMethods).sort());
 });
 
 test("chat events use only protocol types and fields", () => {
@@ -151,7 +151,7 @@ test("every request has a kind; tools that forward to a request agree with it", 
 test("checkParams: unknown, missing and mistyped params", () => {
   assert.throws(() => checkParams("snapshot", { bogus: 1 }), /unknown param 'bogus'/);
   assert.throws(() => checkParams("set_slice", { x: 0, y: 0, w: 1, h: 1 }), /'name' is required/);
-  assert.throws(() => checkParams("undo", { steps: "2" }), /'steps' must be a integer/);
+  assert.throws(() => checkParams("undo", { steps: "2" }), /'steps' must be an integer/);
   checkParams("snapshot", { layer: "L3", frame: 2, scope: {} });
   checkParams("put_image", { width: 1, height: 1, rgba: "AAAA", frame: undefined });
 });
@@ -216,7 +216,7 @@ test("AsepriteLink sends pixel bytes as one binary frame after the request", asy
     await until(() => got.some((m) => m.method === "get_state"));
     const g = got.find((m) => m.method === "get_state");
     assert.equal(g.binary, undefined);
-    ws.send(JSON.stringify({ jsonrpc: "2.0", id: g.id, result: {} }));
+    ws.send(JSON.stringify({ jsonrpc: "2.0", id: g.id, result: { asepriteVersion: "t", apiVersion: 1, openSprites: [], fgColor: "#000000", bgColor: "#000000" } }));
     await state;
     assert.equal(got.filter((m) => m.frame).length, 1);
   } finally {

@@ -34,7 +34,7 @@ assert(px.base64Decode(RGBA_2x2) == string.char(255, 0, 0, 255):rep(4))
 
 -- Sample params for every request: a new request needs one here.
 local SAMPLES = {
-  ping = {}, get_state = {}, get_context = {}, snapshot = {}, read_pixels = { width = 2, height = 2 }, check = {},
+  ping = {}, get_state = {}, snapshot = {}, read_pixels = { width = 2, height = 2 }, check = {},
   diff_visual = {}, propose_variations = { task = "nothing" }, compile_lua = { code = "return 1" },
   commands_changed = {}, get_timeline_text = {}, state_block = {}, collect_colors = {}, get_palette = {},
   render_text = { text = "A", font = "system=Arial", size = 8 },

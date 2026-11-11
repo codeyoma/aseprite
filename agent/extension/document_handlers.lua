@@ -390,10 +390,6 @@ function M.new(opts)
     return view.getState()
   end
 
-  handlers.get_context = function()
-    return view.getContext()
-  end
-
   -- The <aseprite-state> block (for sub-agents' first message, #33).
   handlers.state_block = function()
     return { text = view.stateBlock() }
@@ -848,10 +844,10 @@ function M.new(opts)
       error({ code = -32601, message = "Unknown method: " .. tostring(method) })
     end
     params = plain(params) or {}
-    -- Schema check, layer ids and frame numbers resolved once (#53).
+    -- Schema check, layer ids and frame numbers resolved once (#53); the only check of a request's params (#96).
     params = wireParams.check(method, spec.params or {}, params, {
       sprite = app.sprite, activeFrame = app.frame and app.frame.frameNumber, layerById = layerById,
-    })
+    }, PROTOCOL.shapes)
     local scoped = type(params.scope) == "table"
     if scoped and spec.kind == "write" then return callScoped(method, spec, params) end
     if M.needsSprite(spec) and not app.sprite then error("No active sprite") end
