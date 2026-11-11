@@ -1463,8 +1463,28 @@ return function(deps)
   end
 
   -- A permission request from the agent (ACP): ask, then answer the bridge.
+  -- Unless the user turned on "Ask Before Agent Actions", the agent's requests are allowed without a dialog
+  -- (always-allow when offered), and the log says so.
+  function Panel.autoAllow(options)
+    for _, kind in ipairs({ "allow_always", "allow_once", "allow" }) do
+      for _, o in ipairs(options) do
+        if tostring(o.kind) == kind or (kind == "allow" and tostring(o.kind):match("^allow")) then return o end
+      end
+    end
+    return nil
+  end
+
   function Panel.askPermission(req)
     local options = req.options or {}
+    if deps.preferences.askPermissions ~= true then
+      local chosen = Panel.autoAllow(options)
+      if chosen then
+        deps.request("chat.permission", { requestId = req.requestId, optionId = chosen.optionId }, function() end)
+        conv:recordPermission(req.text, "allowed automatically")
+        changed()
+        return
+      end
+    end
     local chosen = options[prompter.ask(Prompter.permissionQuestion(req))]
     deps.request("chat.permission", { requestId = req.requestId, optionId = chosen and chosen.optionId or "" }, function() end)
     conv:recordPermission(req.text, chosen and (chosen.name or chosen.optionId) or "rejected")

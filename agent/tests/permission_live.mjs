@@ -30,4 +30,12 @@ await chat("run it again", { mode: "agent" });
 turn = await lastTurn();
 check("reject reaches the agent", turn.some((l) => l === "text: permission: reject-once"), turn);
 
+// The user's default: no dialog, the request is allowed and the log says so.
+await lua("AsepriteAgent.setAskPermissions(false) AsepriteAgent.setPermissionAnswer(function() error('asked') end) return true");
+await chat("run the command once more", { mode: "agent" });
+turn = await lastTurn();
+check("asking off: allowed without a dialog", turn.some((l) => /^text: permission: allow/.test(l)), turn);
+check("asking off: the log says it was allowed automatically", turn.some((l) => /allowed automatically/.test(l)), turn);
+await lua("AsepriteAgent.setAskPermissions(true) return true");
+
 done("PERMISSION");

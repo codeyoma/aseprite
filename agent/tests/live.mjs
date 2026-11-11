@@ -56,6 +56,8 @@ export async function live({ provider = "claude", bridge = {} } = {}) {
     const t = textOf(r);
     return t.includes("{") ? JSON.parse(t.slice(t.indexOf("{"))).value : undefined;
   };
+  // Tests answer permission dialogs with scripted answers, so asking is on (the user's default allows automatically).
+  await lua("if AsepriteAgent.setAskPermissions then AsepriteAgent.setAskPermissions(true) end return true");
 
   /** Waits until the chat turn ends; returns the seconds it took. */
   const waitIdle = async (timeout = 600_000, every = 2500) => {

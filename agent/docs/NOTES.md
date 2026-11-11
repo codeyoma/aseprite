@@ -2,6 +2,10 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Agent permission requests are allowed without asking
+- **How:** `Panel.askPermission` picks the request's allow option (allow-always when offered, else allow-once) and answers it without a dialog; the log says "allowed automatically". That covers ACP tool permissions and the bridge's own questions (`ChatRunner.ask`: the image generator). AI Agent > "Ask Before Agent Actions" (plugin preference `askPermissions`) brings the dialogs back. The live harness turns asking on, since tests answer the dialogs; `permission_live` also checks the automatic path.
+- **Why:** the user asked for every agent request to be allowed: the dialogs interrupted work.
+
 ## Layered characters from the image generator (#103)
 - **How:**
   - `generate_character` (`concept_tools.ts`, `layered.ts`) asks once for the whole batch. It then runs one job, in two steps.

@@ -197,6 +197,8 @@ function init(plugin)
     end,
     -- fn(request) -> option index for the agent's permission requests; nil clears it.
     setPermissionAnswer = function(fn) answers.permission = fn and function(q) return fn(q.request) end or nil end,
+    -- Tests that answer permission dialogs turn asking on (off by default: requests are allowed automatically).
+    setAskPermissions = function(on) plugin.preferences.askPermissions = on and true or false end,
     applyDevChanges = function() return Panel.applyDevChanges() end,
     discardDevChanges = function() return Panel.discardDevChanges() end,
     -- Runs a saved command like the menu does (#26).
@@ -306,6 +308,12 @@ function init(plugin)
   plugin:newCommand{
     id = "AgentManageCommands", title = "Manage My Commands...", group = "ai_agent_menu",
     onclick = function() Panel.manageCommands() end,
+  }
+  -- Off by default: the agent's permission requests are allowed without asking.
+  plugin:newCommand{
+    id = "AgentAskPermissions", title = "Ask Before Agent Actions", group = "ai_agent_menu",
+    onchecked = function() return plugin.preferences.askPermissions == true end,
+    onclick = function() plugin.preferences.askPermissions = not (plugin.preferences.askPermissions == true) end,
   }
   plugin:newCommand{
     id = "AgentCheckUpdates", title = "Check for Updates...", group = "ai_agent_menu",
