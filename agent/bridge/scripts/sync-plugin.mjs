@@ -99,8 +99,10 @@ function pluginFiles() {
 export function syncPlugin({ check = false } = {}) {
   const stale = [];
   for (const [path, text] of pluginFiles()) {
+    // Line endings don't count: a Windows checkout may have CRLF.
+    const lf = (t) => t?.replace(/\r\n/g, "\n");
     const current = existsSync(path) ? readFileSync(path, "utf8") : undefined;
-    if (current === text) continue;
+    if (lf(current) === lf(text)) continue;
     stale.push(path);
     if (!check) {
       mkdirSync(dirname(path), { recursive: true });

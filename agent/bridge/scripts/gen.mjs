@@ -35,7 +35,7 @@ if (!existsSync(join(repo, "src", "app", "commands"))) {
     process.exit(1);
   }
   const after = readFileSync(commandsJson, "utf8");
-  if (after !== before) {
+  if (after.replace(/\r\n/g, "\n") !== before?.replace(/\r\n/g, "\n")) {
     stale.push(commandsJson);
     if (check && before !== undefined) writeFileSync(commandsJson, before);
     else console.log(`updated ${commandsJson}`);
