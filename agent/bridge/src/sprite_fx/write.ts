@@ -6,7 +6,7 @@
 // - over: the effect replaces existing frames of the copy.
 // Every frame the effect does not fill gets a copy of the source's cel, so hiding the source changes nothing there.
 import { contactSheet, encodePng, trim, type Rgba } from "../image.js";
-import type { Document, PutImagesItem, SpriteInfo } from "../document.js";
+import type { Document, FxInfo, PutImagesItem, SpriteInfo } from "../document.js";
 import type { Content } from "../tool.js";
 
 const BACKDROP = { r: 24, g: 24, b: 32, a: 255 }, LABEL = { r: 200, g: 200, b: 210, a: 255 };
@@ -30,6 +30,8 @@ export interface EffectWrite {
   palette?: string[];
   label: string;
   prompt: string;
+  /** An FX record for the new layer (an effect pipeline's JSON, #107), written in the same request. */
+  fx?: FxInfo;
 }
 
 /**
@@ -62,6 +64,7 @@ export async function writeEffect(doc: Document, info: SpriteInfo, w: EffectWrit
   const res = await doc.putImages(items, {
     insert: w.insert ? [{ after: w.insert.after, durations: w.insert.durations }] : undefined,
     label: w.label, prompt: w.prompt, palette: w.palette,
+    fx: w.fx && items.length ? { ...w.fx, layer: `AI: ${w.name}` } : undefined,
   });
   return { layer: res.layers[0]?.name ?? `AI: ${w.name}`, frames: total };
 }

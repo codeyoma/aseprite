@@ -2,6 +2,21 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Effect pipelines and emitter extras (#107)
+- **How:**
+  - `sprite_fx/noise.ts`: seeded value, Perlin (2002), simplex and Worley noise in 2D, 3D and 4D, fBm, looping noise (4D on a circle) and `curl2`. Written from the papers; no library vendored.
+  - `sprite_fx/pipeline.ts`: the pipeline schema, `runPipeline` (pure: one source image per frame in, palette-only frames out) and the step registry `STEP_TYPES` with 11 steps. Animated params are evaluated per frame by `paramsAt`. Steps reuse `juicePlan` and `warp` (juice), `darker` from `shading.ts` (selout outlines), `ditherToPalette` and the Bayer thresholds from `dither.ts`, and `nearest`/OKLab from `color.ts`. New pieces: grid and exact Euclidean distance transforms (outline thickness, glow) and `paletteStep` (one palette step lighter or darker).
+  - `pipeline_tools.ts`: `fx_pipeline` previews, or writes in one `put_images` request. Over a layer it goes through `writeEffect`, which now takes an optional FX record; a blank canvas goes onto a new layer, with frames added as needed. The record has id `pipeline:<name>` and the pipeline JSON in `recipe`.
+  - `fx/recipe.ts`: emitters take `shape` (line, ring, rect, path, outline), `aim`, `trail` and `curl`. With none of them the spawn draws stay the same, so old recipes render exactly as before. `fx_from_recipe` fills an outline shape's `points` from the named layer (`resolveOutlines`).
+- **Why:** issue #107 asked for node-graph style effects without a node editor, plus the emitter features from research §5 (shapes, outlines, trails, curl noise).
+- **Architecture:**
+  - Steps work on full RGBA buffers at native resolution. One snap at the end keeps every pixel on the allowed colors, so a step may make in-between colors (tint, selout) and still writes only palette colors.
+  - Dissolve ranks its noise over the opaque pixels, so `threshold` is exactly the fraction gone.
+  - Trails and curl run inside each recipe run on the run's own clock, so loops still wrap.
+  - smear (#105) and fluid (#106) become steps through `registerStep`; the schema and the tool description read the registry.
+  - check_fx treats pipeline records as records it cannot re-render (edge checks only).
+  - Re-applying a pipeline makes a second layer; delete the old one first.
+
 ## Juice and the sprite-effect core (#104)
 - **How:**
   - `sprite_fx/curves.ts` has Penner's easings, a closed-form damped spring, a decaying bounce and a seeded shake.

@@ -228,3 +228,85 @@ test("check_fx without a record to render: pixels on the sprite's edge, a one-sh
   const cut = checkFxLayer({ ...layer, fx: { id: "gone", x: 8, y: 8, fps: 30, loop: false, windupMs: 0 } }, [at(5, 5), at(6, 6)], { width: w, height: h });
   assert.deepEqual(cut.map((f) => [f.rule, f.frame]), [["one-shot-end", 2]]);
 });
+
+// ---- Emitter extras (#107): shapes, aim, trails, curl noise, outline points from a layer.
+
+const SHAPED = (emitter, extra = {}) => ({
+  name: "shaped", size: [96, 96], origin: [48, 48], duration: 0.5, seed: 2, palette: ["#10162e", "#2a4a8c", "#4f8fe0", "#9fd4ff", "#ffffff"],
+  ...extra, phases: [{ name: "burst", start: 0, end: 0.5, emitters: [{ kind: "grit", count: 24, speed: 0, life: 0.45, ...emitter }] }],
+});
+/** Pixels drawn at time t (local frame coordinates). */
+const pixelsAt = (recipe, t) => {
+  const r = renderFx(compileRecipe(parseRecipe(recipe)), {}, { times: [t], seed: recipe.seed ?? 1 });
+  const f = r.frames[0], out = [];
+  for (let y = 0; y < f.height; y++) for (let x = 0; x < f.width; x++) if (f.data[(y * f.width + x) * 4 + 3]) out.push([x, y]);
+  return out;
+};
+
+test("recipe emitter extras: old recipes render exactly as before (no shape, trail or curl)", () => {
+  // The spawn draws are unchanged when no extra is used: the recipe's frames are the same with an explicit 'angle' aim.
+  const a = renderFx(compileRecipe(parseRecipe(BURST)), {}, { fps: 30, seed: 3 });
+  const withAim = { ...BURST, phases: BURST.phases.map((p) => ({ ...p, emitters: p.emitters?.map((e) => ({ ...e, aim: "angle" })) })) };
+  const b = renderFx(compileRecipe(parseRecipe(withAim)), {}, { fps: 30, seed: 3 });
+  assert.ok(a.frames.every((f, i) => same(f, b.frames[i])));
+});
+
+test("recipe emission shapes: line, ring, rect, path and outline points put particles where the shape is", () => {
+  const near = (pts, ok) => pts.every(([x, y]) => ok(x - 48, y - 48));
+  const line = pixelsAt(SHAPED({ shape: { type: "line", from: [-20, 0], to: [20, 0] } }), 0.02);
+  assert.ok(line.length > 8 && near(line, (x, y) => Math.abs(y) <= 1 && Math.abs(x) <= 21), JSON.stringify(line.slice(0, 5)));
+  const ring = pixelsAt(SHAPED({ shape: { type: "ring", radius: 16, even: true } }), 0.02);
+  assert.ok(ring.length > 8 && near(ring, (x, y) => Math.abs(Math.hypot(x + 0.5, y + 0.5) - 16) <= 1.5));
+  const rect = pixelsAt(SHAPED({ shape: { type: "rect", w: 30, h: 10, edge: true } }), 0.02);
+  assert.ok(near(rect, (x, y) => (Math.abs(Math.abs(x + 0.5) - 15) <= 1 && Math.abs(y) <= 6) || (Math.abs(Math.abs(y + 0.5) - 5) <= 1 && Math.abs(x) <= 16)));
+  const path = pixelsAt(SHAPED({ shape: { type: "path", points: [[-20, 10], [0, -10], [20, 10]], even: true } }), 0.02);
+  assert.ok(path.length > 8 && near(path, (x, y) => Math.abs(Math.abs(x + 0.5) - (y + 10.5)) <= 2));
+  const outline = pixelsAt(SHAPED({ shape: { type: "outline", points: [[-5, -5], [4, -5], [-5, 4], [4, 4]] } }), 0.02);
+  assert.ok(outline.length >= 1 && near(outline, (x, y) => (x === -5 || x === 4) && (y === -5 || y === 4)), JSON.stringify(outline));
+  // aim 'out' sends ring particles away from the centre.
+  const out = SHAPED({ kind: "spark", count: 16, speed: 120, life: 0.4, shape: { type: "ring", radius: 4, even: true }, aim: "out", spread: 0 });
+  const later = pixelsAt(out, 0.15);
+  assert.ok(later.every(([x, y]) => Math.hypot(x - 48, y - 48) > 6), "every spark left the ring outward");
+});
+
+test("recipe schema: emitter extras are checked with messages by path", () => {
+  const m = problems(SHAPED({ shape: { type: "star" }, trail: 40, curl: { strength: 9999 }, aim: "up" }));
+  assert.match(m, /phases\.0\.emitters\.0\.shape(\.type)?: shape type must be one of line, ring, rect, path, outline/);
+  assert.match(m, /phases\.0\.emitters\.0\.trail: trail must be at most 16/);
+  assert.match(m, /phases\.0\.emitters\.0\.curl\.strength: curl strength must be at most 2000/);
+  assert.match(m, /phases\.0\.emitters\.0\.aim: aim must be 'angle' or 'out'/);
+  assert.match(problems(SHAPED({ shape: { type: "outline" } })), /phases\.0\.emitters\.0\.shape: an outline shape needs a layer \(or points\)/);
+  assert.match(problems(SHAPED({ shape: { type: "path", points: [[0, 0]] } })), /shape\.points: a path needs at least 2 points/);
+});
+
+test("recipe trails draw the last positions down the ramp; curl noise bends the paths; loops still wrap", () => {
+  const fast = { kind: "grit", count: 6, speed: 150, angle: 0, spread: 0, life: 0.45, x: -40, gravity: -950 };
+  const plain = pixelsAt(SHAPED(fast), 0.2), trailed = pixelsAt(SHAPED({ ...fast, trail: 6, color: -1 }), 0.2);
+  assert.ok(trailed.length > plain.length + 6, `${plain.length} -> ${trailed.length} px`);
+  const r = renderFx(compileRecipe(parseRecipe(SHAPED({ ...fast, trail: 6, color: -1 }))), {}, { times: [0.2], seed: 2 }).frames[0];
+  const cols = new Set();
+  for (let i = 0; i < r.data.length; i += 4) if (r.data[i + 3]) cols.add(`${r.data[i]},${r.data[i + 1]},${r.data[i + 2]}`);
+  assert.ok(cols.size >= 3, `the trail walks down the ramp (${cols.size} colors)`);
+  const curled = pixelsAt(SHAPED({ ...fast, curl: { strength: 600, scale: 12 } }), 0.25), straight = pixelsAt(SHAPED(fast), 0.25);
+  assert.notDeepEqual(curled, straight, "curl changes the motion");
+  const curledAgain = pixelsAt(SHAPED({ ...fast, curl: { strength: 600, scale: 12 } }), 0.25);
+  assert.deepEqual(curled, curledAgain, "deterministic");
+  const loop = parseRecipe({ ...EMBERS, phases: [{ ...EMBERS.phases[0], emitters: [{ kind: "ember", count: 10, speed: [10, 30], life: [0.8, 1.6], over: 1, trail: 4, curl: { strength: 80, mode: "flow" }, shape: { type: "line", from: [-10, 0], to: [10, 0] } }] }] });
+  const f = renderFx(compileRecipe(loop), {}, { fps: 30, seed: 1, frames: 31 });
+  assert.ok(same(f.frames[30], f.frames[0]), "a loop with trails and curl wraps");
+});
+
+test("fx_from_recipe fills an outline emitter's points from the layer and stores them", async () => {
+  const fake = sprite();
+  const tool = findTool("fx_from_recipe");
+  const recipe = SHAPED({ shape: { type: "outline", layer: "Hero" }, aim: "out", speed: 20 });
+  const add = await runTool(tool, { recipe, apply: "layer", x: 64, y: 64 }, fake);
+  assert.ok(!add.isError, textOf(add));
+  const stored = JSON.parse((await layerOf(fake, "AI: fx recipe:shaped")).fx.recipe);
+  const pts = stored.phases[0].emitters[0].shape.points;
+  assert.equal(pts.length, 2 * 8 + 2 * 14, "the 8x16 block's outline pixels");
+  assert.ok(pts.every(([x, y]) => x >= -4 && x <= 3 && y >= -8 && y <= 7));
+  const missing = await runTool(tool, { recipe: SHAPED({ shape: { type: "outline", layer: "Nope" } }) }, fake);
+  assert.equal(missing.isError, true);
+  assert.match(textOf(missing), /No image layer Nope/);
+});
