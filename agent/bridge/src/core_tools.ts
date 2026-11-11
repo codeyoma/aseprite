@@ -26,9 +26,10 @@ export const CORE_TOOLS: Tool[] = [
     name: "ask_user",
     title: "Ask the user",
     description:
-      "Ask the user a question you need answered before going on (how finely to split a character into layers, which " +
-      "of two directions to take), with 2-6 answers shown as buttons in the chat. Then end your turn: their choice (or " +
-      "their own words) arrives as their next message. Ask only what blocks you; for the rest pick a sensible default.",
+      "Ask the user a question you need answered before going on (which of two directions to take), with 2-6 answers " +
+      "shown as buttons in the chat. Then end your turn: their choice (or their own words) arrives as their next message. " +
+      "Ask only what blocks you; for the rest pick a sensible default. When the user asked for a whole job in one go " +
+      "(studio, a finished animation), take your recommended answer and say so instead of asking.",
     input: z.object({
       question: z.string().min(1).max(600),
       options: z.array(z.string().min(1).max(80)).min(2).max(6).describe("The answers to offer, your recommendation first."),

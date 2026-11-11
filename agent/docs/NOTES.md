@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Chains run without stopping; the brief is reply text (studio live fix)
+- **How:** `ask_user`'s description no longer gives "how finely to split a character into layers" as its example, and says to take the recommended answer when the user asked for a whole job in one go. `character-motions` step 2 uses 8 rough layers without asking on a studio run or a whole job; `studio` step 5 takes each stage's recommended answer. The chat rules (`CHAT_RULES` in `bridge/src/chat.ts`) say the user never sees thinking, so a brief or chain goes in reply text; `brief` and `studio` say the same. `fx_live` accepts any `AI: fx` layer (the library `hit-spark` is a soft check), and `studio_live` reads the turn from the first user entry.
+- **Why:** after #88 `ask_user` is a core tool that is always listed, and its example primed the layer question, so the studio chain stopped and waited in a one-turn test. Claude wrote the brief only in thinking blocks (mapped to `thought` entries), which the user does not read; skill wording alone did not change that, the system prompt did. A recipe-built hit spark is a valid result of the fx prompt.
+- **Architecture:** prompt and skill text only, plus two live tests; no wire change.
+
 ## Document-scoped requests: each request names its sprite (#90)
 - **How:**
   - Protocol 42. The JSON-RPC envelope may carry `doc` next to `origin` and `chat` (protocol.json `routing`); get_state's `SpriteSummary` has `id` (`"S" .. sprite.id`). Requests marked `activates` (`execute_lua`, `run_command`, `apply_timeline_text`) run with their sprite active.

@@ -14,8 +14,8 @@ One sprite holds one character: a **base pose**, then one **tag per motion** (id
 ## 1. Read what exists
 `get_state` and `get_timeline_text`: the tags, the frame count, and whether the character already has a group and a `characters` entry in the pixel spec. If so, skip to step 3.
 
-## 2. A new character: ask how finely to split it, then build the base
-1. `ask_user`, then end your turn and wait for the answer. Ask: "How finely should I split <name> into layers?" Offer three answers:
+## 2. A new character: settle how finely to split it, then build the base
+1. **Studio run or a whole job in one go** ("make a knight with a walk cycle for Godot"): use 8 rough layers plus what the request needs, say so in one line, and go straight on. **Only this character, step by step:** `ask_user`, then end your turn and wait for the answer. Ask: "How finely should I split <name> into layers?" Offer three answers:
    - "8 rough layers (hair, head, eyes, torso, near/far arm, near/far leg)", first, as the recommendation;
    - "Detailed (also hands, face parts, clothing pieces)";
    - "Rough plus <what the request needs>", e.g. "katana and slash effect".

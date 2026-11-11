@@ -27,7 +27,7 @@ For an animation, add the frame count and timing from `rule:anim.budget` and the
 
 1. **Read what exists.** `get_state`: an open sprite's size and palette usually answer two decisions, and matching the user's project beats any default. `snapshot` it when the art is part of the request.
 2. **Fill the table** from the user's words, then the open sprite, then the defaults. Infer what the request already says: "Game Boy style" settles the palette and the size range; "for Godot" settles the destination.
-3. **Say it in one message, as decisions, not questions.** This is your first message of the turn. One line per decision, then one line on what you will draw. For example:
+3. **Say it in one message, as decisions, not questions.** This is your first message of the turn, written as reply text the user reads in the chat (your thinking is hidden from them), before your next tool call. One line per decision, then one line on what you will draw. For example:
 
    > Size 32x32. Palette PICO-8. View: side, facing right. Light from the upper left. Outline: 1 px dark, selective. Destination: Godot, a sheet with a SpriteFrames resource. A knight in plate armor with a sword, 6-frame walk. Tell me if any of that is wrong; I am starting.
 

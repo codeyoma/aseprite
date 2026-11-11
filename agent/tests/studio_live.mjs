@@ -18,7 +18,8 @@ await chat(`/skill:studio make a 32x32 knight with a walk cycle for Godot. Expor
 await ranSkill("studio");
 
 const entries = (await lua("return AsepriteAgent.entries()")) ?? [];
-const turn = entries.slice(entries.map((e) => e.kind).lastIndexOf("user") + 1);
+// From the request on (a fresh chat): a later "user" entry, such as a declined image-generator prompt, is part of the turn.
+const turn = entries.slice(entries.map((e) => e.kind).indexOf("user") + 1);
 const texts = turn.filter((e) => e.kind === "text").map((e) => e.text ?? "");
 const steps = turn.filter((e) => e.kind === "tool").map((e) => e.text ?? "");
 

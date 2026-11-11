@@ -16,13 +16,15 @@ const info = () => lua(`local s = app.sprite local o = { frames = #s.frames, lay
   for _, t in ipairs(s.tags) do o.tags[#o.tags + 1] = t.name .. " " .. t.fromFrame.frameNumber .. "-" .. t.toFrame.frameNumber end
   local hero = 0 for _, c in ipairs(s.layers[1].cels) do if not c.image:isEmpty() then hero = hero + 1 end end
   o.hero = hero
-  local fx = nil for _, l in ipairs(s.layers) do if l.name == "AI: fx hit-spark" then fx = l end end
+  local fx = nil for _, l in ipairs(s.layers) do if l.name:find("^AI: fx ") and not l.name:find(" glow$") and not fx then fx = l end end
   if fx then local last = fx:cel(#s.frames) o.lastEmpty = (not last) or last.image:isEmpty() end
   return o`);
 const a = await info();
-const fx = a.layers.find((l) => l.name === "AI: fx hit-spark");
-const glow = a.layers.find((l) => /^AI: fx hit-spark glow/.test(l.name));
-check("an AI: fx hit-spark layer", !!fx, a.layers);
+// A library effect or a recipe built for the request both count; the library one is the expected route.
+const fx = a.layers.find((l) => /^AI: fx /.test(l.name) && !/ glow$/.test(l.name));
+const glow = a.layers.find((l) => /^AI: fx .* glow$/.test(l.name));
+check("an AI: fx layer", !!fx, a.layers);
+soft("it used the library hit-spark", fx?.name === "AI: fx hit-spark", fx?.name);
 check("frames were added for the effect", a.frames > 1, a.frames);
 check("the hero is copied into the new frames", a.hero === a.frames, a);
 check("the idle tag did not grow", a.tags.includes("idle 1-1"), a.tags);
