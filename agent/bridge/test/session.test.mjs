@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const dist = fileURLToPath(new URL("../dist/session.js", import.meta.url));
+// A file:// URL: Windows paths (D:\\...) are not valid ESM import specifiers.
+const dist = new URL("../dist/session.js", import.meta.url).href;
 const run = (home, code) => execFileSync(process.execPath, ["--input-type=module", "-e",
   `const s = await import(${JSON.stringify(dist)}); ${code}`], { env: { ...process.env, ASEPRITE_AGENT_HOME: home }, encoding: "utf8" }).trim();
 
