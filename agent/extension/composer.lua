@@ -279,4 +279,10 @@ function Composer:decide(ctx)
   }
 end
 
+-- The State block and the changes as they are now: a queued message takes
+-- them again when it is finally sent, since the document moved on meanwhile.
+function Composer:freshContext()
+  return self.stateBlock(), self.changes()
+end
+
 return Composer

@@ -35,6 +35,7 @@ local PLACEHOLDER = "Draw, edit or animate..."
 local here = debug.getinfo(1, "S").source:match("^@(.*[/\\])") or ""
 local function loadComposer() return dofile(here .. "composer.lua") end
 local Prompter = dofile(here .. "prompter.lua")
+local Mascot = dofile(here .. "mascot.lua")
 
 return function(deps)
   local Panel = {}
@@ -73,6 +74,12 @@ return function(deps)
   local refreshCatalog       -- defined with the picker below
   local providers = { "claude" }
   local ticker = nil
+  local animT = 0              -- seconds of mascot animation (ticker steps; os.time is whole seconds)
+  -- Messages sent while the agent works wait here and go one by one when the
+  -- turn ends. Stop pauses the queue; Send now (on a queued row) stops the
+  -- turn and sends that one next.
+  local queue = {}
+  local queuePaused = false
 
   local C = {
     bg = Color(38, 38, 41),
@@ -548,11 +555,54 @@ return function(deps)
     end
 
     if busy then
-      addRow(lh, function(y)
-        iconSpinner(gc, pad, y + (lh - icon) / 2, icon)
+      -- The mascot (the logo's face) thinks while the turn runs.
+      local ms = math.max(3, (lh * 3) // Mascot.HEIGHT)
+      local mw, mh = Mascot.size(ms)
+      addRow(mh, function(y)
+        local pose = Mascot.pose(animT)
+        Mascot.draw(gc, pad, y, ms, pose)
         gc.color = C.dim
-        gc:fillText("Working... " .. formatSeconds(conv:elapsed() or 0), pad + icon + u * 2, y)
+        gc:fillText(pose.word .. "... " .. formatSeconds(conv:elapsed() or 0), pad + mw + u * 2, y + (mh - lh) // 2)
       end, nil, u * 2)
+    end
+
+    -- Queued messages, each with Send now and ✕.
+    for qi, q in ipairs(queue) do
+      addRow(lh + u, function(y)
+        local x = pad
+        local tag = queuePaused and "Paused" or "Queued"
+        local tw = gc:measureText(tag).width + u * 4
+        gc.color = C.rule
+        gc:beginPath()
+        gc:roundedRect(Rectangle(x, y, tw, lh + u // 2), u * 2, u * 2)
+        gc:fill()
+        gc.color = C.accent
+        gc:fillText(tag, x + u * 2, y + u // 4)
+        -- Buttons on the right.
+        local right = w - pad
+        local function button(label, action)
+          local bw = gc:measureText(label).width + u * 4
+          right = right - bw
+          gc.color = C.bubble
+          gc:beginPath()
+          gc:roundedRect(Rectangle(right, y, bw, lh + u // 2), u * 2, u * 2)
+          gc:fill()
+          gc.color = C.text
+          gc:fillText(label, right + u * 2, y + u // 4)
+          hitButtons[#hitButtons + 1] = { x0 = right, y0 = y, x1 = right + bw, y1 = y + lh + u, action = action, index = qi }
+          right = right - u * 2
+        end
+        button("✕", "queue_remove")
+        button("Send now", "queue_send_now")
+        local text = (q.shown or ""):gsub("\n.*", "")
+        local maxW = right - (x + tw + u * 2)
+        if gc:measureText(text).width > maxW then
+          while #text > 1 and gc:measureText(text .. "…").width > maxW do text = dropLastChar(text) end
+          text = text .. "…"
+        end
+        gc.color = C.dim
+        gc:fillText(text, x + tw + u * 2, y + u // 4)
+      end, nil, u)
     end
 
     if #rows == 0 then
@@ -726,12 +776,13 @@ return function(deps)
   local function syncBusy()
     local b = conv:isBusy()
     if dlg then
-      dlg:modify{ id = "send", enabled = not b }
+      dlg:modify{ id = "send", text = b and "&Queue" or "&Send" }
       dlg:modify{ id = "stop", enabled = b }
     end
     if b and not ticker and dlg then
-      -- Repaint for the spinner and the "Working... Ns" counter.
-      ticker = Timer{ interval = 0.25, ontick = function() if dlg then dlg:repaint() end end }
+      -- Repaint for the mascot's moves and the "Working... Ns" counter.
+      animT = 0
+      ticker = Timer{ interval = 0.1, ontick = function() animT = animT + 0.1; if dlg then dlg:repaint() end end }
       ticker:start()
     elseif not b then
       stopTicker()
@@ -750,6 +801,7 @@ return function(deps)
     if r.turnEnded then
       updateStatus("")
       syncBusy()
+      Panel.sendQueued()
     end
     changed()
   end
@@ -1003,7 +1055,7 @@ return function(deps)
   -- providerOverride / modeOverride come from Panel.submit (scripts, Apply
   -- plan): the provider list may not be loaded yet right after opening.
   local function send(providerOverride, modeOverride)
-    if conv:isBusy() or not dlg then return end
+    if not dlg then return end
     local ctx = {
       text = dlg.data.prompt or "",
       provider = providerOverride or dlg.data.provider or providers[1],
@@ -1020,8 +1072,65 @@ return function(deps)
     if r.kind == "tip" then prompter.tip(r.message); dlg:repaint()
     elseif r.kind == "command" then runSlashCommand(r)
     elseif r.kind == "pick" then showPick(r); dlg:repaint()
-    elseif r.kind == "send" then startTurn(r)
+    elseif r.kind == "send" then
+      if conv:isBusy() then
+        -- The agent is working: the message waits for the end of the turn.
+        r.queued = true
+        queue[#queue + 1] = r
+        dlg:modify{ id = "prompt", text = "" }
+        updateAttachments()
+        changed()
+      else
+        startTurn(r)
+      end
     end
+  end
+
+  -- Sends the first queued message when no turn runs (after a turn ends,
+  -- or from Send now). A queued message takes the State block and changes
+  -- as they are now.
+  function Panel.sendQueued()
+    if conv:isBusy() or queuePaused or #queue == 0 or not dlg then return false end
+    local r = table.remove(queue, 1)
+    r.payload.state, r.payload.changes = composer:freshContext()
+    startTurn(r)
+    return true
+  end
+
+  -- Send now: this queued message goes next; a running turn is stopped first
+  -- (its end sends it).
+  function Panel.sendNow(index)
+    local item = queue[index or 1]
+    if not item then return false end
+    table.remove(queue, index or 1)
+    table.insert(queue, 1, item)
+    queuePaused = false
+    if conv:isBusy() then deps.request("chat.stop", {}, function() end)
+    else Panel.sendQueued() end
+    changed()
+    return true
+  end
+
+  function Panel.removeQueued(index)
+    if not queue[index] then return false end
+    table.remove(queue, index)
+    if #queue == 0 then queuePaused = false end
+    changed()
+    return true
+  end
+
+  -- The queued messages' texts (tests and scripts).
+  function Panel.queued()
+    local out = {}
+    for _, q in ipairs(queue) do out[#out + 1] = q.shown end
+    return out, queuePaused
+  end
+
+  -- Stop pauses the queue, so the next message doesn't start on its own.
+  function Panel.stop()
+    if #queue > 0 then queuePaused = true end
+    deps.request("chat.stop", {}, function() end)
+    changed()
   end
 
   ---------------------------------------------------------------------------
@@ -1068,6 +1177,8 @@ return function(deps)
   function Panel.buttonAction(action, entry, index)
     if action == "revert" or action == "restore" then return Panel.replyAction(entry, action) end
     if action == "dev_apply" then return Panel.applyDevChanges() end
+    if action == "queue_send_now" then return Panel.sendNow(index) end
+    if action == "queue_remove" then return Panel.removeQueued(index) end
     if action == "dev_discard" then return Panel.discardDevChanges() end
     if action == "pick_variation" or action == "discard_variations" then
       if not entry or entry.resolved then return false end
@@ -1246,6 +1357,7 @@ return function(deps)
 
   -- New chat: the bridge forgets the conversation ids and the panel its messages.
   function Panel.newChat()
+    queue, queuePaused = {}, false
     deps.request("chat.reset", {}, function() end)
     conv:reset()
     composer:newConversation()
@@ -1370,9 +1482,7 @@ return function(deps)
     dlg:button{ id = "attach", text = "+", onclick = openAttachMenu }
     dlg:button{ id = "mention", text = "@", onclick = openPicker }
     dlg:button{ id = "send", text = "&Send", onclick = function() send() end }
-    dlg:button{ id = "stop", text = "S&top", enabled = false, onclick = function()
-      deps.request("chat.stop", {}, function() end)
-    end }
+    dlg:button{ id = "stop", text = "S&top", enabled = false, onclick = function() Panel.stop() end }
     dlg:button{ id = "new", text = "&New chat", onclick = function() Panel.newChat() end }
     dlg:show{ wait = false }
     syncBusy()

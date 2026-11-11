@@ -2,6 +2,16 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Working mascot; prompt queue with Send now and a pausing Stop
+- **How:**
+  - `mascot.lua` draws the Aseprite logo's face (14x15 pixels, from the logo's colors) in the "Working..." row. `Mascot.pose(t)` walks a fixed script of poses: rest, look up, look up-right with thought dots that grow, glance left and right, squint, bob. A blink every 2.7 s interrupts any pose. The label word follows the pose ("Thinking...", "Looking...", "Hmm..."). The panel's ticker runs at 0.1 s while busy and advances `animT`, because `conv:elapsed()` uses `os.time` (whole seconds).
+  - Queue: while a turn runs, Enter or Send (labelled Queue then) runs `composer:decide` as usual, and a "send" result is pushed to `queue` instead of starting a turn. Queued rows show under the working row with Send now and ✕. When a turn ends (`turnEnded`), `Panel.sendQueued` takes the first one and refreshes its State block and changes (`Composer:freshContext`), since the document moved on. Stop pauses the queue (`Paused`). Send now moves a row to the front, unpauses, and stops the running turn, whose end sends it. New chat clears the queue.
+  - `AsepriteAgent.queued/sendNow/stop` are for tests (`tests/queue_live.mjs`, `tests/mascot_test.lua`).
+- **Why:**
+  - A spinner looked frozen on long turns.
+  - Users want to type the next instruction while the agent works. Agents can't take a message in the middle of a turn over ACP, so "Send now" is stop-then-send: the conversation keeps its context, and the new message steers it.
+- **Architecture:** the queue lives in the panel (it already owns the draft and turn start); the bridge still runs one turn at a time and never sees queued messages.
+
 ## Import an animated file as frames (import_animation)
 - **How:**
   - `import_animation` (in `sheet_tools.ts`) decodes the file with the same `aseprite -b --sheet` path as attachments (`asepriteFrames`). It then either opens a new sprite with `createAnimation` (durations from the file, the file's colors as palette when there are at most 256), or puts each frame on a new `AI: <name>` layer of the active sprite with one `putImages` call, from `frame` on. That call adds frames at the end, sets the filled frames' durations, and centers the frames unless `x`/`y` are given. It is one undo step.

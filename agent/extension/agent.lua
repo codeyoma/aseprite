@@ -221,13 +221,15 @@ function init(plugin)
     attach = function(kind) return Panel.attach(kind) end,
     clearAttachments = function() Panel.clearAttachments() end,
     importAnimation = function(params) Panel.importAnimation(params) end,
+    queued = function() local q, paused = Panel.queued() return { items = q, paused = paused } end,
+    sendNow = function(i) return Panel.sendNow(i) end,
     pendingAttachments = function() return Panel.pendingAttachments() end,
     -- The newest before/after capture of an edit request (#23).
     lastCapture = function()
       local c = capture:last()
       return c and { seq = c.seq, method = c.method, changed = c.changed, claimed = c.claimed or false } or nil
     end,
-    stop = function() connection.request("chat.stop", {}, function() end) end,
+    stop = function() Panel.stop() end,
     lastTurnStatus = function() return (turns:view(nil)) end,
   }
 
