@@ -51,6 +51,8 @@ export class SavedCommands {
     mkdirSync(this.dir, { recursive: true });
     if (!existsSync(join(this.dir, ".git"))) {
       this.git("init", "-q");
+      // Files come back from history exactly as saved (Windows' core.autocrlf would add CR).
+      this.git("config", "core.autocrlf", "false");
       this.git("config", "user.name", "Aseprite Agent");
       this.git("config", "user.email", "agent@localhost");
     }

@@ -182,7 +182,7 @@ test("detect_background: reports, writes a PNG without the key color, or puts th
 
   const w = await runTool(tool, { path, remove: true }, fake);
   const out = path.replace(/\.png$/, "-nobg.png");
-  assert.match(w.content[0].text, new RegExp(`Wrote it with a transparent background to ${out}`));
+  assert.ok(w.content[0].text.includes(`Wrote it with a transparent background to ${out}`), w.content[0].text);
   const png = PNG.sync.read(readFileSync(out));
   assert.equal(opaqueCount(png.data), 140 + 80 + 120);
 

@@ -15,6 +15,7 @@ const git = (cwd, ...args) => spawnSync("git", args, { cwd, encoding: "utf8" });
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), "devrepo-"));
   git(dir, "init", "-q", "-b", "agent");
+  git(dir, "config", "core.autocrlf", "false");
   git(dir, "config", "user.email", "t@t");
   git(dir, "config", "user.name", "t");
   mkdirSync(join(dir, "agent", "extension"), { recursive: true });
