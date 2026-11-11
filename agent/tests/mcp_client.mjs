@@ -8,7 +8,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const bridgePath = process.env.ASEPRITE_AGENT_BRIDGE ?? join(here, "../bridge/dist/index.js");
 
 export async function startBridge({ args = [], env = {} } = {}) {
-  const proc = spawn("node", [bridgePath, ...args], { stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, ...env } });
+  // Tests call tools directly, so they see every tool (#88: agents get the core set and reach the rest by call_tool).
+  const proc = spawn("node", [bridgePath, ...args], { stdio: ["pipe", "pipe", "inherit"], env: { ASEPRITE_AGENT_TOOLS: "all", ...process.env, ...env } });
   let buf = "";
   const waiters = new Map();
   proc.stdout.on("data", (d) => {
