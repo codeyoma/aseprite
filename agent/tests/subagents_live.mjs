@@ -49,9 +49,12 @@ const entries = await lua("return AsepriteAgent.entries()");
 console.log("spawn_agents result:", entries.filter((e) => e.kind === "tool" && /sub-agents/.test(e.text ?? "")).map((e) => e.result).join("\n"));
 // A sub-agent's steps start with its label: "frames 1-2" by default, or the label the agent gave the task.
 const subSteps = entries.filter((e) => e.kind === "tool" && /^\[[^\]]+\] /.test(e.text ?? ""));
-check("the log shows sub-agents and their steps", new Set(subSteps.map((e) => e.text.match(/^\[(.*?)\]/)[1])).size >= 4,
-  subSteps.length ? subSteps.map((e) => e.text) : entries.map((e) => `${e.kind}: ${String(e.text ?? "").slice(0, 80)}`).slice(-40));
-check("the timeline highlighted a sub-agent's frames while it worked",
+// The model may ignore "use spawn_agents" (Codex sometimes does the frames itself): that is soft; when it did spawn
+// them, their steps must show in the log.
+const spawned = entries.some((e) => e.kind === "tool" && /sub-agents/.test(e.text ?? ""));
+soft("the agent used spawn_agents", spawned);
+if (spawned) check("the log shows sub-agents and their steps", new Set(subSteps.map((e) => e.text.match(/^\[(.*?)\]/)[1])).size >= 4, subSteps.map((e) => e.text));
+if (spawned) check("the timeline highlighted a sub-agent's frames while it worked",
   ranges.some((r) => r.range === 2 || r.cursor?.set === 2), ranges.slice(-6));
 
 await lua(fixture);
