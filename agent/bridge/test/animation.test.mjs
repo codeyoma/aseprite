@@ -289,3 +289,31 @@ test("motion_review: shows a fresh critic the two contacts, blind, and reports m
   const none = await runTool(findTool("motion_review"), {}, fake);
   assert.match(none.content[0].text, /critic is not available/);
 });
+
+test("walk_check: a near leg not clearly lighter than the far leg is an error (#99 depth cue)", async () => {
+  const { judgeWalk, legLightness, limbMask, fromTop, MIN_DEPTH } = await import("../dist/walk_check.js");
+  // The benchmark runs' legs: near #3c3c5a (L 0.37) against far #1d2b53 (L 0.30), then a lighter near leg #6a6a90.
+  const legs = (near) => {
+    const rows = RUN6[1].map((r, y) => (y >= 21 ? r : ".".repeat(24)));
+    const img = asciiImage(rows);
+    // In RUN6 'N' is one leg, 'g' the other: call g the near leg here.
+    for (let i = 0; i < img.data.length; i += 4) {
+      if (img.data[i] === 60 && img.data[i + 1] === 60) img.data.set(near, i);
+      else if (img.data[i] === 29) img.data.set([0x1d, 0x2b, 0x53], i);
+    }
+    return img;
+  };
+  const weak = legs([0x3c, 0x3c, 0x5a]);
+  const sel = { colors: ["#3c3c5a"], rows: [21, 30] };
+  const l1 = legLightness(weak, fromTop(limbMask(weak, sel), 24));
+  assert.ok(l1.near - l1.far < MIN_DEPTH, JSON.stringify(l1));
+  const leg = { pixels: 9, offset: 2 }, arm = { pixels: 9, offset: -2 };
+  const v = judgeWalk([{ frame: 1, arm, leg, legLight: l1 }, { frame: 4, arm: { pixels: 9, offset: 2 }, leg: { pixels: 9, offset: -2 } }]);
+  assert.equal(v.status, "errors");
+  assert.match(v.errors[0], /frame 1: the near leg \(lightness 0.37\) isn't clearly lighter than the far leg \(0.3\)/);
+  const strong = legs([0x6a, 0x6a, 0x90]);
+  const l2 = legLightness(strong, fromTop(limbMask(strong, { colors: ["#6a6a90"], rows: [21, 30] }), 24));
+  assert.ok(l2.near - l2.far >= MIN_DEPTH, JSON.stringify(l2));
+  assert.equal(judgeWalk([{ frame: 1, arm, leg, legLight: l2 }, { frame: 4, arm: { pixels: 9, offset: 2 }, leg: { pixels: 9, offset: -2 } }]).status, "ok");
+  assert.equal(legLightness(asciiImage(RUN6[1].map(() => ".".repeat(24))), new Array(24 * 32).fill(false)), undefined);
+});

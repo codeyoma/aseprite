@@ -64,7 +64,8 @@ export const ANIMATION_TOOLS: Tool[] = [
           `WALK CHECK: ${verdict.status}`,
           `Walk "${contract.tag}" facing ${contract.facing}, contacts ${contract.contacts.join(" and ")}; near arm: ${selText(contract.nearArm)}; near leg: ${selText(contract.nearLeg)}` +
             (changed ? " (stored on the sprite)." : "."),
-          ...readings.map((r) => `frame ${r.frame}: near arm ${lim(r.arm)}; near leg ${lim(r.leg)}`),
+          ...readings.map((r) => `frame ${r.frame}: near arm ${lim(r.arm)}; near leg ${lim(r.leg)}` +
+            (r.legLight ? `; lightness near leg ${r.legLight.near}, far leg ${r.legLight.far}` : "")),
           ...verdict.errors.map((e) => `error: ${e}`),
           ...verdict.unverifiable.map((u) => `unverifiable: ${u}`),
           verdict.status === "ok" ? "The arms swing opposite the legs." :

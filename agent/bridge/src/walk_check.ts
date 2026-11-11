@@ -2,7 +2,7 @@
 // contact frames from limbs the agent names (part layers, or colors within rows), never guessed from the whole
 // figure: the hand's offset from the shoulder and the foot's offset from the hip, toward the facing direction.
 import type { Rgba } from "./image.js";
-import { parseHex } from "./color.js";
+import { parseHex, toOklab } from "./color.js";
 import type { Document } from "./document.js";
 
 /** A limb: a part layer, and/or colors (hex) within rows [y0, y1] of the canvas. */
@@ -100,6 +100,32 @@ export interface ContactReading {
   frame: number;
   arm: LimbReading;
   leg: LimbReading;
+  /** Mean OKLab lightness of the near leg and of the other leg pixels in its rows (the far leg), when both are there. */
+  legLight?: { near: number; far: number; farPixels: number };
+}
+
+/** How much lighter (OKLab L) the near leg must be than the far leg for a player to tell them apart at a glance. */
+export const MIN_DEPTH = 0.12;
+
+/**
+ * The near leg's and the far leg's mean lightness at a contact: the near leg's own pixels (its mask, `near`), against
+ * every other opaque pixel of the composite below the hip (`whole`, rows under the near leg's top row).
+ */
+export function legLightness(whole: Rgba, near: boolean[]): ContactReading["legLight"] {
+  const w = whole.width;
+  const top = near.findIndex((v) => v);
+  if (top < 0) return undefined;
+  const y0 = Math.floor(top / w) + 1;
+  let ln = 0, nn = 0, lf = 0, nf = 0;
+  for (let y = y0; y < whole.height; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, d = i * 4;
+    if (whole.data[d + 3] < 128) continue;
+    const L = toOklab({ r: whole.data[d], g: whole.data[d + 1], b: whole.data[d + 2], a: 255 }).L;
+    if (near[i]) { ln += L; nn++; } else { lf += L; nf++; }
+  }
+  if (!nn || nf < 3) return undefined;
+  const r = (v: number) => Math.round(v * 1000) / 1000;
+  return { near: r(ln / nn), far: r(lf / nf), farPixels: nf };
 }
 
 export interface WalkVerdict {
@@ -121,6 +147,11 @@ export function judgeWalk(contacts: ContactReading[]): WalkVerdict {
     for (const [name, r] of [["near arm", c.arm], ["near leg", c.leg]] as const) {
       if (!r.pixels) unverifiable.push(`frame ${c.frame}: no ${name} pixels (check the layer or colors and rows)`);
       else if (!swing(r)) unverifiable.push(`frame ${c.frame}: the ${name} hangs straight (offset ${r.offset ?? 0} px)`);
+    }
+    if (c.legLight && c.legLight.near - c.legLight.far < MIN_DEPTH) {
+      errors.push(`frame ${c.frame}: the near leg (lightness ${c.legLight.near}) isn't clearly lighter than the far leg ` +
+        `(${c.legLight.far}), so a player can't tell which leg is near and pairs the arm with the wrong one; make the near ` +
+        `leg at least ${MIN_DEPTH} lighter (OKLab L), or the far leg darker`);
     }
     if (swing(c.arm) && swing(c.leg) && Math.sign(c.arm.offset!) === Math.sign(c.leg.offset!)) {
       errors.push(`frame ${c.frame} (contact): the near arm and the near leg both swing ${side(c.arm.offset!)} ` +
@@ -189,7 +220,13 @@ export async function measureWalk(doc: Document, input: WalkInput): Promise<Walk
       const img = await doc.pixels(l.layer, frame);
       return readLimb(limbMask(img, l), img.width, contract.facing);
     };
-    readings.push({ frame, arm: await read(contract.nearArm), leg: await read(contract.nearLeg) });
+    const legImg = await doc.pixels(contract.nearLeg.layer, frame);
+    const legMask = limbMask(legImg, contract.nearLeg);
+    const whole = contract.nearLeg.layer ? await doc.pixels(undefined, frame) : legImg;
+    readings.push({
+      frame, arm: await read(contract.nearArm), leg: readLimb(legMask, legImg.width, contract.facing),
+      legLight: legLightness(whole, fromTop(legMask, legImg.width)),
+    });
   }
   const changed = JSON.stringify(spec.walk) !== JSON.stringify(contract);
   return { contract, readings, verdict: judgeWalk(readings), ...(changed ? { newSpec: JSON.stringify({ ...spec, walk: contract }) } : {}) };
