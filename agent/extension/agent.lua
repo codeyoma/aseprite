@@ -220,6 +220,7 @@ function init(plugin)
     -- Attach "selection" | "layer" | "frame", or { path = "ref.png" } (#21).
     attach = function(kind) return Panel.attach(kind) end,
     clearAttachments = function() Panel.clearAttachments() end,
+    importAnimation = function(params) Panel.importAnimation(params) end,
     pendingAttachments = function() return Panel.pendingAttachments() end,
     -- The newest before/after capture of an edit request (#23).
     lastCapture = function()

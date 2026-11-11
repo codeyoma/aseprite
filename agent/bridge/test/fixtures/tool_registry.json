@@ -425,6 +425,21 @@
     ]
   },
   {
+    "name": "import_animation",
+    "title": "Import animation as frames",
+    "kind": "edit",
+    "label": "Import animation",
+    "input": [
+      "frame",
+      "into",
+      "name",
+      "path",
+      "timing",
+      "x",
+      "y"
+    ]
+  },
+  {
     "name": "import_sheet",
     "title": "Import sprite sheet",
     "kind": "edit",
@@ -844,7 +859,7 @@
     "name": "rotate_layer",
     "title": "Rotate cleanly",
     "kind": "edit",
-    "label": "Rotate  \u00b0",
+    "label": "Rotate  °",
     "input": [
       "angle",
       "frames",

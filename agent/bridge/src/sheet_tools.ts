@@ -1,7 +1,11 @@
-// Sprite sheet import (#41): slice a sheet image into frames and tags.
+// Sprite sheet import (#41): slice a sheet image into frames and tags; an
+// animated file (GIF, WebP, APNG, .aseprite) becomes frames as it is.
 import { existsSync, readFileSync } from "node:fs";
+import { basename, extname } from "node:path";
 import * as z from "zod/v4";
-import { documentOf } from "./document.js";
+import { asepriteFrames, IMAGE_EXTENSIONS, type FrameDecoder } from "./attachments.js";
+import { hex } from "./color.js";
+import { documentOf, type Document, type SpriteInfo } from "./document.js";
 import { readPng } from "./image.js";
 import {
   describeBackground, detectBackground, detectCells, findSprites, frameImages, gridFrames, parseAtlasText, removeBackground, tagsFromRows,
@@ -12,7 +16,94 @@ import { failure, text, type Tool } from "./tool.js";
 /** What import_sheet (and tools reading sheets, templates or font pages) say about a non-PNG path. */
 export const NOT_PNG_SHEET = "Only PNG sheets can be read";
 
+/** The decoder import_animation uses; tests swap it. */
+export const importDecoder: { decode: FrameDecoder } = { decode: asepriteFrames };
+
+async function activeSprite(doc: Document): Promise<SpriteInfo | undefined> {
+  try {
+    return await doc.info();
+  } catch (e) {
+    if (/no active sprite/i.test((e as Error).message)) return undefined;
+    throw e;
+  }
+}
+
+/** The file's colors as hex when there are at most 256 (a GIF's palette), else undefined. */
+function smallPalette(frames: { data: Uint8Array }[]): string[] | undefined {
+  const seen = new Set<string>();
+  for (const f of frames) for (let i = 0; i < f.data.length; i += 4) {
+    if (f.data[i + 3] === 0) continue;
+    seen.add(hex({ r: f.data[i], g: f.data[i + 1], b: f.data[i + 2], a: 255 }));
+    if (seen.size > 256) return undefined;
+  }
+  return [...seen];
+}
+
 export const SHEET_TOOLS: Tool[] = [
+  {
+    name: "import_animation",
+    title: "Import animation as frames",
+    description:
+      "Turn an animated image file (GIF, WebP, APNG, .aseprite, FLI; e.g. an attachment's file path) into frames as they are, " +
+      "with the file's own frame times. into 'new' (default) opens it as a new sprite with the file's colors as palette; into " +
+      "'layer' puts each frame on a new 'AI: <name>' layer of the active sprite, from `frame` on, adding frames at the end " +
+      "when needed and setting those frames' durations from the file (timing false keeps the sprite's). Any still image " +
+      "Aseprite opens works as one frame. For a sheet of poses in one image, use import_sheet.",
+    input: z.object({
+      path: z.string().describe("The image file (an attachment's `file` path)."),
+      into: z.enum(["new", "layer"]).optional().describe("Default 'new'; 'layer' needs an open sprite."),
+      frame: z.number().int().min(1).optional().describe("layer: the first frame to fill. Default 1."),
+      name: z.string().optional().describe("The new sprite's title or layer name. Default the file name."),
+      timing: z.boolean().optional().describe("layer: set the filled frames' durations from the file. Default true."),
+      x: z.number().int().optional().describe("layer: where the file's top-left goes. Default centered on the sprite."),
+      y: z.number().int().optional(),
+    }),
+    kind: "edit",
+    label: (i) => (i?.into === "layer" ? "Import animation onto a layer" : "Import animation"),
+    async run(input, aseprite) {
+      const path = String(input.path);
+      if (!IMAGE_EXTENSIONS.includes(extname(path).slice(1).toLowerCase())) {
+        return failure(`Not an image file Aseprite opens (${IMAGE_EXTENSIONS.join(", ")}).`);
+      }
+      if (!existsSync(path)) return failure(`File not found: ${path}`);
+      let decoded;
+      try {
+        decoded = await importDecoder.decode(path);
+      } catch (e) {
+        return failure(`Aseprite could not read ${basename(path)}: ${(e as Error).message.split("\n")[0]}`);
+      }
+      const { frames, durations } = decoded;
+      if (!frames.length) return failure("The file has no frames.");
+      const { width: w, height: h } = frames[0];
+      const name = input.name ?? basename(path, extname(path));
+      const n = frames.length;
+      const timing = durations.every((d) => d === durations[0]) ? `${durations[0]} ms each` : `durations ${durations.join(", ")} ms`;
+      const doc = documentOf(aseprite);
+      if ((input.into ?? "new") === "new") {
+        const r = await doc.createAnimation(w, h, frames.map((image, i) => ({ image, duration: durations[i] })),
+          { title: name, palette: smallPalette(frames) });
+        return { content: [text(`Opened "${r.title}": ${n} frame${n === 1 ? "" : "s"} of ${w}x${h} (${timing}).`)] };
+      }
+      const info = await activeSprite(doc);
+      if (!info) return failure("No sprite is open; use into 'new', or open a sprite first.");
+      if (info.layers.some((l) => l.name === `AI: ${name}`)) {
+        return failure(`The sprite already has a layer 'AI: ${name}'; pass another name.`);
+      }
+      const start = input.frame ?? 1;
+      const x = input.x ?? Math.floor((info.width - w) / 2), y = input.y ?? Math.floor((info.height - h) / 2);
+      const last = start + n - 1;
+      const r = await doc.putImages(frames.map((image, i) => ({ image, frame: start + i, newLayer: name, x, y })), {
+        frames: last, duration: durations[n - 1], label: "Import animation",
+        ...(input.timing === false ? {} : { durations: durations.map((ms, i) => ({ frame: start + i, ms })) }),
+      });
+      const added = r.added ? `, ${r.added} frame${r.added === 1 ? "" : "s"} added` : "";
+      const cut = w > info.width || h > info.height ? ` The file is ${w}x${h}, larger than the ${info.width}x${info.height} sprite, so its edges are cut.` : "";
+      return {
+        content: [text(`Put ${n} frame${n === 1 ? "" : "s"} of ${w}x${h} at ${x},${y} on layer "${r.layers[0]?.name ?? `AI: ${name}`}", ` +
+          `frames ${start}-${last}${added}${input.timing === false ? "" : ` (${timing})`}.${cut}`)],
+      };
+    },
+  },
   {
     name: "import_sheet",
     title: "Import sprite sheet",

@@ -1,14 +1,15 @@
 ---
 name: import-sheet
 title: Import a sprite sheet
-description: Turn a sprite sheet image into an animated sprite with frames and tags, from a grid, loose sprites on a background, or an atlas (Aseprite or TexturePacker JSON, TexturePacker XML, Godot SpriteFrames .tres).
+description: Turn a sprite sheet image, or an animated file (GIF, WebP, .aseprite) as it is, into an animated sprite with frames and tags, from a grid, loose sprites on a background, or an atlas (Aseprite or TexturePacker JSON, TexturePacker XML, Godot SpriteFrames .tres).
 category: Import
-triggers: [sprite sheet, spritesheet, import sheet, slice sheet, atlas]
+triggers: [sprite sheet, spritesheet, import sheet, slice sheet, atlas, gif, animated gif, webp animation, import animation]
 needs: [image]
-tools: [import_sheet, snapshot, apply_timeline_text]
+tools: [import_sheet, import_animation, snapshot, apply_timeline_text]
 ---
 # Import a sprite sheet
 
+0. An animated file (GIF, WebP, APNG, .aseprite) already has its frames: use `import_animation` with its path. Into a new sprite by default; `into: "layer"` (and `frame`) when the user wants it in the open sprite. The file's timing is kept. Then check with `snapshot` and reply.
 1. Take the attached sheet (its path is in the `[Attached image …, file <path>]` line). If the user mentions an atlas (.json, .xml or .tres), pass its path as `atlas`; one with the same name next to the image is found on its own.
 2. Pick the mode from what you see or what the user says:
    - poses in a regular grid → `mode: "grid"` (let it find the cell size from the gutters, or pass `cell_w`/`cell_h`, `padding_x/y`, `margin_x/y` if the user gives them);

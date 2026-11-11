@@ -830,6 +830,38 @@ return function(deps)
     if d.data.ok and d.data.path ~= "" then Panel.attach{ path = d.data.path } end
   end
 
+  -- An animated file (GIF, WebP, .aseprite, ...) becomes frames as it is,
+  -- with its own timing: a new sprite, or a new layer of the open sprite
+  -- from a frame on (the bridge's import_animation, no agent turn).
+  local function importAnimation()
+    if not deps.attachments then return end
+    local d = Dialog{ title = "Import animation as frames" }
+    d:file{ id = "path", label = "File", open = true, filetypes = deps.attachments.EXTENSIONS }
+    local sprite = app.sprite
+    d:combobox{ id = "into", label = "Into", option = sprite and "A new layer here" or "A new sprite",
+                options = sprite and { "A new layer here", "A new sprite" } or { "A new sprite" } }
+    if sprite then
+      d:number{ id = "frame", label = "From frame", text = tostring(app.frame and app.frame.frameNumber or 1), decimals = 0 }
+    end
+    d:button{ id = "ok", text = "&Import", focus = true }
+    d:button{ id = "cancel", text = "&Cancel" }
+    d:show()
+    local data = d.data
+    if not data.ok or data.path == "" then return end
+    local params = { path = data.path, into = data.into == "A new layer here" and "layer" or "new" }
+    if params.into == "layer" then params.frame = math.max(1, math.floor(tonumber(data.frame) or 1)) end
+    Panel.importAnimation(params)
+  end
+
+  -- params: { path, into = "new" | "layer", frame }; the result shows in the log.
+  function Panel.importAnimation(params)
+    deps.request("import.animation", params, function(result, err)
+      if err then conv:note("error", "Import failed: " .. tostring(err.message or err))
+      else conv:note("status", result.text) end
+      changed()
+    end)
+  end
+
   local function openAttachMenu()
     local menu = Dialog()
     menu:menuItem{ text = "Attach selection", onclick = function() Panel.attach("selection") end }
@@ -837,6 +869,8 @@ return function(deps)
     menu:menuItem{ text = "Attach active frame", onclick = function() Panel.attach("frame") end }
     menu:menuItem{ text = "Attach image file...", onclick = pickImageFile }
     menu:menuItem{ text = "Paste image from clipboard", onclick = function() Panel.attach("clipboard") end }
+    menu:separator{}
+    menu:menuItem{ text = "Import animation as frames...", onclick = importAnimation }
     if #composer:pendingAttachments() > 0 then
       menu:separator{}
       menu:menuItem{ text = "Clear attachments", onclick = Panel.clearAttachments }

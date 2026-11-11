@@ -2,6 +2,16 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Import an animated file as frames (import_animation)
+- **How:**
+  - `import_animation` (in `sheet_tools.ts`) decodes the file with the same `aseprite -b --sheet` path as attachments (`asepriteFrames`). It then either opens a new sprite with `createAnimation` (durations from the file, the file's colors as palette when there are at most 256), or puts each frame on a new `AI: <name>` layer of the active sprite with one `putImages` call, from `frame` on. That call adds frames at the end, sets the filled frames' durations, and centers the frames unless `x`/`y` are given. It is one undo step.
+  - The panel's + menu has "Import animation as frames..." (a file, "A new layer here" or "A new sprite", the first frame). It calls the new bridge method `import.animation`, which runs the tool with no agent turn and writes the result into the log. The agent can do the same from an attachment's `file` path. The import-sheet skill tells it to use `import_animation` for an animated file.
+  - `importDecoder.decode` can be swapped, so unit tests run without Aseprite. The live test is `tests/import_animation_live.mjs`.
+- **Why:**
+  - Aseprite already reads every animated format and its frame times, so the tool only has to place frames. Doing that through `putImages` keeps the existing guarantees: one undo step, step capture, the operation policy.
+  - A new bridge method is a compatible protocol change (an older bridge answers "method not found"), so the version stays 34.
+- **Architecture:** the bridge method lives in `bridge_methods.ts` and uses `runTool` with `toolContext(link)`, the same seam MCP tool calls use.
+
 ## Cmd+V attaches the clipboard image; attachment cards above the prompt
 - **How:**
   - The prompt's `onkeydown` gets the key event's modifiers. `Panel.onPromptKey(code, mods)` sees Cmd/Ctrl+V, and when the clipboard holds an image and no text (`clipboardHasImage`, read in `agent.lua`), it attaches the image and stops the key. The text box itself only pastes text.
