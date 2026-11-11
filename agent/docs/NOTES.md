@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Sprite-effects skill: routing to juice, smear, fluid_fx and fx_pipeline
+- **How:** the built-in skill `sprite-effects` picks the tool from the request (a reaction of the art, speed, smoke or fire, a chain of looks), previews first, then applies and checks. `studio` routes game-feel requests to it, and `tests/skills/sprite-effects.eval.mjs` runs its steps on the fake document.
+- **Why:** in the live tests, Codex drew a landing squash and a chimney smoke by hand instead of calling `juice` and `fluid_fx`.
+- **Architecture:** a routing skill over the four sprite-effect tools; the effect knowledge stays in the tools' descriptions.
+
 ## Smears, afterimages and multiples (#105)
 - **How:**
   - `sprite_fx/smear.ts` holds pure functions. `motionVector` is the centroid difference between two frames. `blockMotion` refines it per 4 px block: it searches displacements within 3 px of the coarse vector and keeps the one with the smallest sum of absolute RGBA differences over a 5x5 window, plus a small pull towards the coarse vector so flat areas follow the body.
@@ -19,6 +24,21 @@ One short entry per change: how it works, why it was done this way, and where it
   - Measured on an M-series Mac: a 64x64 grid x 48 frames renders in about 190 ms one-shot and 450 ms as a loop (two cycles plus warm-up); every preset at its default size renders in 110-230 ms.
 - **Why:** the FX library's pixelfx smoke and fire are particle sprites; real flowing gas and water needed a solver. A MAC grid instead of Stam's collocated one makes the divergence the projection removes the same one tests measure, and lets the gas and liquid solvers share the layout. Crossfading fields rather than colors keeps the ramp and dither pattern intact across the seam. Ten Minute Physics has no license and PavelDoGreat's code is a WebGL shader pipeline, so nothing is copied.
 - **Architecture:** a pure module (`sprite_fx/fluid.ts`, no document access) under a thin tool; no protocol or extension change. The FX record (`fluid:<preset>`, settings JSON in `render`) is not a library id, so `check_fx` checks the layer with its no-record rules (border, loop seam, colors) and export sees an ordinary effect layer. Semi-Lagrangian advection is not conservative: a swirl in a closed box keeps its smoke within a few percent, but strong buoyancy into a wall loses about 15%; presets open the sides the smoke leaves by.
+
+## Effect pipelines and emitter extras (#107)
+- **How:**
+  - `sprite_fx/noise.ts`: seeded value, Perlin (2002), simplex and Worley noise in 2D, 3D and 4D, fBm, looping noise (4D on a circle) and `curl2`. Written from the papers; no library vendored.
+  - `sprite_fx/pipeline.ts`: the pipeline schema, `runPipeline` (pure: one source image per frame in, palette-only frames out) and the step registry `STEP_TYPES` with 11 steps. Animated params are evaluated per frame by `paramsAt`. Steps reuse `juicePlan` and `warp` (juice), `darker` from `shading.ts` (selout outlines), `ditherToPalette` and the Bayer thresholds from `dither.ts`, and `nearest`/OKLab from `color.ts`. New pieces: grid and exact Euclidean distance transforms (outline thickness, glow) and `paletteStep` (one palette step lighter or darker).
+  - `pipeline_tools.ts`: `fx_pipeline` previews, or writes in one `put_images` request. Over a layer it goes through `writeEffect`, which now takes an optional FX record; a blank canvas goes onto a new layer, with frames added as needed. The record has id `pipeline:<name>` and the pipeline JSON in `recipe`.
+  - `fx/recipe.ts`: emitters take `shape` (line, ring, rect, path, outline), `aim`, `trail` and `curl`. With none of them the spawn draws stay the same, so old recipes render exactly as before. `fx_from_recipe` fills an outline shape's `points` from the named layer (`resolveOutlines`).
+- **Why:** issue #107 asked for node-graph style effects without a node editor, plus the emitter features from research §5 (shapes, outlines, trails, curl noise).
+- **Architecture:**
+  - Steps work on full RGBA buffers at native resolution. One snap at the end keeps every pixel on the allowed colors, so a step may make in-between colors (tint, selout) and still writes only palette colors.
+  - Dissolve ranks its noise over the opaque pixels, so `threshold` is exactly the fraction gone.
+  - Trails and curl run inside each recipe run on the run's own clock, so loops still wrap.
+  - smear (#105) and fluid (#106) become steps through `registerStep`; the schema and the tool description read the registry.
+  - check_fx treats pipeline records as records it cannot re-render (edge checks only).
+  - Re-applying a pipeline makes a second layer; delete the old one first.
 
 ## Juice and the sprite-effect core (#104)
 - **How:**

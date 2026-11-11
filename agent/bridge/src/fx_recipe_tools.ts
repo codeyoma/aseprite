@@ -5,10 +5,34 @@ import * as z from "zod/v4";
 import { documentOf, type Document, type FxInfo, type LayerInfo } from "./document.js";
 import { renderFx } from "./fx/index.js";
 import { findFx, type FxEntry } from "./fx/library.js";
-import { RECIPE_LIMITS, parseRecipe, recipeEntry } from "./fx/recipe.js";
+import { RECIPE_LIMITS, outlinePoints, parseRecipe, recipeEntry, type Recipe } from "./fx/recipe.js";
 import { anchorInput, effectOptions, fxCanvas, fxSprite, placeFx, previewFx } from "./fx_tools.js";
 import { OPAQUE, type Rgba } from "./image.js";
-import { failure, text, type Tool, type ToolResult } from "./tool.js";
+import { imageLayer } from "./sprite_fx/write.js";
+import { failure, text, type Tool, type ToolContext, type ToolResult } from "./tool.js";
+
+/**
+ * Fills every 'outline' emission shape that names a layer and has no points (#107) with that layer's outline
+ * pixels (its frame, default the active one), so the stored recipe re-renders without the sprite. Returns an
+ * error message, or undefined.
+ */
+export async function resolveOutlines(recipe: Recipe, ctx: ToolContext): Promise<string | undefined> {
+  const shapes = recipe.phases.flatMap((p) => (p.emitters ?? []).map((e) => e.shape))
+    .filter((s): s is Extract<typeof s, { type: "outline" }> => s?.type === "outline" && !!s.layer && !s.points);
+  if (!shapes.length) return undefined;
+  const doc = documentOf(ctx);
+  const info = await doc.info();
+  for (const s of shapes) {
+    const layer = imageLayer(info, s.layer);
+    if (!layer) return `No image layer ${s.layer} for an outline emitter.`;
+    const frame = s.frame ?? info.frame;
+    if (frame > info.durations.length) return `Frame ${frame} is past the last frame (${info.durations.length}) for an outline emitter.`;
+    const pts = outlinePoints(await doc.pixels(layer.id, frame), s.at ?? "center");
+    if (!pts.length) return `${layer.name} has nothing in frame ${frame} for an outline emitter to spawn on.`;
+    s.points = pts;
+  }
+  return undefined;
+}
 
 /** The effect an FX record names, rebuilt to render again: its recipe, else the library effect; undefined when neither. */
 export function recordedEffect(fx: FxInfo): { e: FxEntry; opts: Record<string, unknown>; seed: number; flip: boolean; angle: number } | undefined {
@@ -237,7 +261,13 @@ const RECIPE_HELP =
   "emitters?, lights?, rings?, bands?, shapes? }] }. Positions are px from the origin (y down), angles degrees (0 right, -90 up). " +
   "emitter: { kind: spark|mote|streak|flake|vapour|dust|star|ember|smoke|fire|brand|grit, count (up to 400), speed (px/s, or [min, max]), " +
   "angle (default -90), spread (degrees, default 360), life (s, or [min, max]), delay?, over? (spawn spread over s), size?, x?, y?, " +
-  "radius? (spawn disc), color? (palette step: 0 darkest, -1 brightest; or '#hex'), gravity? (px/s², added), drag? (per s, added) }. " +
+  "radius? (spawn disc), color? (palette step: 0 darkest, -1 brightest; or '#hex'), gravity? (px/s², added), drag? (per s, added), " +
+  "shape? (spawn on a shape relative to x, y instead of the disc: { type: 'line', from: [x, y], to: [x, y] } | { type: 'ring', radius, " +
+  "arc?: [from, to] degrees } | { type: 'rect', w, h, edge? } | { type: 'path', points: [[x, y], ...] (by arc length) } | { type: " +
+  "'outline', layer, frame?, at?: 'center'|'bottom' } (the layer's outline pixels around x, y; place the effect's origin on the " +
+  "layer's centre or feet); even? spaces particles evenly), aim? ('out': fly away from the shape, spread default 30), trail? " +
+  "(2-16: the last positions, 30 per s, drawn as lines down the palette), curl? ({ strength, scale? px, evolve?, mode?: " +
+  "'force'|'flow' }: swirling curl-noise motion) }. " +
   "light: { radius, strength? (0-3), color?, delay?, life? }. ring: { radius (or [from, to] over the phase), width?, color? (or 'cool': " +
   "down the palette), alpha? (default [1, 0]), glow?, ease? (linear|in|out|inout) }. band (a ring on the floor plane): { radius, tilt? " +
   "(0.05-1, default 0.3), thickness?, alpha?, hot?, ease? }. shape: { type: disc|glow, radius, color?, alpha?, ease? }. A phase draws " +
@@ -269,6 +299,8 @@ export const FX_RECIPE_TOOLS: Tool[] = [
     async run(input, ctx) {
       let recipe;
       try { recipe = parseRecipe(input.recipe); } catch (err) { return failure((err as Error).message); }
+      const outlineError = await resolveOutlines(recipe, ctx);
+      if (outlineError) return failure(outlineError);
       const json = JSON.stringify(recipe);
       const e = recipeEntry(recipe);
       const apply = input.apply ?? "preview";

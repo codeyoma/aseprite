@@ -27,6 +27,7 @@ import { CONCEPT_TOOLS } from "./concept_tools.js";
 import { JUICE_TOOLS } from "./juice_tools.js";
 import { SMEAR_TOOLS } from "./smear_tools.js";
 import { FLUID_TOOLS } from "./fluid_tools.js";
+import { PIPELINE_TOOLS } from "./pipeline_tools.js";
 
 export const TOOL_MODULES: { what: string; tools: Tool[] }[] = [
   { what: "Core: state, Lua, snapshots, checks, undo, sub-agents", tools: CORE_TOOLS },
@@ -55,4 +56,5 @@ export const TOOL_MODULES: { what: string; tools: Tool[] }[] = [
   { what: "Juice: squash, wobble, bounce, shake, flash, spin and pop from a layer (#104)", tools: JUICE_TOOLS },
   { what: "Smears, afterimages and multiples from a layer's motion (#105)", tools: SMEAR_TOOLS },
   { what: "Fluid effects: smoke, fire, gas, liquids (#106)", tools: FLUID_TOOLS },
+  { what: "Effect pipelines: JSON step chains and emitter extras (#107)", tools: PIPELINE_TOOLS },
 ];

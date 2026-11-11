@@ -19,6 +19,7 @@
     "fluid_fx",
     "fx_from_recipe",
     "fx_overlay",
+    "fx_pipeline",
     "generate_character",
     "hit_stop",
     "import_animation",

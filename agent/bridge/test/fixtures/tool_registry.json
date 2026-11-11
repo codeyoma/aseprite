@@ -436,6 +436,16 @@
     ]
   },
   {
+    "name": "fx_pipeline",
+    "title": "Effect pipeline",
+    "kind": "edit",
+    "label": "Preview effect pipeline",
+    "input": [
+      "apply",
+      "pipeline"
+    ]
+  },
+  {
     "name": "generate_character",
     "title": "Generate a layered character",
     "kind": "edit",

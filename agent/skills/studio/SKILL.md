@@ -35,6 +35,7 @@ Each skill does one job well. This one picks which skills a request needs, runs 
 | Terrain or tiles | `brief` if open-ended → `make-tileset` → `review` |
 | UI, buttons, text | `make-ui` → `export-game` |
 | Effects (hits, magic, explosions) | `pixel-fx` → `export-game` |
+| Game feel from the art itself or simulated: squash, wobble, shake, flash, smear frames, afterimages, smoke, fire, liquid, dissolve | `sprite-effects` → `review` |
 | Colors, a fixed palette, a retro look | `extract-palette` or `match-tone` → `recolor` for variants, `dither` for gradients → `check-sprite` |
 | Volume and light ("it looks flat") | `shade-sprite` → `normal-map` for dynamic lights → `review` |
 | A picture the user supplied, as a sprite | `fix-pixel-art` (AI or upscaled art) or `recreate-from-reference` → `check-sprite` → `review` |
