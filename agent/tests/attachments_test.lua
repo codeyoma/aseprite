@@ -9,7 +9,9 @@ local H = dofile(app.fs.joinPath(extDir, "document_handlers.lua")).new{ chunkDir
 local clip -- what the fake clipboard holds
 local A = dofile(app.fs.joinPath(extDir, "attachments.lua")).new{ dir = tmp, snapshot = H.snapshot, Uri = H.Uri,
   writeImage = function(img, path) img:saveAs(path) end,
-  clipboardImage = function() return clip end }
+  clipboardImage = function() return clip end,
+  clipboardHasImage = function() return clip ~= nil end,
+  readImage = function(path) return Image{ fromFile = path } end }
 
 local failures = 0
 local function check(name, cond, detail)
@@ -45,10 +47,14 @@ sprite:saveCopyAs(gif)
 check("gif file", A:file(gif) and A:file(gif).label == "image anim.gif")
 check("aseprite file", select(2, A:file(app.fs.joinPath(tmp, "none.aseprite"))) == "File not found")
 
-check("empty clipboard", select(2, A:clipboard()) == "The clipboard has no image")
+check("empty clipboard", select(2, A:clipboard()) == "The clipboard has no image" and not A:clipboardHasImage())
 clip = Image(300, 200, ColorMode.INDEXED)
+check("clipboard has image", A:clipboardHasImage())
 local c = A:clipboard()
 local ci = c and Image{ fromFile = c.path }
+local t = c and A:thumbnail(c)
+check("thumbnail shrunk to 128", t and t.width == 128 and t.height == 85 and A:thumbnail(c) == t, t and (t.width .. "x" .. t.height))
+check("no thumbnail for a missing file", A:thumbnail{ path = app.fs.joinPath(tmp, "gone.png") } == nil)
 check("clipboard", c and c.label == "pasted image 300x200" and ci.width == 300, c and c.label or select(2, A:clipboard()))
 
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

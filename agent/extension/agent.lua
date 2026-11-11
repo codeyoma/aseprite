@@ -144,6 +144,20 @@ function init(plugin)
         if not app.clipboard.hasImage then return nil end
         return app.clipboard.image
       end,
+      clipboardHasImage = function() return app.clipboard.hasImage and not app.clipboard.hasText end,
+      -- Image{ fromFile } drops an indexed file's palette, so those open as a
+      -- sprite (closed right away) and frame 1 is rendered to RGB.
+      readImage = function(path)
+        local img = Image{ fromFile = path }
+        if not img or img.colorMode == ColorMode.RGB then return img end
+        local active = app.sprite
+        local s = Sprite{ fromFile = path }
+        local rgb = Image(s.width, s.height, ColorMode.RGB)
+        rgb:drawSprite(s, 1)
+        s:close()
+        if active then app.sprite = active end
+        return rgb
+      end,
     },
     ensureBridge = connection.ensureBridge,
     preferences = plugin.preferences,
@@ -185,7 +199,7 @@ function init(plugin)
     typePrompt = function(text) Panel.setPrompt(text); Panel.onPromptChange() end,
     suggestions = function() return Panel.suggestions() end,
     suggestionIndex = function() return Panel.suggestionIndex() end,
-    pressKey = function(code) return Panel.onPromptKey(code) end,
+    pressKey = function(code, mods) return Panel.onPromptKey(code, mods) end,
     pickedSkill = function() return Panel.pickedSkill() end,
     pickSuggestion = function(i) Panel.pickSuggestion(Panel.suggestions()[i]) end,
     -- The last sub-agent scope highlighted in the timeline (#33).

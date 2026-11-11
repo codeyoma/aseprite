@@ -174,6 +174,9 @@ do
   check("attach", c:addAttachment{ label = "selection", path = "/tmp/a.png", uri = "aseprite://selection" })
   c:addAttachment{ label = "ref.png", path = "/tmp/b.png" }
   check("attachment labels", table.concat(c:attachmentLabels(), ",") == "selection,ref.png")
+  c:addAttachment{ label = "extra", path = "/tmp/c.png" }
+  c:removeAttachment(3)
+  check("remove one attachment", #c:attachments() == 2 and c:attachments()[2].label == "ref.png")
   local r = c:decide{ text = text .. "please", provider = "codex", mode = "ask" }
   check("mentions expanded for the agent",
     r.payload.prompt == "shade Body (aseprite://layer/L12) and Frame 2 (aseprite://frame/2) please", r.payload.prompt)

@@ -61,6 +61,7 @@ return function(deps)
     expandMentions = deps.Conversation.expandMentions,
   }
   local hitChip = nil          -- where the chip is drawn (click removes it)
+  local hitCards = {}          -- attachment cards' ✕ boxes (click removes that image)
 
   -- The text without its last character. Whole UTF-8 characters: cutting a
   -- byte off "…" or "—" leaves invalid UTF-8, which crashes text shaping.
@@ -563,11 +564,64 @@ return function(deps)
     return rows, pad
   end
 
+  -- Attachment cards: a thumbnail of each pending image with a short name and
+  -- ✕, in a strip at the bottom of the log, just above the prompt.
+  local function paintCards(gc, w, h)
+    hitCards = {}
+    local list = composer:attachments()
+    if #list == 0 then return 0 end
+    local lh = gc:measureText("Ag").height
+    local u = math.max(2, lh // 3)
+    local box, gap = lh * 4, u * 2
+    local stripH = box + lh + u * 4
+    local top = h - stripH
+    gc.color = C.bubble
+    gc:fillRect(Rectangle(0, top, w, stripH))
+    local x = gap
+    for i, a in ipairs(list) do
+      if x + box > w then break end
+      local y = top + u * 2
+      -- A checker behind the image, so transparency reads as transparent.
+      local cell = math.max(2, box // 8)
+      for cy = 0, box - 1, cell do
+        for cx = 0, box - 1, cell do
+          gc.color = ((cx // cell + cy // cell) % 2 == 0) and Color(92, 92, 100) or Color(70, 70, 78)
+          gc:fillRect(Rectangle(x + cx, y + cy, math.min(cell, box - cx), math.min(cell, box - cy)))
+        end
+      end
+      local img = a.thumb or nil   -- read when attached; loading a file while painting re-enters paint
+      if img then
+        local iw, ih = img.width, img.height
+        local sc = box / math.max(iw, ih)
+        if sc >= 1 then sc = math.floor(sc) end
+        local dw, dh = math.max(1, math.floor(iw * sc)), math.max(1, math.floor(ih * sc))
+        gc:drawImage(img, Rectangle(0, 0, iw, ih), Rectangle(x + (box - dw) // 2, y + (box - dh) // 2, dw, dh))
+      end
+      -- ✕ in the card's top-right corner.
+      local xw = lh + u
+      gc.color = C.bg
+      gc:fillRect(Rectangle(x + box - xw, y, xw, xw))
+      gc.color = C.text
+      gc:fillText("✕", x + box - xw + (xw - gc:measureText("✕").width) // 2, y + (xw - lh) // 2)
+      hitCards[#hitCards + 1] = { x0 = x + box - xw, y0 = y, x1 = x + box, y1 = y + xw, index = i }
+      local name = a.short or a.label or ""
+      if gc:measureText(name).width > box then
+        while #name > 1 and gc:measureText(name .. "…").width > box do name = dropLastChar(name) end
+        name = name .. "…"
+      end
+      gc.color = C.dim
+      gc:fillText(name, x, y + box + u)
+      x = x + box + gap
+    end
+    return stripH
+  end
+
   local function paint(ev)
     local gc = ev.context
     local w, h = gc.width, gc.height
     gc.color = C.bg
     gc:fillRect(Rectangle(0, 0, w, h))
+    h = h - paintCards(gc, w, h)
 
     local rows, pad = buildRows(gc, w)
     local total = pad * 2
@@ -744,10 +798,7 @@ return function(deps)
 
   -- Attachments (#21): images that go with the next message.
   local function updateAttachments()
-    if not dlg then return end
-    local names = composer:attachmentLabels()
-    dlg:modify{ id = "attachments", text = #names > 0 and ("Attached: " .. table.concat(names, ", ")) or "",
-                visible = #names > 0 }
+    if dlg then dlg:repaint() end
   end
 
   -- kind: "selection" | "layer" | "frame", or { path = "..." } for an image file.
@@ -759,6 +810,7 @@ return function(deps)
     elseif kind == "clipboard" then a, err = deps.attachments:clipboard()
     else a, err = deps.attachments:make(kind) end
     if not a then prompter.tip(err or "Could not attach that"); return false end
+    deps.attachments:thumbnail(a)
     local ok, why = composer:addAttachment(a)
     if not ok then prompter.tip(why); return false end
     updateAttachments()
@@ -767,6 +819,7 @@ return function(deps)
 
   function Panel.pendingAttachments() return composer:pendingAttachments() end
   function Panel.clearAttachments() composer:clearAttachments(); updateAttachments() end
+  function Panel.removeAttachment(i) composer:removeAttachment(i); updateAttachments() end
 
   local function pickImageFile()
     local d = Dialog{ title = "Attach image" }
@@ -832,7 +885,14 @@ return function(deps)
 
   -- Keys in the prompt (the textedit's onkeydown, and tests). Returns true
   -- when the key was used here, so the box doesn't handle it too.
-  function Panel.onPromptKey(code)
+  function Panel.onPromptKey(code, mods)
+    -- Cmd+V / Ctrl+V with an image (and no text) on the clipboard attaches
+    -- the image; the box itself only pastes text.
+    if code == "KeyV" and mods and (mods.metaKey or mods.ctrlKey) and deps.attachments
+       and deps.attachments:clipboardHasImage() then
+      Panel.attach("clipboard")
+      return true
+    end
     local r = composer:onKey(code, dlg and (dlg.data.prompt or "") or nil)
     if not r then return false end
     if r.kind == "pick" then showPick(r) end
@@ -1206,6 +1266,12 @@ return function(deps)
         dlg:repaint()
       end,
       onmousedown = function(ev)
+        for _, c in ipairs(hitCards) do
+          if ev.x >= c.x0 and ev.x <= c.x1 and ev.y >= c.y0 and ev.y <= c.y1 then
+            Panel.removeAttachment(c.index)
+            return
+          end
+        end
         if hitChip and ev.x >= hitChip.x0 and ev.x <= hitChip.x1 and ev.y >= hitChip.y0 and ev.y <= hitChip.y1 then
           Panel.clearPickedSkill()
           return
@@ -1240,8 +1306,6 @@ return function(deps)
     dlg:label{ id = "status", text = deps.isConnected() and "" or "Bridge not connected", hexpand = true,
                font = "system", fontsize = 6.5 }
     dlg:newrow()
-    dlg:label{ id = "attachments", text = "", hexpand = true, font = "system", fontsize = 6.5, visible = false }
-    dlg:newrow()
     -- Multi-line box that wraps and grows (this fork's dlg:textedit);
     -- stock Aseprite falls back to a single-line entry.
     local hasTextEdit = pcall(function()
@@ -1256,8 +1320,9 @@ return function(deps)
         fontsize = 7.5,
         onchange = onPromptChange,          -- "@" opens the mention picker
         onsubmit = function() send() end,   -- Enter sends, Shift+Enter adds a line
-        -- Arrows, Enter and Escape drive the / picker; Backspace removes the skill chip.
-        onkeydown = function(ev) if Panel.onPromptKey(ev.code) then ev.stopPropagation() end end,
+        -- Arrows, Enter and Escape drive the / picker; Backspace removes the skill chip;
+        -- Cmd+V with an image on the clipboard attaches it.
+        onkeydown = function(ev) if Panel.onPromptKey(ev.code, ev) then ev.stopPropagation() end end,
       }
     end)
     if not hasTextEdit then

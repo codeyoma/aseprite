@@ -187,6 +187,9 @@ function Composer:addAttachment(a)
   return true
 end
 function Composer:clearAttachments() self.pending = {} end
+function Composer:removeAttachment(i) table.remove(self.pending, i) end
+-- The pending attachments themselves (the panel caches thumbnails on them).
+function Composer:attachments() return self.pending end
 function Composer:pendingAttachments()
   local out = {}
   for _, a in ipairs(self.pending) do out[#out + 1] = { label = a.label, path = a.path, uri = a.uri } end

@@ -2,6 +2,16 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Cmd+V attaches the clipboard image; attachment cards above the prompt
+- **How:**
+  - The prompt's `onkeydown` gets the key event's modifiers. `Panel.onPromptKey(code, mods)` sees Cmd/Ctrl+V, and when the clipboard holds an image and no text (`clipboardHasImage`, read in `agent.lua`), it attaches the image and stops the key. The text box itself only pastes text.
+  - Pending attachments are drawn as cards in a strip at the bottom of the log canvas (`paintCards`): a thumbnail on a checker, a short name (`short`: file name, "pasted", "selection", layer name, "frame N") and a ✕ that removes that one (`Panel.removeAttachment`, `Composer:removeAttachment`). The old "Attached: ..." label is gone.
+  - `Attachments:thumbnail(a)` reads the image once at attach time (shrunk to at most 128 px) and keeps it on `a.thumb`. `readImage` in `agent.lua` uses `Image{ fromFile }`. An indexed or gray file (most GIFs) opens as a sprite, frame 1 is rendered to RGB, and the sprite is closed, because `Image{ fromFile }` drops the palette.
+- **Why:**
+  - Users paste screenshots with Cmd+V. Before this, nothing happened.
+  - Reading a file inside `onpaint` fired app events that repainted the panel again, which ended in "C stack overflow". So thumbnails are read when the image is attached, never while painting.
+- **Architecture:** clipboard reads and file reads stay in `agent.lua` closures passed to `attachments.lua`; `chat_panel.lua` only draws cached images.
+
 ## Attach images in any format Aseprite opens, and the clipboard image
 - **How:**
   - `loadAttachments` (bridge) is now async. It reads each file's header (`sniffImage`: PNG/APNG, JPEG, GIF frame count, WebP VP8/VP8L/VP8X) and sends a still PNG, JPEG, WebP or GIF of 256 to 2048 px as it is.

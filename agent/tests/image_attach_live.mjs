@@ -58,5 +58,12 @@ if (process.platform === "darwin") {
     AsepriteAgent.clearAttachments()
     return { ok = ok, label = p[1] and p[1].label or "", after = #AsepriteAgent.pendingAttachments() }`);
   check("the clipboard image is attached, then cleared", c.ok && c.label === "pasted image 40x40" && c.after === 0, c);
+  // Cmd+V in the prompt with an image on the clipboard attaches it; plain V is typing.
+  const k = await lua(`local plain = AsepriteAgent.pressKey("KeyV", {})
+    local used = AsepriteAgent.pressKey("KeyV", { metaKey = true })
+    local p = AsepriteAgent.pendingAttachments()
+    AsepriteAgent.clearAttachments()
+    return { plain = plain, used = used, label = p[1] and p[1].label or "" }`);
+  check("Cmd+V attaches the clipboard image", !k.plain && k.used && k.label === "pasted image 40x40", k);
 }
 done("IMAGE ATTACH");

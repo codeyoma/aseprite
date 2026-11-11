@@ -28,6 +28,10 @@ function M.new(opts)
     -- Returns the clipboard Image or nil; agent.lua reads it (Aseprite asks
     -- permission per script file).
     clipboardImage = opts.clipboardImage or function() return nil end,
+    -- True when the clipboard holds an image and no text (Cmd+V then attaches).
+    clipboardHasImage = opts.clipboardHasImage or function() return false end,
+    -- Reads an image file (agent.lua: Image{ fromFile }), for thumbnails.
+    readImage = opts.readImage or function() return nil end,
     counter = 0,
   }, M)
 end
@@ -67,17 +71,19 @@ function M:make(kind)
       local crop = Image(img, b)
       return {
         label = string.format("selection %dx%d at %d,%d (frame %d)", b.width, b.height, b.x, b.y, frame),
-        path = self:save(crop), uri = self.Uri.selection(),
+        path = self:save(crop), uri = self.Uri.selection(), short = "selection",
       }
     elseif kind == "layer" then
       local layer = app.layer
       if not layer then return nil, "No active layer" end
       if layer.isGroup then return nil, "Pick a layer, not a group" end
       local img, frame = self:render(layer)
-      return { label = string.format("layer %s (frame %d)", layer.name, frame), path = self:save(img), uri = self.Uri.layer(layer) }
+      return { label = string.format("layer %s (frame %d)", layer.name, frame), short = layer.name,
+               path = self:save(img), uri = self.Uri.layer(layer) }
     elseif kind == "frame" then
       local img, frame = self:render(nil)
-      return { label = string.format("frame %d", frame), path = self:save(img), uri = self.Uri.frame(frame) }
+      return { label = string.format("frame %d", frame), short = "frame " .. frame,
+               path = self:save(img), uri = self.Uri.frame(frame) }
     end
     return nil, "Unknown attachment: " .. tostring(kind)
   end)
@@ -101,7 +107,32 @@ function M:file(path)
     return nil, "Attach an image file (" .. table.concat(M.EXTENSIONS, ", ") .. ")"
   end
   if not app.fs.isFile(path) then return nil, "File not found" end
-  return { label = "image " .. app.fs.fileName(path), path = path }
+  return { label = "image " .. app.fs.fileName(path), short = app.fs.fileName(path), path = path }
+end
+
+-- A small image of attachment a for its card (the first frame of a file),
+-- read once and kept on a; nil when the file can't be read.
+M.THUMB_SIDE = 128
+function M:thumbnail(a)
+  if a.thumb == nil then
+    local ok, img = pcall(self.readImage, a.path)
+    if ok and img then
+      local s = M.THUMB_SIDE / math.max(img.width, img.height)
+      if s < 1 then
+        img = Image(img)
+        img:resize(math.max(1, math.floor(img.width * s)), math.max(1, math.floor(img.height * s)))
+      end
+      a.thumb = img
+    else
+      a.thumb = false
+    end
+  end
+  return a.thumb or nil
+end
+
+function M:clipboardHasImage()
+  local ok, has = pcall(self.clipboardHasImage)
+  return ok and has == true
 end
 
 -- The image on the clipboard (a screenshot, a copied reference).
@@ -114,7 +145,7 @@ function M:clipboard()
     rgb:drawImage(img)
     img = rgb
   end
-  return { label = string.format("pasted image %dx%d", img.width, img.height), path = self:save(img) }
+  return { label = string.format("pasted image %dx%d", img.width, img.height), short = "pasted", path = self:save(img) }
 end
 
 return M
