@@ -2,6 +2,15 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Smears, afterimages and multiples (#105)
+- **How:**
+  - `sprite_fx/smear.ts` holds pure functions. `motionVector` is the centroid difference between two frames. `blockMotion` refines it per 4 px block: it searches displacements within 3 px of the coarse vector and keeps the one with the smallest sum of absolute RGBA differences over a 5x5 window, plus a small pull towards the coarse vector so flat areas follow the body.
+  - `sweep` stamps every opaque pixel back along its trail, one step per pixel on the long axis (the Bresenham/DDA points), farthest first. Each copy is squeezed across the motion as it trails (taper) and the far third is checkered (thin). It fills with the art's three main colors (lightest at the head), its outline color, or each pixel's own, and draws the art itself on top.
+  - `stretch` is an inverse map along and across the motion (s and 1/s) about the leading edge, sampling the 8x Scale2x upscale like the warp. `afterimage` draws the previous frames' art (or the frame moved back along a given vector), each ghost one more step to the nearest darker palette color, through a checker. `multiples` draws sharp copies along the path.
+  - `smear_tools.ts` reads the frames, measures each frame against its previous one, smears the frames that move at least `min_px` (over) or inserts one frame (`insert_after`), and writes through `writeEffect`.
+- **Why:** the third family from `docs/fx-algorithms-research.md` §2. Smear frames read as speed in pixel art only when they stay crisp, so trails reuse the art's colors and checker dithering instead of alpha. The SMEAR paper's code is GPL-3, so only its ideas are used.
+- **Architecture:** a Sprite effect on `AI: smear <layer>`, one `put_images` request. A tag's first frame has no previous frame unless `loop: true`, because a dash that jumps back to its start is not motion. In insert mode the new frame shows the next frame's art with the trail back to the frame before.
+
 ## Juice and the sprite-effect core (#104)
 - **How:**
   - `sprite_fx/curves.ts` has Penner's easings, a closed-form damped spring, a decaying bounce and a seeded shake.
