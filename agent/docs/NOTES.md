@@ -2,6 +2,17 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Lean agent sessions (#87)
+- **How:**
+  - Claude sessions get `settingSources: []`, `strictMcpConfig: true` and `ENABLE_CLAUDEAI_MCP_SERVERS=false` (`providers/agent_home.ts` `LEAN_CLAUDE_OPTIONS`). So there are no user settings, hooks, plugins, skills, CLAUDE.md, other MCP servers or claude.ai connectors; only the aseprite server the session passes.
+  - Codex runs with a private `CODEX_HOME` (`~/.aseprite-agent/codex-home`). It holds a link to the user's `auth.json` and a `config.toml` with only the user's model keys (`CODEX_KEPT_KEYS`). `ASEPRITE_AGENT_CODEX_EFFORT` overrides the reasoning effort.
+  - Warm start: `chat.warm` (sent when the panel connects and after each turn) has the runtime start the agent process and a spare session for the next new conversation (`AcpRunner.warm`, used by `openSession` without an id).
+  - Ask/Plan → Agent: a conversation whose last turn was read-only gets `AGENT_AGAIN_NOTE` once. Codex's approval review had rejected Agent edits because of the earlier Ask note.
+- **Why:**
+  - Measured on 60 transcripts: model time is about 94% of a turn, and every call carried ~354k tokens from 503 tools (81 of them Aseprite's).
+  - After the change, live transcripts show 17-56k tokens per call.
+- **Architecture:** the provider adapters own the session profile (`sessionMeta`, `env`); `Runtime.warm` is optional, and only the ACP runtime implements it.
+
 ## Mascot: the new logo face and 56 moods driven by chat events
 - **How:**
   - `mascot.lua` draws the new logo: a 12x13 white face with the top corners cut, eye bars at columns 3 and 8, and a blue-gray chin.

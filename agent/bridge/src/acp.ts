@@ -69,6 +69,8 @@ export class AcpRunner {
   private current?: string; // session of the running prompt
   private mode: ChatMode = "agent"; // the mode the agent process was started for
   private permissionModes = new Map<string, string>(); // permission mode set on each session
+  private spare?: Promise<string | undefined>; // a session made ahead for the next new conversation (#87)
+  private spareMode?: ChatMode;
 
   constructor(
     private readonly provider: AgentProvider,
@@ -167,7 +169,28 @@ export class AcpRunner {
     return id;
   }
 
+  /**
+   * Starts the agent process and makes a spare session for the next new
+   * conversation in this mode (#87): session start (MCP connection, setup)
+   * then happens before the user's first message.
+   */
+  async warm(mode: ChatMode): Promise<void> {
+    if (this.agent && this.spare && this.spareMode === mode) return;
+    if (!this.agent) this.mode = this.developer ? "developer" : mode;
+    await this.start();
+    this.spareMode = mode;
+    this.spare = this.openSession(undefined, mode).catch(() => undefined);
+    await this.spare;
+  }
+
   private async openSession(conversationId: string | undefined, mode: ChatMode): Promise<string> {
+    // A new conversation takes the spare session when it was made for this mode.
+    if (!conversationId && this.spare && this.spareMode === mode) {
+      const spare = this.spare;
+      this.spare = undefined;
+      const id = await spare;
+      if (id && this.sessions.has(id)) return id;
+    }
     const params = { cwd: this.cwd, mcpServers: this.mcpServers(mode), _meta: this.provider.acp!.sessionMeta(this.systemPrompt, this.developer ? "developer" : mode) };
     if (conversationId && this.sessions.has(conversationId)) return conversationId;
     if (conversationId && this.loadSupported) {
@@ -234,5 +257,6 @@ export class AcpRunner {
     this.sessions.clear();
     this.sessionModes.clear();
     this.permissionModes.clear();
+    this.spare = undefined;
   }
 }

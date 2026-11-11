@@ -42,11 +42,21 @@ export interface TurnResult {
   detail?: string;
 }
 
+export interface WarmRequest {
+  key: string;
+  provider: AgentProvider;
+  mode: ChatMode;
+  cwd: string;
+  systemPrompt: string;
+}
+
 export interface Runtime {
   readonly name: "acp" | "stream";
   /** Whether this runtime can run the provider at all. */
   supports(provider: AgentProvider): boolean;
   start(turn: Turn, sink: TurnSink): Promise<TurnResult>;
+  /** Optional: start the agent and a spare session ahead of the first turn (#87). */
+  warm?(w: WarmRequest): Promise<void>;
   /** Cancels the running turn (its start() then settles as "cancelled"). Safe to call twice. */
   stop(): void;
   dispose(): void;
@@ -86,16 +96,7 @@ export class AcpRuntime implements Runtime {
       runner = undefined;
       turn = { ...turn, conversationId: undefined };
     }
-    if (!runner) {
-      const record = this.recordDir ? join(this.recordDir, `acp-${turn.key.replace(":", "-")}-${stamp()}.jsonl`) : undefined;
-      // Events go to the sink of the turn running on this key.
-      runner = new AcpRunner(turn.provider, this.endpoint, turn.cwd, turn.systemPrompt, {
-        onEvent: (ev) => this.sinks.get(turn.key)?.event(ev),
-        onPermission: (req) => this.sinks.get(turn.key)?.permission(req) ?? Promise.resolve({ outcome: "cancelled" } as PermissionOutcome),
-      }, record, developer);
-      this.runners.set(turn.key, runner);
-      this.cwds.set(turn.key, turn.cwd);
-    }
+    if (!runner) runner = this.runner(turn.key, turn.provider, turn.cwd, turn.systemPrompt, developer);
     this.current = turn.key;
     try {
       const { conversationId, stopReason } = await runner.prompt(turn.message, turn.conversationId, turn.images, developer ? "agent" : turn.mode);
@@ -105,6 +106,26 @@ export class AcpRuntime implements Runtime {
     } finally {
       if (this.current === turn.key) this.current = undefined;
     }
+  }
+
+  /** The runner of a conversation key, made on first use. */
+  private runner(key: string, provider: AgentProvider, cwd: string, systemPrompt: string, developer: boolean): AcpRunner {
+    let runner = this.runners.get(key);
+    if (runner) return runner;
+    const record = this.recordDir ? join(this.recordDir, `acp-${key.replace(":", "-")}-${stamp()}.jsonl`) : undefined;
+    // Events go to the sink of the turn running on this key.
+    runner = new AcpRunner(provider, this.endpoint, cwd, systemPrompt, {
+      onEvent: (ev) => this.sinks.get(key)?.event(ev),
+      onPermission: (req) => this.sinks.get(key)?.permission(req) ?? Promise.resolve({ outcome: "cancelled" } as PermissionOutcome),
+    }, record, developer);
+    this.runners.set(key, runner);
+    this.cwds.set(key, cwd);
+    return runner;
+  }
+
+  async warm(w: WarmRequest): Promise<void> {
+    if (w.mode === "developer") return;
+    await this.runner(w.key, w.provider, w.cwd, w.systemPrompt, false).warm(w.mode);
   }
 
   stop(): void {

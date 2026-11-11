@@ -128,3 +128,16 @@ test("every event of a turn carries the panel's chat id", async () => {
   assert.ok(events.length >= 4);
   assert.ok(events.every((e) => e.chatId === "c7"), JSON.stringify(events));
 });
+
+test("Agent after Ask says the read-only note no longer applies, once", async () => {
+  const { runtime, methods } = setup();
+  await methods["chat.send"]({ prompt: "what is this?", provider: "codex", mode: "ask", sessions: {} });
+  runtime.turns[0].resolve({ conversationId: "s1", stop: "end" });
+  await tick();
+  await methods["chat.send"]({ prompt: "add a layer", provider: "codex", mode: "agent", sessions: { codex: "s1" } });
+  assert.match(runtime.turns[1].turn.message, /^<mode>Agent: you may change the document again/);
+  runtime.turns[1].resolve({ conversationId: "s1", stop: "end" });
+  await tick();
+  await methods["chat.send"]({ prompt: "another", provider: "codex", mode: "agent", sessions: { codex: "s1" } });
+  assert.doesNotMatch(runtime.turns[2].turn.message, /<mode>Agent/);
+});

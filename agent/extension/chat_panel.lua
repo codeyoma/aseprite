@@ -850,10 +850,18 @@ return function(deps)
       if deps.onTurnEnd then deps.onTurnEnd() end
       updateStatus("")
       syncBusy()
-      Panel.sendQueued()
+      if not Panel.sendQueued() then Panel.warm() end
     end
     changed()
   end
+
+  -- Has the bridge start the agent and a spare session before the next new
+  -- chat's first message (#87).
+  local function warm()
+    if not dlg or running then return end
+    deps.request("chat.warm", { provider = dlg.data.provider or providers[1], mode = (dlg.data.mode or "Agent"):lower() }, function() end)
+  end
+  Panel.warm = warm
 
   function Panel.onConnectionChange(isConnected)
     -- A turn can't outlive its bridge: its events would never arrive, and
@@ -883,6 +891,7 @@ return function(deps)
         end
         if result.busy then syncBusy() end
         Panel.sendQueued()
+        warm()
       end)
     end
   end

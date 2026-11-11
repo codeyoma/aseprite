@@ -1,5 +1,6 @@
 // Codex adapter: `codex exec --json`.
 import { MCP_SERVER_NAME, type AgentProvider, type ProviderEvent } from "./agent_provider.js";
+import { agentCodexHome } from "./agent_home.js";
 
 export const codexProvider: AgentProvider = {
   id: "codex",
@@ -12,7 +13,10 @@ export const codexProvider: AgentProvider = {
     // CODEX_CONFIG is merged into the session config. Codex's shell runs in
     // its sandbox with its own approvals in Agent mode; Ask and Plan get a
     // read-only sandbox; Developer mode may write in the repository.
+    // A private CODEX_HOME (#87): the user's model and auth, none of their
+    // MCP servers, plugins, skills or notify hooks.
     env: (systemPrompt, mode) => ({
+      CODEX_HOME: agentCodexHome(),
       CODEX_CONFIG: JSON.stringify({
         developer_instructions: systemPrompt,
         ...(mode === "developer" ? { sandbox_mode: "workspace-write" } : mode === "ask" || mode === "plan" ? { sandbox_mode: "read-only" } : {}),

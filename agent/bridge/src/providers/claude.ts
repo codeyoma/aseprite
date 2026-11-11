@@ -1,5 +1,6 @@
 // Claude Code adapter: `claude -p --output-format stream-json`.
 import { MCP_SERVER_NAME, type AgentProvider, type ProviderEvent } from "./agent_provider.js";
+import { LEAN_CLAUDE_OPTIONS } from "./agent_home.js";
 
 const TOOL_PREFIX = `mcp__${MCP_SERVER_NAME}__`;
 
@@ -20,9 +21,10 @@ export const claudeProvider: AgentProvider = {
     sessionMeta: (systemPrompt, mode) => ({
       systemPrompt: { append: systemPrompt },
       claudeCode: {
+        // Lean (#87): none of the user's settings, plugins, hooks or other MCP servers.
         options: mode === "developer"
-          ? { allowedTools: [`mcp__${MCP_SERVER_NAME}`] }
-          : { tools: mode === "agent" ? ["Bash", "TodoWrite"] : [], allowedTools: [`mcp__${MCP_SERVER_NAME}`] },
+          ? { ...LEAN_CLAUDE_OPTIONS, allowedTools: [`mcp__${MCP_SERVER_NAME}`] }
+          : { ...LEAN_CLAUDE_OPTIONS, tools: mode === "agent" ? ["Bash", "TodoWrite"] : [], allowedTools: [`mcp__${MCP_SERVER_NAME}`] },
       },
     }),
     // "Manual": commands that change things ask the user (read-only ones

@@ -73,6 +73,13 @@ export const MODE_NOTES: Record<ChatMode, string> = {
     "with a short numbered plan of the steps you would take. The user can click Apply plan to have you carry it out.</mode>",
 };
 
+/**
+ * Said once when a conversation goes from Ask or Plan back to Agent: the
+ * earlier read-only note stays in the agent's history, and Codex's approval
+ * review rejected edits because of it (#87).
+ */
+export const AGENT_AGAIN_NOTE = "<mode>Agent: you may change the document again; the earlier Ask/Plan read-only note no longer applies.</mode>";
+
 export function chatMode(value: unknown): ChatMode {
   return value === "ask" || value === "plan" || value === "developer" ? value : "agent";
 }
@@ -166,6 +173,22 @@ export class ChatRunner {
       if (!root) throw new Error("Developer mode needs the bridge to run from a clone of the Aseprite fork");
       return ensureDevWorktree(root, prompt);
     });
+  }
+
+  /** Conversations whose last turn was Ask or Plan. */
+  private readOnly = new Set<string>();
+
+  /**
+   * Starts the provider's agent before the first message (#87): its process,
+   * and a spare session the next new conversation takes, so the first turn
+   * doesn't wait for them.
+   */
+  warm(provider: AgentProvider, mode: ChatMode = "agent"): void {
+    if (this.busy) return;
+    const runtime = this.runtimes.find((r) => r.supports(provider));
+    if (!runtime?.warm) return;
+    void runtime.warm({ key: conversationKey(provider.id, mode), provider, mode, cwd: this.cwd, systemPrompt: SYSTEM_PROMPT })
+      .catch((err) => log(`chat: warming ${provider.id} failed: ${err instanceof Error ? err.message : String(err)}`));
   }
 
   get busy(): boolean {
@@ -289,10 +312,16 @@ export class ChatRunner {
       },
       permission: (r) => (live() && !turn.stopped ? this.askPermission(r) : Promise.resolve({ outcome: "cancelled" })),
     };
-    const message = composeMessage({ ...req, prompt: skills.message, skills: skills.context, mode });
+    let message = composeMessage({ ...req, prompt: skills.message, skills: skills.context, mode });
+    const conversation = this.conversations[key];
+    if (mode === "agent" && conversation && this.readOnly.has(conversation)) message = `${AGENT_AGAIN_NOTE}\n${message}`;
     runtime
       .start({ key, provider, message, conversationId: this.conversations[key], images, mode, cwd, systemPrompt: mode === "developer" ? DEVELOPER_PROMPT : SYSTEM_PROMPT }, sink)
       .then((r) => {
+        if (r.conversationId) {
+          if (mode === "ask" || mode === "plan") this.readOnly.add(r.conversationId);
+          else this.readOnly.delete(r.conversationId);
+        }
         if (r.conversationId && this.conversations[key] !== r.conversationId) {
           this.conversations[key] = r.conversationId;
           emit({ type: "session", provider: key, sessionId: r.conversationId });
@@ -339,6 +368,10 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
       }, images);
       return { started: true };
     })(),
+    "chat.warm": (p: { provider?: string; mode?: string }) => {
+      chat.warm(providerFor(p.provider), chatMode(p.mode));
+      return { warming: true };
+    },
     "chat.permission": (p: { requestId: string; optionId?: string | null }) => ({
       answered: chat.answerPermission(String(p.requestId), p.optionId ?? null),
     }),
