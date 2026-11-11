@@ -4,6 +4,7 @@
 // writing Lua, encoding pixels or sending requests themselves; every write
 // goes through here, so the cached SpriteInfo is dropped after it.
 import { hex, parseHex, type Counted, type RGBA } from "./color.js";
+import { hitWire, parseHits, parseRecord, recordWire, type FxRecord, type HitRecord } from "./fx/record.js";
 import type { Rgba } from "./pixel_grid.js";
 import type { AsepriteRequester } from "./tool.js";
 
@@ -26,37 +27,11 @@ export interface LayerInfo {
   fx?: FxInfo;
 }
 
-/**
- * What export needs about an effect on a layer (#71), recorded by add_fx, fx_overlay and new_fx_sprite in the
- * layer property aseprite-agent "fx" (get_state's layer `fx`). A property of the layer, so several effects can
- * share a sprite and deleting the layer drops its record.
- */
-export interface FxInfo {
-  /** The library effect's id. */
-  id: string;
-  /** The effect's origin (pixelfx's ground point) in sprite pixels. */
-  x: number;
-  y: number;
-  /** The effect's frame rate and whether it loops. */
-  fps: number;
-  loop: boolean;
-  /** ms from the effect's start to its impact (fxImpact). */
-  windupMs: number;
-  /** An FX recipe's JSON when the effect came from one (fx_from_recipe, #72), so it can be re-rendered and tuned. */
-  recipe?: string;
-  /** JSON of the render settings that differ from the effect's defaults (seed, flip, angle, options, palette, light). */
-  render?: string;
-}
+/** An effect record on a layer (#71): owned by the FX domain module (fx/record.ts, #97). */
+export type FxInfo = FxRecord;
 
-/** A hit hit_stop recorded (sprite property aseprite-agent "fx.hits"), for exporters (#71). */
-export interface HitInfo {
-  /** The contact frame (1-based). */
-  frame: number;
-  /** How much longer the contact pose holds, shake included (ms). */
-  freezeMs: number;
-  shakeMs?: number;
-  amp?: number;
-}
+/** A hit hit_stop recorded (#71): owned by the FX domain module (fx/record.ts, #97). */
+export type HitInfo = HitRecord;
 
 export interface TagInfo {
   name: string;
@@ -149,6 +124,8 @@ export interface PutImagesOptions {
   fx?: FxInfo & { layer: string };
   /** A pixel spec's JSON to store on the sprite (#79); "" removes it. */
   spec?: string;
+  /** Image layers (ids or names) whose cels are all deleted first, in the same undo step (#97). */
+  clear?: string[];
 }
 
 /** One image of putImages: put at (x, y) in a frame, onto a new 'AI: ' layer or into a layer. */
@@ -259,12 +236,6 @@ export interface Document {
   drawSwatches(colors: RGBA[], o?: { name?: string; size?: number }): Promise<{ layer?: string }>;
 }
 
-/** An FxInfo as wire params (put_images' and create_animation's fx). */
-const fxWire = (f: FxInfo) => ({
-  id: f.id, x: f.x, y: f.y, fps: f.fps, loop: f.loop, windup_ms: f.windupMs,
-  ...(f.recipe !== undefined ? { recipe: f.recipe } : {}), ...(f.render !== undefined ? { render: f.render } : {}),
-});
-
 /**
  * Pixels for a "bytes" param (#95): the raw bytes. The transport sends them as a binary frame (AsepriteLink) or
  * as base64 (the Headless runner), so nothing here encodes.
@@ -300,18 +271,13 @@ export function resolveFrames(spec: unknown, count: number, active: number, fall
   return out;
 }
 
-const fxOf = (f: any): FxInfo => ({
-  id: String(f.id ?? ""), x: f.x, y: f.y, fps: f.fps, loop: !!f.loop, windupMs: f.windupMs ?? 0,
-  ...(typeof f.recipe === "string" ? { recipe: f.recipe } : {}), ...(typeof f.render === "string" ? { render: f.render } : {}),
-});
-
 function flatten(tree: any[], path: string[] = []): LayerInfo[] {
   const out: LayerInfo[] = [];
   for (const l of tree ?? []) {
     out.push({
       id: String(l.id ?? ""), name: l.name, visible: l.visible !== false, editable: l.editable !== false, group: !!l.group, path,
       ...(l.group ? {} : {
-        opacity: l.opacity, blendMode: l.blendMode, ...(l.celLinks ? { links: l.celLinks } : {}), ...(l.fx ? { fx: fxOf(l.fx) } : {}),
+        opacity: l.opacity, blendMode: l.blendMode, ...(l.celLinks ? { links: l.celLinks } : {}), ...(l.fx ? { fx: parseRecord(l.fx) } : {}),
       }),
     });
     if (l.group) out.push(...flatten(l.layers, [...path, l.name]));
@@ -345,9 +311,7 @@ export function parseState(state: any): SpriteInfo {
     })),
     colorMode: s.colorMode ?? "rgb",
     ...(typeof s.pixelSpec === "string" && s.pixelSpec ? { pixelSpec: s.pixelSpec } : {}),
-    hits: (s.fxHits ?? []).map((h: any) => ({
-      frame: h.frame, freezeMs: h.freezeMs, ...(h.shakeMs !== undefined ? { shakeMs: h.shakeMs } : {}), ...(h.amp !== undefined ? { amp: h.amp } : {}),
-    })),
+    hits: parseHits(s.fxHits),
   };
 }
 
@@ -405,10 +369,10 @@ export function documentOf(aseprite: AsepriteRequester): Document {
         return im;
       });
       const insert = o.insert?.map((x) => ({ after: x.after, durations: x.durations, ...(x.shift ? { shift: x.shift } : {}) }));
-      const hit = o.hit && { frame: o.hit.frame, freeze_ms: o.hit.freezeMs, shake_ms: o.hit.shakeMs, amp: o.hit.amp };
+      const hit = o.hit && hitWire(o.hit);
       return write("put_images", {
         images, frames: o.frames, duration: o.duration, label: o.label, prompt: o.prompt, palette: o.palette,
-        insert, durations: o.durations, hit, fx: o.fx && { layer: o.fx.layer, ...fxWire(o.fx) }, spec: o.spec,
+        insert, durations: o.durations, hit, fx: o.fx && { layer: o.fx.layer, ...recordWire(o.fx) }, spec: o.spec, clear: o.clear,
       });
     },
     async createSprite(img, o = {}) {
@@ -420,7 +384,7 @@ export function documentOf(aseprite: AsepriteRequester): Document {
     async createAnimation(width, height, frames, o = {}) {
       for (const f of frames) checkSize(f.image, "create_animation");
       const { result } = await aseprite.request("create_animation", {
-        width, height, title: o.title, palette: o.palette, tags: o.tags, fx: o.fx && fxWire(o.fx),
+        width, height, title: o.title, palette: o.palette, tags: o.tags, fx: o.fx && recordWire(o.fx),
         frames: frames.map((f) => ({ rgba: encode(f.image), duration: f.duration ?? 100 })),
       }, 120_000);
       wrote();

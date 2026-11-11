@@ -27,6 +27,7 @@
       "light",
       "options",
       "palette",
+      "preview",
       "seed",
       "slice",
       "start_frame",
@@ -426,6 +427,7 @@
       "options",
       "overflow",
       "palette",
+      "preview",
       "recipe",
       "seed",
       "start_frame",
@@ -442,7 +444,8 @@
     "label": "Preview effect pipeline",
     "input": [
       "apply",
-      "pipeline"
+      "pipeline",
+      "replace"
     ]
   },
   {

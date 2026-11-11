@@ -294,7 +294,8 @@ return function(handlers, D)
   -- params.durations = { { frame, ms } } sets durations (final numbering) and
   -- params.hit = { frame, freeze_ms, shake_ms?, amp? } is appended to the
   -- sprite property aseprite-agent "fx.hits" (get_state's fxHits). Image
-  -- frames use the final numbering.
+  -- frames use the final numbering. params.clear = { layer, ... } (#97) deletes
+  -- every cel of those image layers first (an effect replaced on re-apply).
   local IMAGE_KEYS = { width = true, height = true, rgba = true, frame = true, new_layer = true, layer = true,
                        above = true, x = true, y = true, hide = true, hide_source = true, blend_mode = true, opacity = true, locked = true }
   local HITS_KEY = "fx.hits"
@@ -389,8 +390,19 @@ return function(handlers, D)
     local sprite = app.sprite
     local images = params.images or {}
     local inserts, inserted = checkInserts(sprite, params.insert)
-    if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil and params.fx == nil and params.spec == nil then
+    if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil and params.fx == nil and params.spec == nil
+        and params.clear == nil then
       error("No images")
+    end
+    -- clear (#97): image layers whose cels are all deleted first, in the same undo step (an effect replaced on re-apply).
+    local clearLayers = {}
+    if params.clear ~= nil then
+      if type(params.clear) ~= "table" then error("clear: expected a list of layers") end
+      for _, ref in ipairs(params.clear) do
+        local l = layerById(ref, sprite)
+        if not l or not l.isImage then error("clear: no image layer " .. tostring(ref)) end
+        clearLayers[#clearLayers + 1] = l
+      end
     end
     if params.spec ~= nil and (type(params.spec) ~= "string" or #params.spec > SPEC_MAX) then
       error("spec must be text of at most " .. SPEC_MAX .. " characters")
@@ -452,6 +464,11 @@ return function(handlers, D)
     local activeLayer = app.layer
     local locked = {}
     app.transaction(params.label or "AI images", function()
+      for _, l in ipairs(clearLayers) do
+        local cels = {}
+        for _, c in ipairs(l.cels) do cels[#cels + 1] = c end
+        for _, c in ipairs(cels) do sprite:deleteCel(c) end
+      end
       -- The palette first, so an indexed sprite maps the new images onto the new entries.
       if #paletteAdd > 0 then
         local p = Palette(sprite.palettes[1])

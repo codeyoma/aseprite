@@ -197,7 +197,7 @@ test("check_fx finds a one-shot that does not end empty, a loop seam and too man
   const late = { ...BURST, name: "late", phases: [{ name: "linger", start: 0, end: 0.3, emitters: [{ kind: "star", count: 6, speed: [5, 10], life: 2, size: 2 }] }] };
   const fake = sprite();
   await runTool(findTool("fx_from_recipe"), { recipe: late, apply: "layer", x: 64, y: 64 }, fake);
-  assert.match(textOf(await runTool(findTool("check_fx"), {}, fake)), /warning one-shot-end .*px still drawn at t = duration \(600 ms\): the one-shot pops off.* at \(\d+,\d+\)/);
+  assert.match(textOf(await runTool(findTool("check_fx"), {}, fake)), /warning one-shot-end .*still draws \d+ opaque px on the sprite's last frame \(17\): it is cut off when the animation ends; \d+ px are still drawn at t = duration \(600 ms\) too at \(\d+,\d+\)/);
 
   // A loop on frames whose durations don't make a whole loop: the last frame jumps back to the first.
   const loop = sprite(96, 96, Array(10).fill(100));
@@ -225,8 +225,13 @@ test("check_fx without a record to render: pixels on the sprite's edge, a one-sh
   const layer = { id: "L9", name: "AI: fx mine", visible: true, group: false, path: [] };
   const edge = checkFxLayer(layer, [at(5, 5), at(0, 7)], { width: w, height: h });
   assert.deepEqual(edge.map((f) => [f.rule, f.frame, f.pixels]), [["spill", 2, [[0, 7]]]]);
-  const cut = checkFxLayer({ ...layer, fx: { id: "gone", x: 8, y: 8, fps: 30, loop: false, windupMs: 0 } }, [at(5, 5), at(6, 6)], { width: w, height: h });
+  const blob = (x, y) => ({ width: w, height: h, data: rect(w, h, [x, y, x + 3, y + 3], [255, 200, 0]) });
+  const fx = { id: "gone", x: 8, y: 8, fps: 30, loop: false, windupMs: 0 };
+  const cut = checkFxLayer({ ...layer, fx }, [blob(5, 5), blob(6, 6)], { width: w, height: h });
   assert.deepEqual(cut.map((f) => [f.rule, f.frame]), [["one-shot-end", 2]]);
+  assert.match(cut[0].message, /16 opaque px on the sprite's last frame \(2\)/);
+  // A few stray pixels dying on the last frame are not a pop.
+  assert.deepEqual(checkFxLayer({ ...layer, fx }, [blob(5, 5), at(6, 6)], { width: w, height: h }), []);
 });
 
 // ---- Emitter extras (#107): shapes, aim, trails, curl noise, outline points from a layer.

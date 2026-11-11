@@ -1,12 +1,14 @@
 // FX recipes and the FX check (#72): fx_from_recipe makes an effect from a JSON recipe (fx/recipe.ts) and
 // previews it, adds it like add_fx or makes it a sprite like new_fx_sprite, through the same code; check_fx
 // checks effect layers for pixels off the canvas, one-shots that don't end empty, loop seams and too many colors.
+// Records are re-rendered through the FX domain module (fx/render_record.ts, #97).
 import * as z from "zod/v4";
-import { documentOf, type Document, type FxInfo, type LayerInfo } from "./document.js";
-import { renderFx } from "./fx/index.js";
-import { findFx, type FxEntry } from "./fx/library.js";
+import type { RGBA } from "./color.js";
+import { documentOf, type Document, type LayerInfo } from "./document.js";
 import { RECIPE_LIMITS, outlinePoints, parseRecipe, recipeEntry, type Recipe } from "./fx/recipe.js";
-import { anchorInput, effectOptions, fxCanvas, fxSprite, placeFx, previewFx } from "./fx_tools.js";
+import { isFxGlowName, isFxLayerName } from "./fx/record.js";
+import { rerender, type RecordRender } from "./fx/render_record.js";
+import { anchorInput, fxSprite, placeFx, previewFx } from "./fx_tools.js";
 import { OPAQUE, type Rgba } from "./image.js";
 import { imageLayer } from "./sprite_fx/write.js";
 import { failure, text, type Tool, type ToolContext, type ToolResult } from "./tool.js";
@@ -34,21 +36,8 @@ export async function resolveOutlines(recipe: Recipe, ctx: ToolContext): Promise
   return undefined;
 }
 
-/** The effect an FX record names, rebuilt to render again: its recipe, else the library effect; undefined when neither. */
-export function recordedEffect(fx: FxInfo): { e: FxEntry; opts: Record<string, unknown>; seed: number; flip: boolean; angle: number } | undefined {
-  let e: FxEntry | undefined;
-  try {
-    e = fx.recipe ? recipeEntry(parseRecipe(fx.recipe)) : findFx(fx.id);
-  } catch {
-    return undefined;
-  }
-  if (!e) return undefined;
-  let render: { seed?: number; flip?: boolean; angle?: number; options?: Record<string, unknown>; palette?: string[]; light?: number } = {};
-  try { render = fx.render ? JSON.parse(fx.render) : {}; } catch { /* a broken render record: defaults */ }
-  let opts: Record<string, unknown>;
-  try { opts = effectOptions(e, render); } catch { opts = {}; }
-  return { e, opts, seed: render.seed ?? e.seed, flip: !!render.flip, angle: render.angle ?? 0 };
-}
+// recordedEffect moved to the FX domain module (#97); re-exported for callers here.
+export { recordedEffect } from "./fx/render_record.js";
 
 export interface FxFinding {
   rule: "spill" | "one-shot-end" | "loop-seam" | "colors";
@@ -68,11 +57,17 @@ export interface FxFinding {
 export interface FxCheckOptions {
   /** Colors (distinct RGB) a layer may use before the colors rule fires. Default 24. */
   maxColors?: number;
+  /** The sprite palette (a blank-canvas pipeline record re-renders with it). */
+  palette?: RGBA[];
 }
 
 const SAMPLES = 8;
-/** Margin around the effect's canvas when re-rendering, to catch drawing past it (pixelfx's check uses 24). */
-const MARGIN = 32;
+/**
+ * Opaque pixels a one-shot's last placed cel may keep without a one-shot-end warning: a few sparks dying on the
+ * last frame read as the end of the effect (library effects sampled at 100 ms keep 2-7), a cluster (the saved
+ * frost nova run kept 16) reads as a pop.
+ */
+export const END_TAIL_PX = 8;
 
 const diffCount = (a: Rgba, b: Rgba, out?: [number, number][]) => {
   let n = 0;
@@ -93,11 +88,14 @@ const span = (pts: { x0: number; y0: number; x1: number; y1: number }) => `x ${p
 /**
  * Checks one effect layer: its images per sprite frame (frame 1 first, sprite size; null for no cel) and its
  * FX record when it has one. Pure, for tests. Rules:
- * - spill: re-rendered from the record at its origin (needs a library id or a recipe), the pixels the effect
- *   draws outside the sprite (error) or past its own canvas, where the placing tools cut it (warning); without a
- *   record to render, pixels on the sprite's border in any frame (warning: probably cut off).
- * - one-shot-end: a one-shot that still draws at t = duration (re-rendered), so it pops off instead of fading
- *   out; without a record to render, a last frame with content that is the sprite's last frame.
+ * - spill: re-rendered from the record at its origin (a library id, a recipe, a fluid's settings or a blank-canvas
+ *   pipeline; fx/render_record.ts), the pixels the effect draws outside the sprite (error) or past its own canvas,
+ *   where the placing tools cut it (warning); a record drawn on the sprite's own canvas (a pipeline over a layer, a
+ *   fluid from a layer) cannot spill; without a record to render, pixels on the sprite's border in any frame
+ *   (warning: probably cut off).
+ * - one-shot-end: judged on the placed cels, whatever the timing (resampled, retimed, cut): the layer's last cel
+ *   with content still draws more than END_TAIL_PX opaque pixels, so the effect pops off there (or is cut by the sprite's end) instead of
+ *   fading out. The re-rendered end (t = duration) is noted in the message when it still draws too.
  * - loop-seam: in a loop, the change from the layer's last frame back to its first (pixels that differ) is
  *   more than twice a normal step between neighbouring frames (the 90th percentile) and more than 12 px.
  * - colors: more distinct opaque colors (alpha >= OPAQUE; soft glow fringes do not count) on the layer than maxColors.
@@ -106,44 +104,41 @@ export function checkFxLayer(layer: LayerInfo, images: (Rgba | null)[], sprite: 
   const out: FxFinding[] = [];
   const base = { layer: layer.name, layerId: layer.id };
   const fx = layer.fx;
-  const rec = fx ? recordedEffect(fx) : undefined;
+  const rr: RecordRender | undefined = fx ? rerender(fx, { sprite, palette: o.palette }) : undefined;
   const W = sprite.width, H = sprite.height;
   const blank = { width: W, height: H, data: new Uint8Array(W * H * 4) };
   const imgs = images.map((im) => im ?? blank);
 
   // Spill.
-  if (fx && rec) {
-    const c = fxCanvas(rec.e, rec.flip, rec.angle);
-    const canvas = { width: c.width + 2 * MARGIN, height: c.height + 2 * MARGIN, x: c.x + MARGIN, y: c.y + MARGIN };
-    const r = renderFx(rec.e.module, rec.opts, { fps: fx.fps, seed: rec.seed, canvas });
-    const dx = fx.x - canvas.x, dy = fx.y - canvas.y;
+  if (fx && rr && !rr.onSprite) {
+    const { dx, dy, kept } = rr;
     let worst = { off: 0, frame: 0, pixels: [] as [number, number][] }, past = 0, pastFrame = 0;
     const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
-    r.color.forEach((img, i) => {
+    rr.frames.forEach((img, i) => {
       let off = 0, outCanvas = 0;
       const pixels: [number, number][] = [];
       for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
         if (!img.data[(y * img.width + x) * 4 + 3]) continue;
         const sx = x + dx, sy = y + dy;
         box.x0 = Math.min(box.x0, sx); box.x1 = Math.max(box.x1, sx); box.y0 = Math.min(box.y0, sy); box.y1 = Math.max(box.y1, sy);
-        if (x < MARGIN || y < MARGIN || x >= MARGIN + c.width || y >= MARGIN + c.height) outCanvas++;
+        if (kept && (x < kept.x || y < kept.y || x >= kept.x + kept.width || y >= kept.y + kept.height)) outCanvas++;
         if (sx < 0 || sy < 0 || sx >= W || sy >= H) { off++; if (pixels.length < SAMPLES) pixels.push([sx, sy]); }
       }
       if (off > worst.off) worst = { off, frame: i, pixels };
       if (outCanvas > past) { past = outCanvas; pastFrame = i; }
     });
-    const t = (i: number) => Math.round((i * 1000) / fx.fps);
+    const t = (i: number) => Math.round((i * 1000) / rr.fps);
     if (worst.off) {
       out.push({ ...base, rule: "spill", severity: "error", count: worst.off, pixels: worst.pixels,
         message: `up to ${worst.off} px of the effect fall outside the ${W}x${H} sprite (at ${t(worst.frame)} ms; it draws over ${span(box)} with its origin at ${fx.x},${fx.y})`,
         fix: "move the effect inward (add_fx x, y), grow the canvas, or make the effect smaller" });
     }
-    if (past) {
+    if (past && kept) {
       out.push({ ...base, rule: "spill", severity: "warning", count: past, pixels: [],
-        message: `up to ${past} px drawn past the effect's own ${c.width}x${c.height} canvas (at ${t(pastFrame)} ms), so they are cut off`,
-        fix: fx.recipe ? "grow the recipe's size or move its origin, or slow the particles" : "use a smaller option (height, radius) or another effect" });
+        message: `up to ${past} px drawn past the effect's own ${kept.width}x${kept.height} canvas (at ${t(pastFrame)} ms), so they are cut off`,
+        fix: rr.pastFix });
     }
-  } else {
+  } else if (!rr?.onSprite) {
     let n = 0, frame = 0;
     const pixels: [number, number][] = [];
     imgs.forEach((img, f) => {
@@ -167,27 +162,28 @@ export function checkFxLayer(layer: LayerInfo, images: (Rgba | null)[], sprite: 
   let lastLit = -1;
   lit.forEach((n, i) => { if (n > 0) lastLit = i; });
 
-  // A one-shot ends empty.
-  if (fx && !fx.loop) {
-    if (rec) {
-      const c = fxCanvas(rec.e, rec.flip, rec.angle);
-      const end = renderFx(rec.e.module, rec.opts, { times: [rec.e.durationMs / 1000], seed: rec.seed, canvas: c }).color[0];
-      const pixels: [number, number][] = [];
-      let n = 0;
-      for (let y = 0; y < end.height; y++) for (let x = 0; x < end.width; x++) {
-        if (!end.data[(y * end.width + x) * 4 + 3]) continue;
-        n++;
-        if (pixels.length < SAMPLES) pixels.push([x - c.x + fx.x, y - c.y + fx.y]);
-      }
-      if (n) {
-        out.push({ ...base, rule: "one-shot-end", severity: "warning", count: n, pixels,
-          message: `${n} px still drawn at t = duration (${rec.e.durationMs} ms): the one-shot pops off instead of fading out`,
-          fix: fx.recipe ? "shorten the particles' life and delays, or end the phases earlier, so everything is gone by the duration" : "let it fade: a longer duration or shorter-lived parts" });
-      }
-    } else if (lastLit >= 0 && lastLit === imgs.length - 1) {
-      out.push({ ...base, rule: "one-shot-end", severity: "warning", frame: lastLit + 1, count: lit[lastLit], pixels: [],
-        message: `the one-shot still draws ${lit[lastLit]} px on the sprite's last frame (${lastLit + 1}): it is cut off when the animation ends`,
-        fix: "add frames until it fades out, or start it earlier" });
+  // A one-shot ends empty: its last placed cel (whatever timing put it there) draws no opaque pixels.
+  if (fx && !fx.loop && lastLit >= 0) {
+    const img = imgs[lastLit];
+    const pixels: [number, number][] = [];
+    let n = 0;
+    for (let i = 3; i < img.data.length; i += 4) {
+      if (img.data[i] < OPAQUE) continue;
+      n++;
+      if (pixels.length < SAMPLES) pixels.push([((i - 3) / 4) % W, Math.floor((i - 3) / 4 / W)]);
+    }
+    if (n > END_TAIL_PX) {
+      const endsSprite = lastLit === imgs.length - 1;
+      const endLit = rr && !rr.onSprite && rr.end ? litCount(rr.end) : 0;
+      const recipeFix = fx.recipe && !fx.id.startsWith("pipeline:")
+        ? "shorten the particles' life and delays, or end the phases earlier, so everything is gone by the duration" : "let it fade: a longer duration or shorter-lived parts";
+      out.push({ ...base, rule: "one-shot-end", severity: "warning", frame: lastLit + 1, count: n, pixels,
+        message: (endsSprite
+          ? `the one-shot still draws ${n} opaque px on the sprite's last frame (${lastLit + 1}): it is cut off when the animation ends`
+          : `the one-shot's last placed cel (frame ${lastLit + 1}) still draws ${n} opaque px and frame ${lastLit + 2} shows none: it pops off instead of fading out`) +
+          (endLit ? `; ${endLit} px are still drawn at t = duration (${rr && !rr.onSprite ? rr.durationMs : 0} ms) too` : ""),
+        fix: endLit ? recipeFix : endsSprite ? "add frames until it fades out (fx_overlay overflow 'extend'), or start it earlier"
+          : "place it so its fade-out lands on frames (fx_overlay overflow 'extend', a later hit_frame or start_frame), or make it fade sooner" });
     }
   }
 
@@ -225,7 +221,7 @@ export function fxLayers(layers: LayerInfo[], which?: string): LayerInfo[] | str
     if (l.group) return `${l.name} is a group; give an image layer.`;
     return [l];
   }
-  return layers.filter((l) => !l.group && (l.fx || (l.name.startsWith("AI: fx ") && !l.name.endsWith(" glow"))));
+  return layers.filter((l) => !l.group && (l.fx || (isFxLayerName(l.name) && !isFxGlowName(l.name))));
 }
 
 async function runCheck(doc: Document, which: string | undefined, o: FxCheckOptions): Promise<ToolResult> {
@@ -237,7 +233,7 @@ async function runCheck(doc: Document, which: string | undefined, o: FxCheckOpti
   for (const l of targets) {
     const images: Rgba[] = [];
     for (let f = 1; f <= info.durations.length; f++) images.push(await doc.pixels(l.id, f));
-    findings.push(...checkFxLayer(l, images, info, o));
+    findings.push(...checkFxLayer(l, images, info, { ...o, palette: o.palette ?? info.palette }));
   }
   return { content: [text(formatFxCheck(findings, targets, info.durations.length))] };
 }
@@ -317,9 +313,10 @@ export const FX_RECIPE_TOOLS: Tool[] = [
     title: "Check effects",
     description:
       "Check effect layers (one, or every layer with an FX record or named 'AI: fx …') for what eyes miss, with coordinates and a fix: " +
-      "spill (re-rendered from the layer's FX record at its origin: pixels outside the sprite, an error, or past the effect's own canvas, " +
-      "where it was cut; without a record, pixels on the sprite's edge), one-shot-end (a one-shot that still draws at its duration, so it " +
-      "pops off), loop-seam (a loop whose last frame jumps back to its first: more than twice a normal frame step and more than 12 px), " +
+      "spill (re-rendered from the layer's FX record at its origin, library effects, recipes, fluid_fx and blank-canvas fx_pipeline records alike: " +
+      "pixels outside the sprite, an error, or past the effect's own canvas, where it was cut; without a record, pixels on the sprite's edge), " +
+      "one-shot-end (a one-shot whose last placed cel still draws opaque pixels, however it was timed, so it pops off or is cut by the " +
+      "sprite's end), loop-seam (a loop whose last frame jumps back to its first: more than twice a normal frame step and more than 12 px), " +
       "and colors (more distinct opaque colors than max_colors). Nothing changes. Run it after add_fx, fx_from_recipe or fx_overlay.",
     input: z.object({
       layer: z.string().optional().describe("A layer id ('L12') or name. Default every FX layer."),

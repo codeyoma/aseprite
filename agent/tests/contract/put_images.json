@@ -267,6 +267,7 @@
           "width": 1, "height": 1, "frames": [{ "rgba": { "rows": ["y"] } }], "fx": { "layer": "x", "id": "torch", "x": 0, "y": 1, "fps": 30, "loop": true, "windup_ms": 0 }
         }, "error": "fx: unknown param 'layer'" }
       ]
-    }
+    },
+    {"name": "put_images clears a layer's cels first (clear, #97) and rewrites it in the same request; an unknown layer is refused before anything changes", "notes": "fx_pipeline replaces its earlier run this way: the layer keeps its place and name, frames the new run leaves empty end empty.", "fixture": {"width": 2, "height": 1, "durations": [100, 100], "layers": [{"name": "AI: fx old", "cels": {"1": [".y"], "2": [".y"]}}, {"name": "Body", "cels": {"1": ["r."], "2": ["r."]}}]}, "steps": [{"request": "put_images", "params": {"clear": ["Nope"], "images": []}, "error": "clear: no image layer Nope"}, {"state": {"layers": [{"name": "AI: fx old", "cels": [1, 2]}, {"name": "Body", "cels": [1, 2]}]}}, {"request": "put_images", "params": {"clear": ["AI: fx old"], "images": [{"new_layer": "fx old", "frame": 2, "width": 1, "height": 1, "x": 0, "y": 0, "rgba": {"rows": ["b"]}}]}, "result": {"layers": [{"name": "AI: fx old", "layer": {"$layerId": "AI: fx old"}}], "frames": 2, "added": 0}}, {"state": {"layers": [{"name": "AI: fx old", "cels": [2]}, {"name": "Body", "cels": [1, 2]}]}}, {"pixels": {"layer": "AI: fx old", "frame": 2}, "rows": ["b."]}, {"request": "put_images", "params": {"clear": ["AI: fx old"], "images": []}, "result": {"layers": [], "frames": 2, "added": 0}}, {"state": {"layers": [{"name": "AI: fx old", "cels": []}, {"name": "Body", "cels": [1, 2]}]}}]}
   ]
 }

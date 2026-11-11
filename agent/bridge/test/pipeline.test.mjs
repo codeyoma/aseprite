@@ -257,7 +257,7 @@ test("fx_pipeline apply over a layer: one put_images request, 'AI: fx <name>' ov
   assert.ok(fx && hero && !hero.visible && fx.visible);
   assert.equal(fx.fx.id, "pipeline:burn");
   assert.equal(fx.fx.fps, 20);
-  assert.deepEqual(parsePipeline(fx.fx.recipe), parsePipeline({ ...BURN, source: { frame: 2 } }), "the pipeline round-trips");
+  assert.deepEqual(parsePipeline(fx.fx.recipe), parsePipeline({ ...BURN, source: { layer: "Hero", frame: 2 } }), "the pipeline round-trips, its source resolved");
   assert.match(textOf(r), /inserted 4 frames of 50 ms after frame 2 \(frames 3-6\)/);
   // Over existing frames: no frames added.
   const fake2 = sprite();

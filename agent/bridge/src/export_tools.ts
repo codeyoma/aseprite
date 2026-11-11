@@ -7,6 +7,7 @@ import {
   composeLight, composeNormal, godotNinePatch, godotSpriteFrames, jsonHash, pack, phaserAnims, placeLike, tiledTileset, unityMeta,
   type Anim, type FxMeta, type SheetInfo,
 } from "./export.js";
+import { isFxGlowName } from "./fx/record.js";
 import { writePng, type Rgba } from "./image.js";
 import { text, type Tool } from "./tool.js";
 
@@ -69,7 +70,7 @@ export function shownImageLayers(info: SpriteInfo): LayerInfo[] {
  * it to Normal (it still exports as the glow pass). check's rule (handlers_check.lua isLight) is blend mode only on
  * purpose: a glow set to Normal is drawn as pixels, so its pixels are judged (#92).
  */
-export const isLightLayer = (l: LayerInfo) => (l.blendMode ?? "normal") !== "normal" || /^AI: fx .+ glow$/.test(l.name);
+export const isLightLayer = (l: LayerInfo) => (l.blendMode ?? "normal") !== "normal" || isFxGlowName(l.name);
 
 /**
  * What the effects on a sprite mean for its export (#71). effects: the shown layers with an effect record, top

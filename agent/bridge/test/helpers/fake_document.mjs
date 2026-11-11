@@ -487,7 +487,7 @@ export function fakeDocument({
     },
     // Several images in one undo step (handlers_sprite.lua put_images): inserts (linked cels or moved copies,
     // tags covering `after` grow, later tags and hits move), then at least `frames` frames (copies of the last
-    // one), durations, a recorded hit, and the images, all in the numbering after the inserts.
+    // one), durations, a recorded hit, and the images, all in the numbering after the inserts. clear empties layers first.
     put_images: (p) => {
       const s = active.sprite;
       const isInt = Number.isInteger;
@@ -516,7 +516,15 @@ export function fakeDocument({
         if (inserts[i].after === inserts[i - 1].after) throw new Error(`Insert: frame ${inserts[i].after} is listed twice`);
       }
       const inserted = inserts.reduce((n, x) => n + x.durations.length, 0);
-      if (!p.images.length && !inserts.length && p.durations === undefined && p.hit === undefined && p.fx === undefined && p.spec === undefined) throw new Error("No images");
+      if (!p.images.length && !inserts.length && p.durations === undefined && p.hit === undefined && p.fx === undefined && p.spec === undefined
+        && p.clear === undefined) throw new Error("No images");
+      // clear (#97): image layers whose cels are all deleted first.
+      if (p.clear !== undefined && !Array.isArray(p.clear)) throw new Error("clear: expected a list of layers");
+      const clearLayers = (p.clear ?? []).map((ref) => {
+        const l = byRef(ref);
+        if (!l || l.group) throw new Error(`clear: no image layer ${ref}`);
+        return l;
+      });
       if (p.spec !== undefined && (typeof p.spec !== "string" || p.spec.length > 65536)) throw new Error("spec must be text of at most 65536 characters");
       const fx = p.fx !== undefined ? checkFx(p.fx, true) : undefined;
       const count = Math.max(s.durations.length + inserted, p.frames ?? 0);
@@ -554,6 +562,7 @@ export function fakeDocument({
         for (const c of p.palette.map(norm)) if (!have.has(c)) { have.add(c); paletteAdd.push(c); }
         if (paletteAdd.length && s.defaultPalette) throw unsupported("appending to the default palette of a new sprite");
       }
+      for (const l of clearLayers) l.cels = [];
       if (paletteAdd) s.palette.push(...paletteAdd);
       // Inserts, last first so every `after` keeps its number.
       for (const ins of [...inserts].reverse()) {
