@@ -220,6 +220,10 @@ for (const bench of benches) {
       facts.text = textOf(await c.call("check", args));
     }
     else if (crit.type === "check_fx") facts.text = textOf(await c.call("check_fx", {}));
+    else if (crit.type === "walk_check") {
+      // A walk with errors comes back as a tool error; its text is the verdict.
+      try { facts.text = textOf(await c.call("walk_check", crit.tag ? { tag: crit.tag } : {})); } catch (e) { facts.text = String(e.message ?? e); }
+    }
     else if (crit.type === "lua") facts.lua = await safeLua(linesOf(crit.code));
     result = evaluate(crit, facts, { skill: bench.skill });
     criteria.push({ id: crit.id, type: crit.type, desc: crit.desc ?? null, pass: result.pass, detail: result.detail ?? null });

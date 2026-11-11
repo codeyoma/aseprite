@@ -1,0 +1,127 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: dda0398a4
+date: "2026-11-11T09:00:37.855Z"
+seconds: 103
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 70
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: anim.walk.limbs"
+        status: failed
+      - tool: "Read guide: anim.timing.walk"
+        status: failed
+      - tool: Inspect pixels
+        status: failed
+      - tool: Look at the sprite
+        status: failed
+      - tool: "Read guide: anim.walk.limbs"
+        status: ok
+      - tool: "Read guide: anim.timing.walk"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Walk cycle part layers
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I've made the 6-frame `walk` cycle (640 ms per loop), and the arms swing opposite the legs: `walk_check` confirmed this on both contact frames (1 and 4).\n\n**Frames:**\n1. Contact (120 ms): near leg forward, near arm back\n2. Down (100 ms): knees bent, body 1 px lower\n3. Pass (100 ms): near leg straight under the hip, far leg swinging forward, body 1 px higher\n4. Contact (120 ms): legs and arms swapped, near arm forward\n5. Down (100 ms)\n6. Pass (100 ms), then it loops back into frame 1\n\n**Changes to your sprite:**\n- Your character had no arms, so I added them. I also replaced the straight standing legs with walking poses.\n- Each part is on its own layer, from back to front: [far arm](aseprite://layer/L6473), far leg, [body](aseprite://layer/L6473), near leg and near arm. The near arm is light"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 33
+    header: Claude
+    tools:
+      - tool: "Read guide: anim.timing.idle"
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Idle breathing frames
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added the `idle` loop on frames 7–10 and left the walk on frames 1–6 as it was. The character stands with straight legs and arms down, and the head and chest rise 1 px for the breath. The feet stay on the ground row the whole time.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 7 | rest | 300 ms |\n| 8 | breathing in: body up 1 px, arms still down | 150 ms |\n| 9 | breath held: body and arms up | 300 ms |\n| 10 | breathing out: body back down, arms still up | 150 ms |\n\nThe arms move a frame after the body, so the motion looks softer than a plain up-and-down step. One loop takes 900 ms. The check found no repeated frames, no foot jitter and no empty cels."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 83
+  scores:
+    readability: 3
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 2
+  overall: 2
+  note: "Clean pixel clusters and a subtle idle bob preserve the character well. The walk feels stiff, and the visible arm swings with the same-side leg instead of opposite it."

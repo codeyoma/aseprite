@@ -28,6 +28,7 @@ export const CRITERIA = {
   layers: { match: "required", min: "optional" },
   check: { rules: "optional", maxErrors: "optional", maxWarnings: "optional", tag: "optional" },
   check_fx: { maxErrors: "optional" },
+  walk_check: { tag: "optional" },
   palette: { colors: "required" },
   sprites: { title: "optional", minFrames: "optional", width: "optional", height: "optional", nineSlice: "optional", tilemap: "optional", min: "optional" },
   lua: { code: "required" },
@@ -172,6 +173,11 @@ export function evaluate(c, facts, { skill } = {}) {
       const r = parseCheck(facts.text);
       if (!r) return { pass: false, detail: (facts.text ?? "").split("\n")[0] };
       return { pass: r.errors <= (c.maxErrors ?? 0) && (c.maxWarnings === undefined || r.warnings <= c.maxWarnings), detail: `${r.errors} errors, ${r.warnings} warnings` };
+    }
+    case "walk_check": {
+      // walk_check with no arguments: the limbs the agent named (stored on the sprite) or its 'near arm'/'near leg' layers.
+      const first = (facts.text ?? "").split("\n")[0];
+      return { pass: /^WALK CHECK: ok/.test(first), detail: (facts.text ?? "").split("\n").filter((l) => /^(WALK CHECK|error|unverifiable|Name the)/.test(l)).join("; ").slice(0, 400) };
     }
     case "palette": {
       const off = list(s.colors).filter((h) => !c.colors.includes(h));

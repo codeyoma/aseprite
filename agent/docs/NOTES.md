@@ -2,6 +2,16 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Walk limb check: arms opposite legs, measured (#99)
+- **How:**
+  - `walk_check` (`walk_check.ts`, the tool in `animation_tools.ts`) reads the near arm and near leg on the walk's two contact frames. Each limb comes from a part layer, or from colors within rows (the arm above the hip, the leg below); layers named like "near arm" and "near leg" are found without naming them.
+  - Only the part connected to the limb's top row counts, so the far arm's hand in the same color doesn't skew it. The hand's mean x over the bottom two rows minus the shoulder's over the top two rows (the foot against the hip for a leg) gives a signed offset toward the facing direction.
+  - Errors: the arm and the leg on the same side at a contact, or a limb on the same side at both contacts. A limb that is missing or within 1 px of straight makes the verdict "unverifiable", never ok.
+  - The limbs are stored in the pixel spec (`walk`), so a later call needs no arguments. The benchmark's new `walk_check` criterion runs it that way: an agent that never named the limbs fails it.
+  - The animate skill makes it a gate: a walk isn't done until `walk_check` says ok, on the colored keys and again after the in-betweens.
+- **Why:** two benchmark runs with the key-pose skill text scored motion 2 like the baseline. Both drew the whole cycle in one Lua call, and both judges saw the arm swing with the same-side leg while the agent's own table said the opposite. The unit test uses that run's frames 1 and 4. Codex's review chose this measurable check first. Its other two suggestions are still open: a stage gate in the extension (one tool can't enforce stages, since `execute_lua` bypasses any tool's refusal) and motion observations in the critic.
+- **Architecture:** a pure measurement module (`limbMask`, `fromTop`, `readLimb`, `judgeWalk`) behind one tool; `pixel_spec` storage is reused; the benchmark adds a criterion type and calls the tool.
+
 ## Mascot: a digging shovel that doesn't read as a gesture
 - **How:** the `shovel` icon is tilted (blade down-left, handle up-right), and the digging mood's second frame swaps to `shovel_dirt` (the blade in a mound) instead of moving the same icon up and down.
 - **Why:** the upright 5x5 shovel (a vertical line on a block) bobbing up and down read as a raised middle finger.

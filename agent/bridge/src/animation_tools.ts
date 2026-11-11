@@ -5,6 +5,17 @@ import * as z from "zod/v4";
 import { along, ease, imageColors, smear, squashStretch, subpixelShift, transform, type Easing } from "./animation.js";
 import { documentOf } from "./document.js";
 import { failure, text, type Tool } from "./tool.js";
+import { judgeWalk, limbMask, readLimb, type ContactReading, type LimbSelector, type WalkContract } from "./walk_check.js";
+
+const limb = z.object({
+  layer: z.string().optional().describe("The limb's part layer (name or id)."),
+  colors: z.array(z.string()).optional().describe("Its colors (hex), alone or within the layer."),
+  rows: z.tuple([z.number().int(), z.number().int()]).optional().describe("Rows [y0, y1] it is in (an arm above the hip, a leg below)."),
+}).optional();
+
+const sel = (l: any): LimbSelector | undefined => (l ? { layer: l.layer, colors: l.colors, rows: l.rows } : undefined);
+const hasSel = (l?: LimbSelector) => !!l && (!!l.layer || !!l.colors?.length);
+const selText = (l: LimbSelector) => [l.layer && `layer "${l.layer}"`, l.colors?.length && `colors ${l.colors.join(" ")}`, l.rows && `rows ${l.rows[0]}-${l.rows[1]}`].filter(Boolean).join(", ");
 
 const moveSchema = z.object({
   dx: z.number().optional().describe("Pixels right."),
@@ -17,6 +28,77 @@ const moveSchema = z.object({
 });
 
 export const ANIMATION_TOOLS: Tool[] = [
+  {
+    name: "walk_check",
+    title: "Walk limb check",
+    description:
+      "Check a side-view walk's arms against its legs on the two contact frames: the near arm must swing opposite the " +
+      "near leg, and each must change sides between the contacts (rule:anim.walk.limbs). Name the near arm and near " +
+      "leg once (part layers, or colors with rows); they are stored on the sprite, so later calls (and reviews) need no " +
+      "arguments. Layers named like 'near arm' and 'near leg' are found without naming them. Reports ok, errors, or " +
+      "unverifiable (a limb missing or hanging straight), with each limb's shoulder/hip and hand/foot positions.",
+    input: z.object({
+      tag: z.string().optional().describe("The walk's tag. Default 'walk'."),
+      facing: z.enum(["right", "left"]).optional().describe("Default right."),
+      contacts: z.tuple([z.number().int().min(1), z.number().int().min(1)]).optional()
+        .describe("The two contact frames. Default the tag's first frame and the one halfway."),
+      near_arm: limb,
+      near_leg: limb,
+    }),
+    kind: "edit",
+    label: () => "Check the walk's arms and legs",
+    async run(input, aseprite) {
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
+      let spec: Record<string, any> = {};
+      try { spec = info.pixelSpec ? JSON.parse(info.pixelSpec) : {}; } catch { spec = {}; }
+      const stored: Partial<WalkContract> = spec.walk ?? {};
+      const tagName = input.tag ?? stored.tag ?? "walk";
+      const tag = info.tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
+      if (!tag) return failure(`No tag "${tagName}": tag the walk's frames first, or pass tag.`);
+      const n = tag.to - tag.from + 1;
+      const named = (re: RegExp) => info.layers.find((l) => re.test(l.name))?.name;
+      const contract: WalkContract = {
+        tag: tag.name,
+        facing: input.facing ?? stored.facing ?? "right",
+        contacts: input.contacts ?? stored.contacts ?? [tag.from, tag.from + Math.floor(n / 2)],
+        nearArm: sel(input.near_arm) ?? stored.nearArm ?? { layer: named(/near[ _-]?arm/i) },
+        nearLeg: sel(input.near_leg) ?? stored.nearLeg ?? { layer: named(/near[ _-]?leg/i) },
+      };
+      if (!hasSel(contract.nearArm) || !hasSel(contract.nearLeg)) {
+        return failure("Name the near arm and near leg: near_arm and near_leg as part layers, or as colors with rows " +
+          "(the arm's rows above the hip, the leg's below), or name the part layers 'near arm' and 'near leg'.");
+      }
+      for (const f of contract.contacts) if (f < 1 || f > info.durations.length) return failure(`Frame ${f} doesn't exist.`);
+      const readings: ContactReading[] = [];
+      for (const frame of contract.contacts) {
+        const read = async (l: LimbSelector) => {
+          const img = await doc.pixels(l.layer, frame);
+          return readLimb(limbMask(img, l), img.width, contract.facing);
+        };
+        readings.push({ frame, arm: await read(contract.nearArm), leg: await read(contract.nearLeg) });
+      }
+      const verdict = judgeWalk(readings);
+      const changed = JSON.stringify(spec.walk) !== JSON.stringify(contract);
+      if (changed) await doc.putImages([], { spec: JSON.stringify({ ...spec, walk: contract }), label: "Walk limbs" });
+      const lim = (r: ContactReading["arm"]) => r.offset === undefined ? `${r.pixels} px, not measurable`
+        : `root ${r.root![0]},${r.root![1]} tip ${r.tip![0]},${r.tip![1]}: ${r.offset > 0 ? "+" : ""}${r.offset} px (${Math.abs(r.offset) < 1 ? "straight" : r.offset > 0 ? "forward" : "back"})`;
+      return {
+        content: [text([
+          `WALK CHECK: ${verdict.status}`,
+          `Walk "${contract.tag}" facing ${contract.facing}, contacts ${contract.contacts.join(" and ")}; near arm: ${selText(contract.nearArm)}; near leg: ${selText(contract.nearLeg)}` +
+            (changed ? " (stored on the sprite)." : "."),
+          ...readings.map((r) => `frame ${r.frame}: near arm ${lim(r.arm)}; near leg ${lim(r.leg)}`),
+          ...verdict.errors.map((e) => `error: ${e}`),
+          ...verdict.unverifiable.map((u) => `unverifiable: ${u}`),
+          verdict.status === "ok" ? "The arms swing opposite the legs." :
+            verdict.status === "errors" ? "Redraw the near arm on the listed frames (its hand on the other side of the shoulder), then run walk_check again." :
+            "Fix the selection (layer, colors, rows) or draw the limbs at the contacts with a clear swing, then run walk_check again.",
+        ].join("\n"))],
+        ...(verdict.status === "errors" ? { isError: true } : {}),
+      };
+    },
+  },
   {
     name: "transform_layer",
     title: "In-between a part",

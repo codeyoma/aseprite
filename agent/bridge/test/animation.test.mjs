@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { along, bounds, ease, scale2x, smear, squashStretch, transform } from "../dist/animation.js";
 import { findTool, runTool } from "../dist/tools.js";
+import { fakeDocument } from "./helpers/fake_document.mjs";
 
 function sword(W = 40) {
   const d = new Uint8Array(W * W * 4);
@@ -133,4 +134,96 @@ test("multi-frame animation tools write once: one undo step; a bad frame writes 
   await runTool(findTool("subpixel_move"), { layer: "Arm", from_frame: 1, to_frame: 4, dx: 1 }, sub);
   assert.equal(writes(sub).length, 1);
   assert.deepEqual(writes(sub)[0].params.images.map((i) => i.frame), [2, 3, 4]);
+});
+
+// Walk limbs (#99): frames 1 and 4 of benchmark run 2026-11-11-claude-6, which both judges marked "the arm swings
+// with the same-side leg". N is the near arm and near leg (navy), g the far leg, B the shirt, s skin.
+const RUN6 = {
+  1: [
+    "........................", "........................", "........................", "........................",
+    ".........sssssss........", ".........sssssss........", ".........sssssss........", ".........sssskss........",
+    ".........sssssss........", ".........sssssss........", ".........sssssss........", ".........BBBBBBB........",
+    ".........BBNNBBB........", ".........BBNNBBB........", ".........BNNBBBB........", "........NNNBBBBB........",
+    ".......NNBBBBBBBN.......", ".......ssBBBBBBBs.......", ".........BBBBBBB........", ".........BBBBBBB........",
+    ".........BBBBBBB........", "...........gg...........", "...........gg...........", "...........Ngg..........",
+    "..........NNgg..........", "..........NNgg..........", "..........NNgg..........", ".........NN..gg.........",
+    ".........NN..gg.........", "........NN....gg........", "........NN....ggg.......", "........................",
+  ],
+  4: [
+    "........................", "........................", "........................", "........................",
+    ".........sssssss........", ".........sssssss........", ".........sssssss........", ".........sssskss........",
+    ".........sssssss........", ".........sssssss........", ".........sssssss........", ".........BBBBBBB........",
+    ".........BBNNBBB........", ".........BBNNBBB........", ".........BBBNNBB........", "........NBBBBNNN........",
+    ".......NNBBBBBBNN.......", ".......ssBBBBBBss.......", ".........BBBBBBB........", ".........BBBBBBB........",
+    ".........BBBBBBB........", "...........gg...........", "...........gg...........", "...........ggN..........",
+    "..........ggNN..........", "..........ggNN..........", "..........ggNN..........", ".........gg..NN.........",
+    ".........gg..NN.........", "........gg....NN........", "........gg....NNN.......", "........................",
+  ],
+};
+const KEY = { N: [29, 43, 83], g: [60, 60, 90], B: [41, 120, 255], s: [255, 204, 170], k: [24, 20, 37] };
+function asciiImage(rows) {
+  const width = rows[0].length, height = rows.length, data = new Uint8Array(width * height * 4);
+  rows.forEach((r, y) => [...r].forEach((ch, x) => { if (KEY[ch]) data.set([...KEY[ch], 255], (y * width + x) * 4); }));
+  return { width, height, data };
+}
+/** The same frame with the near arm moved to the other side of the shoulder (mirrored about x = 11.5 in rows 12-17). */
+function swapArm(rows) {
+  return rows.map((r, y) => {
+    if (y < 12 || y > 17) return r;
+    const arm = [...r].map((ch) => (ch === "N" || (y === 17 && ch === "s") ? ch : "."));
+    const rest = [...r].map((ch, x) => (arm[x] !== "." ? (x >= 9 && x <= 15 ? "B" : ".") : ch));
+    for (let x = 0; x < 24; x++) if (arm[x] !== ".") { const m = 23 - x; rest[m] = arm[x]; }
+    return rest.join("");
+  });
+}
+
+test("walk limbs: the benchmark's same-side arm swing is an error at both contacts (#99)", async () => {
+  const { judgeWalk, limbMask, readLimb } = await import("../dist/walk_check.js");
+  const arm = { colors: ["#1d2b53"], rows: [11, 17] }, leg = { colors: ["#1d2b53"], rows: [21, 30] };
+  const read = (rows, frame) => {
+    const img = asciiImage(rows);
+    return { frame, arm: readLimb(limbMask(img, arm), img.width, "right"), leg: readLimb(limbMask(img, leg), img.width, "right") };
+  };
+  const bad = judgeWalk([read(RUN6[1], 1), read(RUN6[4], 4)]);
+  assert.equal(bad.status, "errors");
+  assert.equal(bad.errors.filter((e) => /both swing/.test(e)).length, 2, bad.errors.join("\n"));
+  const c1 = read(RUN6[1], 1);
+  assert.ok(c1.arm.offset < -1 && c1.leg.offset < -1, JSON.stringify(c1));
+
+  const good = judgeWalk([read(swapArm(RUN6[1]), 1), read(swapArm(RUN6[4]), 4)]);
+  assert.equal(good.status, "ok", JSON.stringify(good));
+
+  const sameBack = judgeWalk([read(RUN6[1], 1), read(RUN6[1], 4)]);
+  assert.ok(sameBack.errors.some((e) => /near arm swings back at both contacts/.test(e)), sameBack.errors.join("\n"));
+
+  const none = judgeWalk([{ frame: 1, arm: { pixels: 0 }, leg: c1.leg }, read(RUN6[4], 4)]);
+  assert.ok(none.unverifiable.some((u) => /frame 1: no near arm pixels/.test(u)));
+});
+
+test("walk_check finds 'near arm'/'near leg' layers, stores the limbs, and reruns without arguments (#99)", async () => {
+  const cel = (rows, ch) => {
+    const img = asciiImage(rows.map((r) => [...r].map((c) => (c === ch ? "N" : ".")).join("")));
+    return { x: 0, y: 0, width: img.width, height: img.height, data: img.data };
+  };
+  const armRows = (rows) => rows.map((r, y) => (y >= 11 && y <= 17 ? r : ".".repeat(24)));
+  const legRows = (rows) => rows.map((r, y) => (y >= 21 ? r : ".".repeat(24)));
+  const frames = [1, 2, 3, 4, 5, 6].map((f) => (f === 4 ? RUN6[4] : RUN6[1]));
+  const fake = fakeDocument({
+    width: 24, height: 32, frames: 6, tags: [{ name: "walk", from: 1, to: 6 }],
+    layers: [
+      { name: "near arm", frames: frames.map((r) => cel(armRows(r), "N")) },
+      { name: "near leg", frames: frames.map((r) => cel(legRows(r), "N")) },
+    ],
+  });
+  const r = await runTool(findTool("walk_check"), {}, fake);
+  const t = r.content[0].text;
+  assert.match(t, /^WALK CHECK: errors/);
+  assert.match(t, /near arm: layer "near arm"; near leg: layer "near leg" \(stored on the sprite\)/);
+  assert.match(t, /frame 1 \(contact\): the near arm and the near leg both swing back/);
+  const st = (await fake.request("get_state")).result;
+  assert.equal(JSON.parse(st.activeSprite.pixelSpec).walk.nearArm.layer, "near arm");
+  const again = await runTool(findTool("walk_check"), {}, fake);
+  assert.doesNotMatch(again.content[0].text, /stored on the sprite/);
+  const noTag = await runTool(findTool("walk_check"), { tag: "run" }, fake);
+  assert.match(noTag.content[0].text, /No tag "run"/);
 });

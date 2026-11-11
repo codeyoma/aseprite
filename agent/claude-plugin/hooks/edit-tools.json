@@ -54,6 +54,7 @@
     "subpixel_move",
     "transform_layer",
     "undo",
+    "walk_check",
     "write_pixels"
   ],
   "nudge": "A tool result that says pixels changed is no proof the art is right: before you decide you are done, look at it with snapshot (view: \"filmstrip\" for an animation)."

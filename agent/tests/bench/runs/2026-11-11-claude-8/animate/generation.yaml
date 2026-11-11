@@ -1,0 +1,117 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: dda0398a4
+date: "2026-11-11T08:57:13.845Z"
+seconds: 101
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 78
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: rules/animation"
+        status: failed
+      - tool: Inspect pixels
+        status: failed
+      - tool: "Read guide: rules/animation"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "The walk check passes. Next I'm running the mechanical checks for repeated frames and feet jitter.\nI made the 6-frame `walk` cycle facing right, with the arms swinging opposite the legs. `walk_check` measured the pixels on the two contact frames (1 and 4) and says ok. The duplicate-frame and ground-jitter checks found nothing.\n\nThe character had no arms, so I added them in dark navy with skin-colored hands. The animation is in a new group [AI: walk](aseprite://layer/L5947)'s parent group, split into the layers far arm, far leg, body, near leg and near arm. The far leg is a darker shade so you can tell it from the near one. Your original [Hero](aseprite://layer/L5862) layer is untouched but hidden.\n\n| Frame | Pose | ms |\n|---|---|---|\n| 1 | contact: near leg forward, near arm back | 120 |\n|"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 23
+    header: Claude
+    tools:
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added a 4-frame `idle` loop on frames 7–10 and left the walk on frames 1–6 as it was. Each idle frame was drawn on the same part layers as the walk, and the duplicate-frame, ground-jitter and empty-cel checks on 7–10 found no problems.\n\nThe pose is a plain stand: legs straight, arm at the side. The head and chest move 1 px up and down, and the feet never move.\n\n| Frame | Pose | ms |\n|---|---|---|\n| 7 | rest | 300 |\n| 8 | 1 px up (breathe in) | 150 |\n| 9 | rest | 300 |\n| 10 | 1 px down (breathe out) | 150 |\n\nFrames 7 and 9 are the same picture on purpose, since the breath passes through the rest pose twice. The far arm's cel in these frames is empty because it's hidden behind the body."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 101
+  scores:
+    readability: 3
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 2
+  overall: 2
+  note: "The six-frame walk and four-frame idle read clearly, with clean pixel clusters. Motion feels stiff, and idle breathing changes leg lengths across a two-pixel vertical range instead of the requested one-pixel bob."

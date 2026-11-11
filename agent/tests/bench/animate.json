@@ -67,6 +67,12 @@
       "maxWarnings": 0
     },
     {
+      "id": "arms-opposite-legs",
+      "type": "walk_check",
+      "tag": "walk",
+      "desc": "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    },
+    {
       "id": "check-clean",
       "type": "check",
       "desc": "check: 0 errors"
