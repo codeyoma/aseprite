@@ -143,6 +143,46 @@ do
   check("scoped-write inside the scope stays", r.layer and s.layers[1]:cel(2) ~= nil)
 end
 
+-- Document-scoped (#90): every request names a sprite that is not the active
+-- tab (route.doc). Writes change that sprite and are captured on it; the
+-- user's sprite, frame, layer and undo history stay as they were; only the
+-- requests marked "activates" (and those that make a sprite) make a sprite
+-- active, and with sprite:transaction in the build nothing else does.
+-- Requests that make a sprite (create_*) leave it active, as unrouted ones do.
+local MAKES_SPRITE = { create_sprite = true, create_animation = true, create_tilemap = true }
+for _, name in ipairs(names) do
+  local spec = P.requests[name]
+  local target = fixture(name)
+  local tBefore = { undo = target.undoHistory.current, seq = capture:seq() }
+  local user = Sprite(6, 6, ColorMode.RGB)       -- the user's tab, now active
+  user.layers[1].name = "Mine"
+  user:newEmptyFrame()
+  app.frame = user.frames[2]
+  local uBefore = { undo = user.undoHistory.current, layer = app.layer, frame = app.frame.frameNumber }
+  local activations = H.stats().activations
+  local route = { doc = "S" .. target.id }
+  composites = 0
+  local ok, err = pcall(H.call, name, SAMPLES[name], nil, route)
+  local made = MAKES_SPRITE[name]
+  check("routed: user's sprite stays active: " .. name, made or app.sprite == user, app.sprite and app.sprite.filename)
+  check("routed: user's frame and layer stay: " .. name, made or (app.frame.frameNumber == uBefore.frame and app.layer == uBefore.layer))
+  check("routed: user's history untouched: " .. name, user.undoHistory.current == uBefore.undo)
+  if DocumentHandlers.isWrite(spec) and not made then
+    check("routed write changes its sprite: " .. name, ok and target.undoHistory.current ~= tBefore.undo, err)
+    -- A write that changes no pixels of the frame (palette of an RGB sprite, slices, new frames) records no step.
+    local step = capture:last()
+    check("routed write is captured on its sprite: " .. name, composites >= 2 and
+      (capture:seq() == tBefore.seq or step.spriteId == target.id), step and step.spriteId)
+  elseif made then
+    check("routed create makes a sprite: " .. name, ok and route.moved == app.sprite.id and app.sprite ~= user, err)
+  else
+    check("routed read leaves its sprite alone: " .. name, target.undoHistory.current == tBefore.undo and capture:seq() == tBefore.seq, err)
+  end
+  if H.hasSpriteTransactions() and not spec.activates then
+    check("routed without activating: " .. name, H.stats().activations == activations, H.stats().activations - activations)
+  end
+end
+
 -- Requests that need an active sprite say so, before their handler runs.
 for i = #app.sprites, 1, -1 do app.sprites[i]:close() end
 for _, name in ipairs(names) do

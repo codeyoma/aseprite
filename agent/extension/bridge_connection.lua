@@ -6,7 +6,7 @@
 --   local BridgeConnection = dofile("bridge_connection.lua")
 --   local conn = BridgeConnection.new{
 --     protocol = P, preferences = plugin.preferences,
---     onRequest = function(method, params, origin, chat, blob) return result, bytes end,  -- may error; blob: the request's binary frame
+--     onRequest = function(method, params, origin, chat, blob, doc) return result, bytes end,  -- may error; blob: the request's binary frame; doc: the sprite it names (#90)
 --     onNotification = function(method, params) end,                  -- e.g. chat.event
 --     onConnectionChange = function(connected) end,
 --     gate = function(method) return true | "hold" | "error message" end,  -- optional; for origin "chat"
@@ -100,7 +100,7 @@ end
   -- request's own binary frame (#95), passed on to onRequest.
   local function handleRequest(msg, blob)
     local id = msg.id
-    local ok, result, bytes = xpcall(onRequest, debug.traceback, msg.method, msg.params or {}, msg.origin, msg.chat, blob)
+    local ok, result, bytes = xpcall(onRequest, debug.traceback, msg.method, msg.params or {}, msg.origin, msg.chat, blob, msg.doc)
     if not ok then
       local err = type(result) == "table" and result or { code = -32000, message = tostring(result) }
       send({ jsonrpc = "2.0", id = id, error = err })
@@ -220,7 +220,7 @@ local function onReceive(mt, data, err)
       onNotification(msg.method, msg.params)
     elseif msg.method then
       if type(msg.binary) == "number" and msg.binary % 1 == 0 and msg.binary >= 0 then
-        msg = { id = msg.id, method = msg.method, params = msg.params, origin = msg.origin, chat = msg.chat,
+        msg = { id = msg.id, method = msg.method, params = msg.params, origin = msg.origin, chat = msg.chat, doc = msg.doc,
                 binary = math.tointeger(msg.binary) }
         awaiting = msg
       else

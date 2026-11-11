@@ -25,11 +25,20 @@ local function valid(sprite)
   return sprite ~= nil and pcall(function() return sprite.width end)
 end
 
--- The active frame of the active sprite, flattened, or nil.
-function M.composite()
-  local sprite = app.sprite
+-- The sprite and frame a step is captured on (#90): the request's site (its
+-- sprite and frame, or a sprite the request made), else the active ones.
+local function target(site)
+  if site and site.moved then return site.moved, nil end
+  if site and site.sprite then return site.sprite, site.frame end
+  return app.sprite, nil
+end
+
+-- One frame of a sprite, flattened, or nil: the site's (see target) or the
+-- active frame of the active sprite.
+function M.composite(site)
+  local sprite, frame = target(site)
   if not valid(sprite) or sprite.width * sprite.height > M.MAX_PIXELS then return nil end
-  local frame = (app.frame and app.frame.frameNumber) or 1
+  frame = frame or (sprite == app.sprite and app.frame and app.frame.frameNumber) or 1
   if frame > #sprite.frames then frame = 1 end
   local img = Image(sprite.width, sprite.height, ColorMode.RGB)
   img:drawSprite(sprite, frame)
@@ -125,10 +134,18 @@ function M:seq() return self.seqNo end
 -- Runs fn(...) and, for edit methods, records the active frame before and
 -- after. Errors propagate; a failed edit records nothing.
 function M:around(method, fn, ...)
+  return self:aroundSite(nil, method, fn, ...)
+end
+
+-- around for a request's site (#90): the step is captured on the request's
+-- sprite and frame, which may not be the active ones, and is keyed by that
+-- sprite, so chats on two sprites never mix their steps.
+function M:aroundSite(site, method, fn, ...)
   if not self.edits[method] then return fn(...) end
-  local okBefore, before = pcall(M.composite)
+  local okBefore, before = pcall(M.composite, site)
   local results = table.pack(fn(...))
-  local okAfter, after, frame = pcall(M.composite)
+  local okAfter, after, frame = pcall(M.composite, site)
+  local sprite = target(site)
   if okAfter and after then
     if not (okBefore and before and before.width == after.width and before.height == after.height
         and before:isEqual(after)) then
@@ -138,7 +155,7 @@ function M:around(method, fn, ...)
         seq = self.seqNo, method = method, frame = frame,
         -- Which chat's request made it, and on which sprite (#90): chats run
         -- at the same time, so each claims only its own steps.
-        chat = self.chat, spriteId = app.sprite and app.sprite.id or nil,
+        chat = self.chat, spriteId = valid(sprite) and sprite.id or nil,
         before = okBefore and before or nil, after = after,
         bounds = d.bounds, changed = d.changed,
       })
@@ -165,12 +182,13 @@ function M:claim(sinceSeq, chat)
   local first, last = open[1], open[#open]
   local methods = {}
   for _, s in ipairs(open) do
-    if s.frame ~= last.frame then return last end
+    if s.frame ~= last.frame or s.spriteId ~= last.spriteId then return last end
     methods[#methods + 1] = s.method
   end
   local d = M.measure(first.before, last.after)
   return lazyDiff{
     seq = last.seq, method = table.concat(methods, "+"), frame = last.frame, claimed = true, merged = #open,
+    chat = last.chat, spriteId = last.spriteId,
     before = first.before, after = last.after, bounds = d.bounds, changed = d.changed,
   }
 end
@@ -189,20 +207,30 @@ function M:othersSince(sinceSeq, chat, spriteId)
   return false
 end
 
--- Saves the current canvas as a named checkpoint.
-function M:saveCheckpoint(name)
-  local img, frame = M.composite()
+-- Saves the current canvas (of the site's sprite, or the active one) as a named checkpoint.
+function M:saveCheckpoint(name, site)
+  local img, frame = M.composite(site)
   if not img then error("No sprite to checkpoint (none open, or larger than 512x512)") end
-  self.checkpoints[name] = { image = img, frame = frame }
+  local sprite = target(site)
+  self.checkpoints[name] = { image = img, frame = frame, spriteId = sprite and sprite.id }
+end
+
+-- The newest step on a sprite (any sprite when spriteId is nil).
+function M:lastOn(spriteId)
+  for i = #self.steps, 1, -1 do
+    local s = self.steps[i]
+    if spriteId == nil or s.spriteId == spriteId then return s end
+  end
 end
 
 -- diff_visual request: compares the current canvas with the canvas before
 -- the last edit step, or with a checkpoint. Returns a header and the diff
--- image's RGBA bytes.
-function M:diffVisual(params)
+-- image's RGBA bytes. site (#90): the request's sprite and frame; its last
+-- step is the last step on that sprite.
+function M:diffVisual(params, site)
   if params.save then
-    self:saveCheckpoint(params.save)
-    local s = app.sprite
+    self:saveCheckpoint(params.save, site)
+    local s = target(site)
     return { saved = params.save, width = s.width, height = s.height, changed = 0 }, Image(s.width, s.height, ColorMode.RGB).bytes
   end
   local base, against
@@ -211,11 +239,12 @@ function M:diffVisual(params)
     if not c then error("No checkpoint named '" .. params.checkpoint .. "'") end
     base, against = c.image, "checkpoint " .. params.checkpoint
   else
-    local last = self:last()
+    local sprite = target(site)
+    local last = self:lastOn(sprite and site and sprite.id or nil)
     if not last then error("No edit step recorded yet") end
     base, against = last.before, "before the last edit step (" .. last.method .. ")"
   end
-  local now = M.composite()
+  local now = M.composite(site)
   if not now then error("No sprite open, or larger than 512x512") end
   local d = M.diff(base, now)
   local b = d.bounds

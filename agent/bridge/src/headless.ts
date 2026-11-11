@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import type { Reply } from "./aseprite.js";
+import type { RequestRoute } from "./tool.js";
 import { base64Bytes, checkResult, isRequest, PROTOCOL } from "./protocol.js";
 import { sessionFile } from "./session.js";
 
@@ -30,6 +31,8 @@ export interface HeadlessRequest {
   id: number;
   method: string;
   params: Record<string, unknown>;
+  /** The sprite the request acts on (#90): a sprite id from get_state; default the active sprite. */
+  doc?: string;
 }
 
 export interface HeadlessReply {
@@ -172,17 +175,18 @@ export class HeadlessLink {
   }
 
   /** A protocol request (or a runner one: open, close, shutdown). Same shape as AsepriteLink.request. */
-  request(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000): Promise<Reply> {
+  request(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000, route?: RequestRoute): Promise<Reply> {
     if (RUNNER_METHODS.has(method)) {
       if (method === "open") return Promise.reject(new Error("Use HeadlessLink.open, which checks the live window"));
     } else {
       // Params are checked by the runner's handlers on arrival (wire_params.lua), as in the live window (#96).
       if (!isRequest(method)) return Promise.reject(new Error(`Not a protocol request: ${method}`));
     }
-    return this.send(method, params, timeoutMs);
+    // Only the sprite (doc) matters to the runner; there are no chats here.
+    return this.send(method, params, timeoutMs, route?.doc);
   }
 
-  private send(method: string, params: Record<string, unknown>, timeoutMs: number): Promise<Reply> {
+  private send(method: string, params: Record<string, unknown>, timeoutMs: number, doc?: string): Promise<Reply> {
     if (this.exited || !this.child) return Promise.reject(new Error(`The headless Aseprite ${this.exited ?? "is not running"}`));
     const id = this.nextId++;
     return new Promise<Reply>((resolve, reject) => {
@@ -192,7 +196,7 @@ export class HeadlessLink {
       }, timeoutMs);
       this.pending.set(id, { method, resolve, reject, timer });
       // JSON lines carry no binary frames: raw bytes go as base64 (#95).
-      this.child!.stdin.write(encodeRequest({ id, method, params: base64Bytes(params) }));
+      this.child!.stdin.write(encodeRequest({ id, method, params: base64Bytes(params), ...(doc ? { doc } : {}) }));
     });
   }
 

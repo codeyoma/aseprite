@@ -1137,6 +1137,43 @@ int Sprite_undoTo(lua_State* L)
   return 1;
 }
 
+// sprite:transaction([label,] function) (this fork): like
+// app.transaction(), but on this sprite's document, which doesn't
+// have to be the active one. Every change the function makes to this
+// sprite is one undo step on its own history; an error rolls them
+// back. Changes to other sprites are not part of it.
+int Sprite_transaction(lua_State* L)
+{
+  auto sprite = get_docobj<Sprite>(L, 1);
+  const int top = lua_gettop(L);
+  int index = 2;
+  std::string label = Tx::kDefaultTransactionName;
+  if (lua_isstring(L, index)) {
+    label = lua_tostring(L, index);
+    ++index;
+  }
+  if (!lua_isfunction(L, index))
+    return luaL_error(L, "sprite:transaction() expects a function");
+
+  Doc* doc = static_cast<Doc*>(sprite->document());
+  int nresults = 0;
+  try {
+    // Locks this document (re-entrant on this thread) and starts a
+    // transaction on it, or joins the one already running on it.
+    Tx tx(doc, label);
+    lua_pushvalue(L, index);
+    if (lua_pcall(L, 0, LUA_MULTRET, 0) == LUA_OK)
+      tx.commit();
+    else
+      return lua_error(L); // pcall already put an error object on the stack
+    nresults = lua_gettop(L) - top;
+  }
+  catch (const LockedDocException& ex) {
+    return luaL_error(L, "cannot lock document for transaction\n%s", ex.what());
+  }
+  return nresults;
+}
+
 const luaL_Reg Sprite_methods[] = {
   { "__eq",              Sprite_eq                },
   { "resize",            Sprite_resize            },
@@ -1144,6 +1181,7 @@ const luaL_Reg Sprite_methods[] = {
   { "saveAs",            Sprite_saveAs            },
   { "saveCopyAs",        Sprite_saveCopyAs        },
   { "undoTo",            Sprite_undoTo            },
+  { "transaction",       Sprite_transaction       },
   { "close",             Sprite_close             },
   { "loadPalette",       Sprite_loadPalette       },
   { "setPalette",        Sprite_setPalette        },

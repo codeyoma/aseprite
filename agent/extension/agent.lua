@@ -101,14 +101,14 @@ function init(plugin)
   connection = load("bridge_connection.lua").new{
     protocol = protocol, alert = Prompter.alert,
     preferences = plugin.preferences,
-    -- Through the panel, which moves the running chat to a sprite the
-    -- request opens or makes; the gate holds requests while the running
-    -- chat's sprite isn't the active tab.
-    -- A chat turn's request (origin "chat") runs on its chat's sprite.
+    -- A chat turn's request (origin "chat") goes through the panel, which
+    -- runs it on its chat's sprite (whichever tab is active) and moves the
+    -- chat to a sprite the request opens or makes.
     -- blob: the request's binary frame (#95), the pixels its params refer to.
-    onRequest = function(method, params, origin, chat, blob)
-      if Panel and origin == "chat" then return Panel.handleRequest(handlers.call, chat, method, params, blob) end
-      return handlers.call(method, params, blob)
+    -- doc (#90): the sprite the request names (the envelope's doc); a chat's requests default to its sprite.
+    onRequest = function(method, params, origin, chat, blob, doc)
+      if Panel and origin == "chat" then return Panel.handleRequest(handlers.call, chat, method, params, blob, doc) end
+      return handlers.call(method, params, blob, doc ~= nil and { doc = doc } or nil)
     end,
     onNotification = function(method, params)
       if method == "chat.event" and Panel then Panel.onEvent(params) end
@@ -424,7 +424,11 @@ function init(plugin)
   attachCommand("AgentAttachFramePopup", "Attach to AI Chat", "frame_popup_properties", "frame")
 
   if app.events then
-    app.events:on("sitechange", function() Panel.onSiteChange() end)
+    app.events:on("sitechange", function()
+      -- Where the user left each sprite: a chat's requests on it default to that frame and layer (#90).
+      handlers.noteSite()
+      Panel.onSiteChange()
+    end)
     -- Undo/redo from the Edit menu changes which replies are applied.
     app.events:on("aftercommand", function() Panel.refreshContext() end)
   end

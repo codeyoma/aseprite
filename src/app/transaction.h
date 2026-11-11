@@ -111,6 +111,7 @@ private:
   };
 
   void rollback(CmdTransaction* newCmds);
+  Context* positionContext() const;
 
   // DocObserver impl
   void onSelectionChanged(DocEvent& ev) override;

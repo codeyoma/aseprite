@@ -69,10 +69,16 @@ export async function startHttpEndpoint(link: AsepriteRequester, token: string, 
     // and critics), so it is marked with its origin and chat.
     // ?chat=<id>: the panel's chat whose agent (or sub-agent, or critic)
     // calls; the extension runs the request on that chat's sprite.
-    const chat = new URL(req.url ?? "/", "http://localhost").searchParams.get("chat") ?? undefined;
+    // ?doc=<sprite id> (#90): every request names that sprite instead (an
+    // agent bound to one sprite, e.g. a sub-agent working on a copy).
+    const query = new URL(req.url ?? "/", "http://localhost").searchParams;
+    const chat = query.get("chat") ?? undefined;
+    const doc = query.get("doc") ?? undefined;
     const requester: AsepriteRequester = {
-      request: (method, params = {}, timeoutMs) =>
-        link.request(method, scope ? { ...params, scope } : params, Math.max(timeoutMs ?? 0, CHAT_REQUEST_TIMEOUT_MS), { origin: "chat", chat }),
+      request: (method, params = {}, timeoutMs, route) =>
+        link.request(method, scope ? { ...params, scope } : params, Math.max(timeoutMs ?? 0, CHAT_REQUEST_TIMEOUT_MS), {
+          ...route, origin: "chat", chat, ...(doc || route?.doc ? { doc: doc ?? route?.doc } : {}),
+        }),
     };
     const lead = !scope && !critic;
     const bind = <T>(r: T | undefined): T | undefined =>

@@ -157,7 +157,13 @@ for (const file of files) {
     test(`contract ${file.replace(/\.json$/, "")}: ${sc.name}`, async () => {
       const legend = { ...LEGEND, ...sc.legend };
       const fake = fakeDocument(fixtureOptions(sc.fixture, legend));
-      const state = async () => (await fake.request("get_state", {})).result;
+      // routed (#90): another sprite becomes the active tab and every step names the fixture sprite.
+      let route;
+      if (sc.routed) {
+        route = { doc: (await fake.request("get_state", {})).result.activeSprite.id };
+        await fake.request("create_sprite", { width: 2, height: 2, rgba: Buffer.alloc(16).toString("base64"), title: "other" });
+      }
+      const state = async () => (await fake.request("get_state", {}, undefined, route)).result;
       const idsIn = (st) => (name) => flat(st.activeSprite.layers).find((l) => l.name === name)?.id;
       // Params with rgba { rows } encoded and { $id } resolved.
       const prepare = async (v, key) => {
@@ -184,7 +190,7 @@ for (const file of files) {
         else if (step.pixels) { method = "snapshot"; params = await prepare(step.pixels); }
         else { method = "get_state"; params = {}; }
         let reply, error;
-        try { reply = await fake.request(method, params); } catch (e) { error = e; }
+        try { reply = await fake.request(method, params, undefined, route); } catch (e) { error = e; }
         if (step.fakeUnsupported) {
           assert.match(String(error?.message), /^fake document: .* not supported/, `${where}: the fake should refuse (${step.fakeUnsupported})`);
           return;   // what follows depends on what Aseprite did here
@@ -205,6 +211,7 @@ for (const file of files) {
         } else if (step.state) problems = match(step.state, normalize(reply.result), ids);
         assert.deepEqual(problems, [], `${where} (${method})`);
       }
+      if (sc.routed) assert.equal((await fake.request("get_state", {})).result.activeSprite.filename, "other", "the other sprite stays active");
     });
   }
 }

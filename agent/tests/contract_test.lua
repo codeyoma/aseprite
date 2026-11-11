@@ -308,7 +308,13 @@ local function runScenario(sc)
   for k, v in pairs(LEGEND) do legend[k] = v end
   for k, v in pairs(sc.legend or {}) do legend[k] = v end
   build(sc.fixture, legend)
-  local function state() return (H.call("get_state", {})) end
+  -- routed (#90): another sprite becomes the active tab and every step names the fixture sprite.
+  local route
+  if sc.routed then
+    route = { doc = H.call("get_state", {}).activeSprite.id }
+    H.call("create_sprite", { width = 2, height = 2, rgba = base64(string.rep("\0", 16)), title = "other" })
+  end
+  local function state() return (H.call("get_state", {}, nil, route)) end
   local function idsIn(st)
     return function(name)
       for _, l in ipairs(flat(st.activeSprite.layers)) do if l.name == name then return l.id end end
@@ -341,7 +347,7 @@ local function runScenario(sc)
     if step.request then method, params = step.request, prepare(step.params or {})
     elseif step.pixels then method, params = "snapshot", prepare(step.pixels)
     else method, params = "get_state", {} end
-    local res = table.pack(pcall(H.call, method, params))
+    local res = table.pack(pcall(H.call, method, params, nil, route))
     if step.error then
       if res[1] then return where .. ": expected an error containing '" .. step.error .. "', got " .. show(res[2]) end
       if not errorText(res[2]):find(step.error, 1, true) then
@@ -364,6 +370,10 @@ local function runScenario(sc)
     end
     end
     ::continue::
+  end
+  if sc.routed then
+    local active = H.call("get_state", {}).activeSprite
+    if not active or active.filename ~= "other" then return "the other sprite should stay active, got " .. show(active and active.filename) end
   end
 end
 

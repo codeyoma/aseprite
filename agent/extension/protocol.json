@@ -1,12 +1,13 @@
 {
   "description": "Wire protocol between the aseprite-agent bridge and the Aseprite extension (JSON-RPC 2.0 over WebSocket). This file is the single definition: the extension ships it, the bridge copies it, and contract tests check both sides against it. Bump version on any incompatible change.",
-  "version": 41,
+  "version": 42,
   "handshake": {
     "hello": "extension -> bridge, first message: { token, protocol, asepriteVersion }",
     "welcome": "bridge -> extension: the connection is accepted",
     "incompatible": "bridge -> extension, then close: { expected, received, message }",
     "replaced": "bridge -> extension, then close: another Aseprite took this bridge; the extension stays disconnected (no automatic reconnect) until the user uses the agent again"
   },
+  "routing": "Requests name the sprite they act on (#90, protocol 42). The bridge's JSON-RPC envelope may carry, next to id, method and params: origin (\"chat\" for a chat turn's request), chat (the panel's chat id) and doc (a sprite id from get_state, \"S12\", or the number 12). The extension runs the request on doc's sprite, else on the chat's sprite, else on the active sprite; a doc that names no open sprite is an error. A request on a sprite that isn't the active tab leaves the tab, the user's frame and layer and the other sprites' undo histories alone: its layer and frame refs resolve against that sprite, the default frame and layer are where that sprite was when last active, its change is one undo step on that sprite's history, and undo and redo move that sprite's history. Requests marked activates (agent-written Lua, Aseprite commands, timeline links) run with the sprite made active for the call, and the user's sprite, frame and layer come back afterwards.",
   "requests": {
     "ping": {
       "kind": "read",
@@ -20,6 +21,7 @@
     "execute_lua": {
       "kind": "scoped-write",
       "needsSprite": false,
+      "activates": true,
       "params": {
         "code": "string",
         "args": "any?",
@@ -62,6 +64,7 @@
     "run_command": {
       "kind": "scoped-write",
       "needsSprite": false,
+      "activates": true,
       "params": {
         "name": "string",
         "params": "object?"
@@ -125,6 +128,7 @@
     },
     "apply_timeline_text": {
       "kind": "scoped-write",
+      "activates": true,
       "params": {
         "text": "string",
         "plan": "boolean?"
@@ -305,8 +309,9 @@
   "kinds": {
     "read": "Leaves the document alone. Runs as is, also for a sub-agent.",
     "write": "Changes the document in a way the scope guard can't check (undo history, palette, slices, another sprite). Captured as an edit step; refused for a sub-agent's scope.",
-    "scoped-write": "Changes cels, layers or frames of the active sprite. Captured as an edit step; for a sub-agent's scope, undone when it changed anything outside the scope.",
-    "needsSprite": "Whether the request needs an active sprite (\"No active sprite\" otherwise). Default: true for writes, false for reads."
+    "scoped-write": "Changes cels, layers or frames of the request's sprite (see routing). Captured as an edit step; for a sub-agent's scope, undone when it changed anything outside the scope.",
+    "needsSprite": "Whether the request needs a sprite (the routed one or the active one; \"No active sprite\" otherwise). Default: true for writes, false for reads.",
+    "activates": "The request runs with its sprite made active for the call (see routing): it runs agent-written Lua or Aseprite commands, which act on the active document. Default: false."
   },
   "params": {
     "types": "Each request lists its params as name: type, and so does each bridge method (bridgeMethods). Types: string, integer, number, boolean, array, object, any, layer, frame, frames, bytes (pixel bytes: base64 text or { offset, length } into the request's binary frame, see binaryRequests), or the name of a shape (shapes: an object with those fields). T[] is a list of T and T{} an object whose values are T (e.g. integer[][], string{}). A trailing ? marks it optional; null counts as missing. Unknown params (and unknown fields of a shape) are an error, except scope (sub-agent scopes), which any request may carry. An empty list stands for an empty object and the other way round (Lua's json.encode writes an empty table as []). Who checks (#96): the receiver, once. The extension checks a request's params on arrival (wire_params.lua, which also resolves layers and frames); the bridge checks a bridge method's params on arrival and a request's result when the request gives its type (result), and checks tool inputs (zod) before it sends anything. Errors name the method and the param path, e.g. \"chat.send: 'attachments[0].path' must be a string\". Results are strict too: a new field in a result is a protocol change (version bump).",
@@ -518,6 +523,7 @@
       "text": "string"
     },
     "SpriteSummary": {
+      "id": "string",
       "filename": "string",
       "width": "integer",
       "height": "integer",

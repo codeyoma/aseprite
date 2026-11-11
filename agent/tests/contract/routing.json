@@ -1,0 +1,35 @@
+{
+  "scenarios": [
+    {
+      "name": "routed (#90): requests name the fixture sprite while another sprite is the active tab",
+      "notes": "routed: the runners make a second sprite (2x2, 'other') active after building the fixture and send every step with doc = the fixture sprite's id (get_state's SpriteSummary.id); afterwards 'other' must still be the active sprite. A request without a frame or layer acts where the fixture sprite was left (activeFrame, activeLayer).",
+      "routed": true,
+      "fixture": {
+        "title": "routed", "width": 4, "height": 2, "durations": [100, 120],
+        "layers": [
+          { "name": "Arm", "cels": { "2": ["....", ".g.."] } },
+          { "name": "Body", "cels": { "1": ["bbbb", "bbbb"] } }
+        ],
+        "activeLayer": "Arm", "activeFrame": 2
+      },
+      "steps": [
+        { "request": "get_state", "params": {}, "result": {
+          "activeSprite": { "filename": "routed", "width": 4 },
+          "activeLayerId": { "$layerId": "Arm" }, "activeFrame": 2
+        } },
+        { "request": "write_pixels", "params": { "rows": ["r"], "legend": { "r": "#ff0000" }, "x": 3, "y": 0 },
+          "result": { "changed": 1, "frame": 2, "layer": { "$layerId": "Arm" } } },
+        { "pixels": { "layer": { "$id": "Arm" }, "frame": 2 }, "rows": ["...r", ".g.."] },
+        { "request": "put_image", "params": { "width": 1, "height": 1, "rgba": { "rows": ["y"] }, "frame": 1, "layer": "Body", "x": 0, "y": 1 },
+          "result": { "layer": { "$layerId": "Body" }, "name": "Body" } },
+        { "pixels": { "frame": 1 }, "rows": ["....", "y..."] },
+        { "request": "apply", "params": { "ops": [{ "op": "add_layer", "name": "Shade" }, { "op": "rect", "layer": "Shade", "frame": 1, "x": 1, "y": 0, "w": 1, "h": 1, "color": "#000000" }] },
+          "result": { "ok": true, "applied": true, "frames": 2 } },
+        { "state": { "title": "routed", "activeFrame": 2, "activeLayer": "Arm",
+          "layers": [{ "name": "Shade", "cels": [1] }, { "name": "Arm", "cels": [2] }, { "name": "Body", "cels": [1] }] } },
+        { "request": "write_pixels", "params": { "rows": ["r"], "legend": { "r": "#ff0000" }, "frame": 3 }, "error": "out of range" },
+        { "request": "write_pixels", "params": { "rows": ["r"], "legend": { "r": "#ff0000" }, "layer": "Layer 1" }, "error": "Layer not found" }
+      ]
+    }
+  ]
+}

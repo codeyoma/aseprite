@@ -18,6 +18,20 @@
 -- something outside the scope, while a "write" the guard can't check is
 -- refused.
 --
+-- Document-scoped requests (#90): a request names the sprite it acts on
+-- (route.doc, "S<sprite id>": the envelope's doc, else the chat's sprite).
+-- H.call resolves it once into the request's site (D.site(): sprite, frame,
+-- layer, active) and handlers act on that, never on app.sprite, so a chat's
+-- requests run on its sprite while the user works in another tab. Without a
+-- doc they act on the active sprite. Changes go through D.transaction(sprite,
+-- ...): sprite:transaction (this fork, src/app/script/sprite_class.cpp) when
+-- the build has it, otherwise the sprite is made active for that one
+-- transaction. Requests marked "activates" in protocol.json (execute_lua,
+-- run_command, apply_timeline_text) and the parts of handlers that need
+-- Aseprite's active document (commands, app.range) run inside D.withActive,
+-- which makes the sprite active and gives the user's sprite, frame and layer
+-- back afterwards.
+--
 -- Handlers live here (core requests) and in area files that register into
 -- the same table: handlers_check.lua, handlers_color.lua, handlers_sprite.lua.
 -- How the document is described (layer ids, State block, aseprite:// URIs)
@@ -154,6 +168,136 @@ function M.new(opts)
   local layerById = view.layerById
   local agentCursor   -- the last scope shown in the timeline (tests read it)
 
+  -------------------------------------------------------------------------
+  -- The request's sprite (#90): site, activation, transactions
+  -------------------------------------------------------------------------
+
+  local site                 -- the request being answered: { sprite, frame, layer, active }
+  local lastSite = {}        -- sprite id -> { frame, layerId }: where it was when last active
+  local stats = { activations = 0 }   -- tests: how often a request made its sprite active
+  local spriteTx = nil       -- nil: use sprite:transaction when the build has it; false: never (tests)
+
+  local function spriteById(id)
+    for _, s in ipairs(app.sprites) do if s.id == id then return s end end
+  end
+
+  -- A doc ("S12" or 12) to its open sprite; nil gives the active sprite. A
+  -- doc that names no open sprite is an error, never the active sprite.
+  local function resolveSprite(doc)
+    if doc == nil then return app.sprite end
+    local n = math.tointeger(tonumber((tostring(doc):gsub("^S", ""))))
+    local s = n and spriteById(n)
+    if not s then error("Sprite not found: " .. tostring(doc) .. " (it was closed, or is not open in this Aseprite)", 0) end
+    return s
+  end
+
+  -- Records where the active sprite is (frame, layer): the default site of
+  -- its later requests while another tab is active.
+  local function noteSite()
+    local s = app.sprite
+    if not s then return end
+    lastSite[s.id] = { frame = app.frame and app.frame.frameNumber or 1, layerId = app.layer and app.layer.id or nil }
+  end
+
+  -- The topmost image layer: the default layer of a sprite never seen active.
+  local function topImageLayer(layers)
+    for i = #layers, 1, -1 do
+      local l = layers[i]
+      if l.isGroup then
+        local f = topImageLayer(l.layers)
+        if f then return f end
+      elseif l.isImage then return l end
+    end
+  end
+
+  -- The site of a request on `sprite`: the active sprite's frame and layer,
+  -- or for another sprite where it was when last active (frame 1 and its top
+  -- image layer when never seen).
+  local function siteOf(sprite)
+    if not sprite then return { active = true } end
+    if sprite == app.sprite then
+      return { sprite = sprite, frame = app.frame and app.frame.frameNumber or 1, layer = app.layer, active = true }
+    end
+    local rec = lastSite[sprite.id] or {}
+    local frame = rec.frame
+    if not frame or frame > #sprite.frames then frame = 1 end
+    local layer = rec.layerId and layerById("L" .. rec.layerId, sprite) or nil
+    if layer and layer.id ~= rec.layerId then layer = nil end
+    return { sprite = sprite, frame = frame, layer = layer or topImageLayer(sprite.layers), active = false }
+  end
+
+  -- The site of the request being answered; outside one (tests calling a
+  -- handler directly, saved commands) the active sprite's.
+  local function here() return site or siteOf(app.sprite) end
+
+  -- Moves the site's frame and layer: the user's when the sprite is active,
+  -- otherwise the remembered ones for its next requests.
+  local function selectSite(s, frame, layer)
+    if not s or not s.sprite then return end
+    if frame then s.frame = frame end
+    if layer then s.layer = layer end
+    if app.sprite == s.sprite then
+      if frame then pcall(function() app.frame = s.sprite.frames[frame] end) end
+      if layer then pcall(function() app.layer = layer end) end
+      return
+    end
+    local rec = lastSite[s.sprite.id] or {}
+    lastSite[s.sprite.id] = rec
+    if frame then rec.frame = frame end
+    if layer then rec.layerId = layer.id end
+  end
+
+  -- Runs fn with `sprite` active, for what only works on Aseprite's active
+  -- document (commands, app.range, agent-written Lua). The user's sprite,
+  -- frame and layer come back afterwards, also after an error. A sprite fn
+  -- makes or opens is noted in site.moved (the chat moves there).
+  local function withActive(sprite, fn)
+    if not sprite or app.sprite == sprite then return fn() end
+    stats.activations = stats.activations + 1
+    noteSite()
+    local prev, prevFrame, prevLayer = app.sprite, app.frame, app.layer
+    app.sprite = sprite
+    if site and site.sprite == sprite then
+      pcall(function() app.frame = sprite.frames[site.frame] end)
+      if site.layer then pcall(function() app.layer = site.layer end) end
+    end
+    local results = table.pack(pcall(fn))
+    if app.sprite == sprite then noteSite()
+    elseif app.sprite and site then site.moved = app.sprite end
+    if prev and pcall(function() return prev.width end) then
+      app.sprite = prev
+      pcall(function() app.frame = prevFrame end)
+      pcall(function() app.layer = prevLayer end)
+    end
+    if not results[1] then error(results[2], 0) end
+    return table.unpack(results, 2, results.n)
+  end
+
+  -- One undo step on `sprite`, whichever tab is active: sprite:transaction
+  -- (this fork) when the build has it, otherwise app.transaction with the
+  -- sprite made active for it.
+  local function transaction(sprite, label, fn)
+    if spriteTx ~= false then
+      local ok, method = pcall(function() return sprite.transaction end)
+      if ok and method then return sprite:transaction(label, fn) end
+    end
+    return withActive(sprite, function() return app.transaction(label, fn) end)
+  end
+
+  -- Moves a sprite's undo history n steps back (n < 0) or forward, as app.undo
+  -- and app.redo do on the active sprite: undo goes to the previous state in
+  -- the history's list, redo to the next. Returns how many steps it moved.
+  local function stepHistory(sprite, n)
+    local h = sprite.undoHistory
+    if not h or not h.states then error("This Aseprite build can't undo a sprite by id (needs sprite:undoTo)", 0) end
+    local states, at = h.states, 0
+    for i, st in ipairs(states) do if st.id == h.current then at = i end end
+    local to = math.max(0, math.min(#states, at + n))
+    if to == at then return 0 end
+    sprite:undoTo(to == 0 and 0 or states[to].id)
+    return math.abs(to - at)
+  end
+
   -- Convert any Lua value into something json.encode accepts.
   local function toPlain(v, depth)
     depth = depth or 0
@@ -188,7 +332,7 @@ function M.new(opts)
 
   -- Frames from a frame spec, default all (the same grammar the wire uses).
   local function framesFromParam(sprite, frames)
-    return wireParams.resolveFrames(frames, #sprite.frames, app.frame and app.frame.frameNumber or 1, "all")
+    return wireParams.resolveFrames(frames, #sprite.frames, here().frame or 1, "all")
   end
 
   -- Visible image layers (through visible groups, as the snapshot renders
@@ -209,10 +353,11 @@ function M.new(opts)
 
   -- Returns header table and raw RGBA bytes.
   local function snapshot(params)
-    local sprite = app.sprite
+    local sprite = here().sprite
     if not sprite then error("No active sprite") end
 
-    local frameNumber = params.frame or (app.frame and app.frame.frameNumber) or 1
+    local frameNumber = params.frame or (here().sprite == sprite and here().frame)
+      or (app.frame and app.frame.frameNumber) or 1
     if frameNumber < 1 or frameNumber > #sprite.frames then
       error("Frame " .. frameNumber .. " is out of range (1-" .. #sprite.frames .. ")")
     end
@@ -322,11 +467,12 @@ function M.new(opts)
 
   -- Timeline as text (#32), see timeline_text.lua.
   handlers.get_timeline_text = function()
-    return { text = timelineText.serialize(app.sprite) }
+    return { text = timelineText.serialize(here().sprite) }
   end
 
+  -- Runs with its sprite active (protocol.json "activates"): linking cels is a command over app.range.
   handlers.apply_timeline_text = function(params)
-    local s = app.sprite
+    local s = here().sprite
     local spec, errors = timelineText.parse(params.text or "")
     if #errors > 0 then return { ok = false, errors = errors, changes = {} } end
     local changes
@@ -353,14 +499,14 @@ function M.new(opts)
   handlers.propose_variations = function(params)
     local task = params.task
     if type(task) ~= "string" or task == "" then error("params.task is required") end
-    local list = variations.candidates(task)
+    local list = variations.candidates(task, here().sprite)
     if not list or #list == 0 then
       error("No variations for '" .. task .. "'. Build them with variationLayer('" .. task .. "', i) first.")
     end
     local items, names = {}, {}
     local area
     for i, l in ipairs(list) do
-      local img = variations.render(l, px.toRgbImage)
+      local img = variations.render(l, px.toRgbImage, here().frame)
       items[i] = { name = l.name, image = img }
       names[i] = l.name
       local b = img:shrinkBounds()
@@ -369,7 +515,7 @@ function M.new(opts)
     -- Thumbnails show the area the candidates cover (plus a margin), so small
     -- drawings stay readable.
     if area then
-      local s = app.sprite
+      local s = here().sprite
       area = Rectangle(area.x - 2, area.y - 2, area.width + 4, area.height + 4):intersect(Rectangle(0, 0, s.width, s.height))
       for _, it in ipairs(items) do it.image = Image(it.image, area) end
     end
@@ -379,7 +525,7 @@ function M.new(opts)
 
   handlers.diff_visual = function(params)
     if not capture then error("Step capture is not enabled") end
-    return capture:diffVisual(params)
+    return capture:diffVisual(params, here())
   end
 
   handlers.snapshot = function(params)
@@ -387,12 +533,12 @@ function M.new(opts)
   end
 
   handlers.get_state = function()
-    return view.getState()
+    return view.getState(here())
   end
 
   -- The <aseprite-state> block (for sub-agents' first message, #33).
   handlers.state_block = function()
-    return { text = view.stateBlock() }
+    return { text = view.stateBlock(here()) }
   end
 
   handlers.execute_lua = function(params)
@@ -444,7 +590,7 @@ function M.new(opts)
   end
 
   handlers.read_pixels = function(params)
-    local sprite = app.sprite
+    local sprite = here().sprite
 
     local x0 = params.x or 0
     local y0 = params.y or 0
@@ -455,7 +601,7 @@ function M.new(opts)
       error(string.format("Region %dx%d is too large; read at most %d pixels per call", w, h, MAX_READ_PIXELS))
     end
 
-    local frameNumber = params.frame or (app.frame and app.frame.frameNumber) or 1
+    local frameNumber = params.frame or here().frame
     local header, bytes = snapshot{ frame = frameNumber, layer = params.layer }
     local sw = header.width
 
@@ -697,9 +843,9 @@ function M.new(opts)
     end
   end
 
-  -- The image layer a pixel write goes to: params.layer (id or name) or the active layer.
+  -- The image layer a pixel write goes to: params.layer (id or name) or the site's layer.
   local function pixelLayer(sprite, ref, what)
-    local layer = ref and layerById(ref, sprite) or (not ref and app.layer) or nil
+    local layer = ref and layerById(ref, sprite) or (not ref and here().sprite == sprite and here().layer) or nil
     if not layer then
       if ref then error("Layer not found: " .. tostring(ref), 0) end
       error("No layer to write to", 0)
@@ -711,28 +857,30 @@ function M.new(opts)
   end
 
   handlers.write_pixels = function(params)
-    local sprite = app.sprite
+    local sprite = here().sprite
     local layer = pixelLayer(sprite, params.layer, "write_pixels")
-    local frame = params.frame or (app.frame and app.frame.frameNumber) or 1
+    local frame = params.frame or here().frame
     local writes = gridWrites(sprite, params.rows, params.legend, params.x or 0, params.y or 0)
     local result, commit = celWrites(sprite, layer, frame, writes)
     if commit then
-      app.transaction("Write pixels", commit)
+      transaction(sprite, "Write pixels", commit)
       app.refresh()
     end
     return result
   end
 
+  -- Undo and redo move the request's sprite's own history (sprite:undoTo),
+  -- so they never touch another sprite's history or the active tab.
   handlers.undo = function(params)
     local n = params.steps or 1
-    for _ = 1, n do app.undo() end
+    stepHistory(here().sprite, -n)
     app.refresh()
     return { undone = n }
   end
 
   handlers.redo = function(params)
     local n = params.steps or 1
-    for _ = 1, n do app.redo() end
+    stepHistory(here().sprite, n)
     app.refresh()
     return { redone = n }
   end
@@ -748,6 +896,8 @@ function M.new(opts)
     bytes = function(v) return wireParams.bytes(v, blob, px.base64Decode) end,
     px = px, view = view, layerById = layerById, variations = variations, wireParams = wireParams,
     framesFromParam = framesFromParam, imageLayers = imageLayers,
+    -- The request's sprite (#90): its site, one undo step on it, running with it active, moving its frame and layer.
+    site = here, transaction = transaction, withActive = withActive, select = selectSite,
     -- Pixel writes (write_pixels' grid, for apply): see gridKeys, gridWrites, celWrites.
     GRID_CLEAR = GRID_CLEAR, gridKeys = gridKeys, gridWrites = gridWrites, celWrites = celWrites, pixelLayer = pixelLayer,
     writePalette = opts.writePalette or function() error("Saving palettes needs agent.lua (opts.writePalette)") end,
@@ -759,6 +909,7 @@ function M.new(opts)
   loadModule("handlers_sprite.lua")(handlers, D)
   loadModule("handlers_apply.lua")(handlers, D)
 
+
   -------------------------------------------------------------------------
   -- Policy: how H.call runs a request
   -------------------------------------------------------------------------
@@ -766,7 +917,9 @@ function M.new(opts)
   -- A sub-agent's request (#33). Reads run as they are. A "write" the scope
   -- guard can't check is refused (undo and redo could undo another agent's
   -- work). A "scoped-write" runs, is undone if it changed anything outside
-  -- the scope, and highlights the scope in the timeline (the agent cursor).
+  -- the scope, and highlights the scope in the timeline (the agent cursor)
+  -- when its sprite is on screen. Guards are per request and per sprite: the
+  -- snapshot and the undo are of the request's sprite (#90).
   local function callScoped(method, spec, params, run)
     if spec.kind == "read" then return run() end
     if spec.kind == "write" then
@@ -776,45 +929,73 @@ function M.new(opts)
       error("Sub-agents can't use " .. method .. ": the scope guard can't check what it changes " ..
         "(the palette, slices or another sprite). Leave it to the lead agent, or edit your frames with execute_lua.")
     end
-    local sprite = app.sprite
+    local s = site
+    local sprite = s.sprite
     local scope, err = scopeGuard.resolve(sprite, params.scope, layerById)
     if not scope then error(err) end
     local before = scopeGuard.snapshot(sprite, scope)
     local history = sprite.undoHistory
     local undoBefore = history and history.current or 0
     local results = table.pack(run())
-    local problem = scopeGuard.check(sprite, scope, before)
+    local problem = s.moved and "it switched to or created another sprite" or scopeGuard.check(sprite, scope, before)
     if problem then
-      if app.sprite == sprite then sprite:undoTo(undoBefore) end
+      sprite:undoTo(undoBefore)
       app.refresh()
       error("Out of scope: " .. problem .. ". You may only edit " .. scopeGuard.describe(scope) ..
         ". The step was undone.")
     end
-    -- Agent cursor: show the frames this agent works on in the timeline.
-    local ok, cursorErr = pcall(function()
-      local frames, numbers = {}, {}
-      for f in pairs(scope.frames) do frames[#frames + 1] = sprite.frames[f]; numbers[#numbers + 1] = f end
-      table.sort(numbers)
-      app.range.frames = frames
-      app.refresh()
-      agentCursor = { frames = numbers, label = scope.label, set = #app.range.frames, clock = os.clock() }
-    end)
-    if not ok then agentCursor = { error = tostring(cursorErr) } end
+    -- Agent cursor: show the frames this agent works on in the timeline
+    -- (app.range belongs to the sprite on screen, so only there).
+    if app.sprite == sprite then
+      local ok, cursorErr = pcall(function()
+        local frames, numbers = {}, {}
+        for f in pairs(scope.frames) do frames[#frames + 1] = sprite.frames[f]; numbers[#numbers + 1] = f end
+        table.sort(numbers)
+        app.range.frames = frames
+        app.refresh()
+        agentCursor = { frames = numbers, label = scope.label, set = #app.range.frames, clock = os.clock() }
+      end)
+      if not ok then agentCursor = { error = tostring(cursorErr) } end
+    end
     return table.unpack(results, 1, results.n)
+  end
+
+  -- Entry points used outside a request (saved commands, the panel's
+  -- attachments) act on the active sprite.
+  local function outside(fn)
+    return function(...)
+      local outer = site
+      site = nil
+      return (function(...) site = outer; return ... end)(fn(...))
+    end
   end
 
   local H = {
     handlers = handlers,
     view = view,
     getState = view.getState,
-    executeLua = executeLua,
-    snapshot = snapshot,
+    executeLua = outside(executeLua),
+    snapshot = outside(snapshot),
     contextString = view.contextString,
     stateBlock = view.stateBlock,
     layerById = layerById,
-    check = handlers.check,
+    check = outside(handlers.check),
     -- Tests: false makes check walk pixels in Lua even where the native helpers exist (#95); nil restores.
     setNativeCheck = function(on) D.nativeCheck = on end,
+    -- Tests: false never uses sprite:transaction (as on a build without it), so transactions activate the sprite; nil restores.
+    setSpriteTransactions = function(on) spriteTx = on end,
+    -- Whether this build can make one undo step on a sprite that isn't active (sprite:transaction).
+    hasSpriteTransactions = function()
+      local s = app.sprite
+      if spriteTx == false or s == nil then return false end
+      local ok, method = pcall(function() return s.transaction end)
+      return ok and method ~= nil
+    end,
+    -- How often a request made its sprite active (tests: document-scoped requests don't).
+    stats = function() return { activations = stats.activations } end,
+    -- Records the active sprite's frame and layer (the panel calls it on every tab switch).
+    noteSite = noteSite,
+    resolveSprite = resolveSprite,
     Uri = view.Uri,
     variations = function() return variations end,
     agentCursor = function() return agentCursor end,
@@ -822,50 +1003,71 @@ function M.new(opts)
 
   -- Answers one protocol request. Errors propagate to the caller.
   -- Wrappers, outermost first: scope guard, step capture, quiet alerts,
-  -- the handler (whose own app.transaction makes one undo step).
+  -- the handler (whose own transaction makes one undo step).
   -- bytes: the request's binary frame (#95), which { offset, length } params refer to.
+  -- route (#90): { doc = "S12" or a sprite id } names the sprite the request
+  -- acts on (default: the active sprite); after the call, route.moved is the
+  -- id of a sprite the request made or opened (the chat moves there).
   -- No pcall around it, so errors keep their traceback; every call sets blob
-  -- anew, so one left after an error is never read by a later request.
+  -- and site anew, so ones left after an error are never read by a later request.
   local call
-  local function restore(outer, ...)
-    blob = outer
+  local function restore(outerBlob, outerSite, route, ...)
+    if route and site and site.moved then route.moved = site.moved.id end
+    blob, site = outerBlob, outerSite
     return ...
   end
-  function H.call(method, params, bytes)
-    local outer = blob
+  function H.call(method, params, bytes, route)
+    local outerBlob, outerSite = blob, site
     blob = bytes
-    return restore(outer, call(method, params))
+    return restore(outerBlob, outerSite, route, call(method, params, route))
   end
 
-  call = function(method, params)
+  call = function(method, params, route)
     local handler = handlers[method]
     local spec = PROTOCOL.requests[method]
     if not handler or not spec then
       error({ code = -32601, message = "Unknown method: " .. tostring(method) })
     end
     params = plain(params) or {}
-    -- Schema check, layer ids and frame numbers resolved once (#53); the only check of a request's params (#96).
+    local sprite = resolveSprite(route and route.doc)
+    noteSite()
+    local activeBefore = app.sprite
+    site = siteOf(sprite)
+    -- Schema check, layer ids and frame numbers resolved once against the request's sprite (#53, #90);
+    -- the only check of a request's params (#96).
     params = wireParams.check(method, spec.params or {}, params, {
-      sprite = app.sprite, activeFrame = app.frame and app.frame.frameNumber, layerById = layerById,
+      sprite = sprite, activeFrame = site.frame, layerById = layerById,
     }, PROTOCOL.shapes)
     local scoped = type(params.scope) == "table"
     if scoped and spec.kind == "write" then return callScoped(method, spec, params) end
-    if M.needsSprite(spec) and not app.sprite then error("No active sprite") end
+    if M.needsSprite(spec) and not sprite then error("No active sprite") end
+    local s = site
+    -- The handler; "activates" requests run with their sprite active (agent-written Lua, commands).
+    -- A sprite the request made or opened is noted, before step capture looks at the result.
+    local function handle(p)
+      local results
+      if spec.activates and s.sprite then
+        results = table.pack(withActive(s.sprite, function() return handler(p) end))
+      else
+        results = table.pack(handler(p))
+      end
+      if not s.moved and app.sprite ~= activeBefore and app.sprite then s.moved = app.sprite end
+      return table.unpack(results, 1, results.n)
+    end
     local function runHandler()
-      if capture then return capture:around(method, withQuietAlerts, handler, params) end
-      return withQuietAlerts(handler, params)
+      if capture then return capture:aroundSite(s, method, withQuietAlerts, handle, params) end
+      return withQuietAlerts(handle, params)
     end
     -- Motion stage gate (#99): in an animation's "keys" stage an edit may change only the key frames of its tag.
     local function run()
-      local sprite = app.sprite
-      local gate = spec.kind == "scoped-write" and motionGate.read(sprite) or nil
+      local gate = spec.kind == "scoped-write" and sprite and motionGate.read(sprite) or nil
       if not gate then return runHandler() end
       local before = motionGate.snapshot(sprite, gate)
       local undoBefore = sprite.undoHistory and sprite.undoHistory.current or 0
       local results = table.pack(runHandler())
       local problem = motionGate.check(sprite, gate, before)
       if problem then
-        if app.sprite == sprite then sprite:undoTo(undoBefore) end
+        sprite:undoTo(undoBefore)
         app.refresh()
         error(problem .. ". " .. motionGate.describe(sprite, gate) .. " The step was undone.")
       end

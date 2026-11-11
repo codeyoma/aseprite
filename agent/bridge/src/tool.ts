@@ -8,19 +8,31 @@ import { SavedCommands } from "./saved_commands.js";
 import type { SubResult, SubTask } from "./subagents.js";
 import type { ImageJobs } from "./image_gen.js";
 
-/** The seam tools use to reach Aseprite: AsepriteLink in the bridge, a fake in tests. */
-/** Where a request comes from: a chat turn (and which chat). Sent in the JSON-RPC envelope, not the params. */
+/**
+ * Where a request comes from and which sprite it acts on (protocol.json routing). Sent in the JSON-RPC envelope,
+ * not the params. origin "chat" and chat: a chat turn's request, which the extension runs on that chat's sprite.
+ * doc (#90): a sprite id from get_state (SpriteSummary.id, "S12"); the request acts on that sprite whichever tab is
+ * active, and on no other (an id of a closed sprite is an error).
+ */
 export interface RequestRoute {
-  origin: "chat";
+  origin?: "chat";
   chat?: string;
+  doc?: string;
 }
 
+/** The seam tools use to reach Aseprite: AsepriteLink in the bridge, a fake in tests. */
 export interface AsepriteRequester {
   /**
-   * route: a chat turn's request (origin "chat", and the chat's id): the extension runs it on that chat's sprite,
-   * whichever tab is active.
+   * route: where the request comes from and which sprite it acts on (RequestRoute). Without one the request acts on
+   * the active sprite.
    */
   request(method: string, params?: Record<string, unknown>, timeoutMs?: number, route?: RequestRoute): Promise<Reply>;
+}
+
+/** `requester` with every request naming the sprite `doc` (#90), on top of any route the caller gives. */
+export function withDoc<T extends AsepriteRequester>(requester: T, doc: string | undefined): T {
+  if (!doc) return requester;
+  return { ...requester, request: (method, params, timeoutMs, route) => requester.request(method, params, timeoutMs, { ...route, doc }) };
 }
 
 /** Runs spawn_agents' sub-tasks (SubAgents in the bridge, a fake in tests). */
@@ -69,7 +81,8 @@ export function toolContext(
     post: opts.post,
     ask: opts.ask,
     images: opts.images,
-    request: (method, params, timeoutMs) => aseprite.request(method, params, timeoutMs),
+    // The route (a chat, a sprite) goes through as the requester gave it (#90).
+    request: (method, params, timeoutMs, route) => aseprite.request(method, params, timeoutMs, route),
     commands: opts.commands ?? new SavedCommands(),
     subAgents: opts.subAgents,
     critic: opts.critic,

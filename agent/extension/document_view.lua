@@ -204,6 +204,8 @@ function M.new(opts)
 
   function V.describeSprite(sprite, full)
     local info = {
+      -- The sprite's id for the session (#90): a request's doc names it.
+      id = "S" .. math.tointeger(sprite.id),
       filename = sprite.filename,
       width = sprite.width,
       height = sprite.height,
@@ -274,7 +276,41 @@ function M.new(opts)
   -- What the user is working on (#96: part of get_state, protocol.json State): the tool, brush, colors and
   -- zoom; with a sprite, the active layer (path and id), frame, tag and cel, and the timeline range. The
   -- get_context tool (bridge), the panel's context line and the State block are views of it.
-  function V.contextOf(sprite)
+  --
+  -- site (#90): the request's site ({ sprite, frame, layer, active }). For a
+  -- sprite that isn't on screen the layer, frame, tag and cel are the site's
+  -- (where its requests act), and the zoom and timeline range (the screen's)
+  -- are left out.
+  function V.contextOf(sprite, site)
+    if site and site.sprite and site.sprite == sprite and sprite ~= app.sprite then
+      local ctx = {
+        tool = app.tool and app.tool.id or nil,
+        fgColor = px.colorHex(app.fgColor),
+        bgColor = px.colorHex(app.bgColor),
+      }
+      local brush = app.brush
+      if brush then
+        ctx.brush = { size = brush.size, type = BRUSH_TYPES[brush.type] or tostring(brush.type), angle = brush.angle }
+      end
+      local layer, frame = site.layer, site.frame
+      if layer then
+        ctx.activeLayer = layerPath(layer)
+        ctx.activeLayerId = layerId(layer)
+      end
+      ctx.activeFrame = frame
+      for _, t in ipairs(sprite.tags) do
+        if frame and t.fromFrame.frameNumber <= frame and frame <= t.toFrame.frameNumber then ctx.activeTag = t.name; break end
+      end
+      local cel = layer and frame and not layer.isGroup and layer:cel(frame) or nil
+      if cel then
+        local b = cel.bounds
+        ctx.activeCel = {
+          layer = layerId(cel.layer), frame = cel.frameNumber,
+          bounds = { x = b.x, y = b.y, width = b.width, height = b.height }, opacity = cel.opacity,
+        }
+      end
+      return ctx
+    end
     local ctx = {
       tool = app.tool and app.tool.id or nil,
       fgColor = px.colorHex(app.fgColor),
@@ -315,13 +351,15 @@ function M.new(opts)
   local contextOf = V.contextOf
 
   -- The get_state result (protocol.json State): open sprites, the active one in full, and the context.
-  function V.getState()
+  -- site (#90): a request's site; its sprite is the one described in full
+  -- (activeSprite), so a chat sees its own sprite whichever tab is active.
+  function V.getState(site)
     local sprites = {}
     for _, s in ipairs(app.sprites) do
       sprites[#sprites + 1] = describeSprite(s, false)
     end
-    local sprite = app.sprite
-    local state = contextOf(sprite)
+    local sprite = site and site.sprite or app.sprite
+    local state = contextOf(sprite, site)
     state.asepriteVersion = tostring(app.version)
     state.apiVersion = app.apiVersion
     state.openSprites = sprites
@@ -378,10 +416,12 @@ function M.new(opts)
 
   -- A compact, deterministic description of the document and the user's
   -- selection. Facts, not instructions; ids (L12) are stable for the session.
-  function V.stateBlock()
+  -- site (#90): a request's site, whose sprite it describes (default: the active one).
+  function V.stateBlock(site)
     local lines = {}
     local function add(s) lines[#lines + 1] = s end
-    local sprite = app.sprite
+    local sprite = site and site.sprite or app.sprite
+    local onScreen = sprite == app.sprite
 
     if not sprite then
       add("no sprite open")
@@ -400,7 +440,7 @@ function M.new(opts)
 
       -- Layers top to bottom; groups indent their children.
       local items, count = {}, 0
-      local active = app.layer
+      local active = onScreen and app.layer or (site and site.layer)
       local function walk(layers, depth)
         for i = #layers, 1, -1 do
           local l = layers[i]
@@ -437,7 +477,7 @@ function M.new(opts)
       end
 
       -- The active layer, frame, cel and the timeline range: the same context get_state reports (contextOf).
-      local ctx = contextOf(sprite)
+      local ctx = contextOf(sprite, site)
       local parts = {}
       if active then parts[#parts + 1] = string.format("layer %s %s", ctx.activeLayerId, active.name) end
       if ctx.activeFrame then parts[#parts + 1] = "frame " .. ctx.activeFrame end

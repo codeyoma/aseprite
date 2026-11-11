@@ -93,9 +93,10 @@ function M.describe(scope)
   return "frames " .. rangeText(scope.frames) .. (scope.layers and " of the scope's layers" or "")
 end
 
--- nil when only the scope changed, otherwise what changed outside it.
+-- nil when only the scope changed, otherwise what changed outside it. The
+-- sprite need not be the active one (#90): a request that made or opened
+-- another sprite is caught by the caller (document_handlers.lua, site.moved).
 function M.check(sprite, scope, before)
-  if app.sprite ~= before.sprite then return "it switched to or created another sprite" end
   if #sprite.frames ~= before.frames then return "it changed the number of frames" end
   local now = {}
   eachLayer(sprite.layers, function(l) now[#now + 1] = l.id end)

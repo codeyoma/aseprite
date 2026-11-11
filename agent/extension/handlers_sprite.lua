@@ -9,6 +9,9 @@ return function(handlers, D)
   local px, layerById, variations = D.px, D.layerById, D.variations
   local rgbaBytes = D.bytes
   local framesFromParam = D.framesFromParam
+  -- The request's sprite (#90), which need not be the active one: its site, one undo step on it,
+  -- running with it active (commands), and moving its frame and layer.
+  local site, transaction, withActive = D.site, D.transaction, D.withActive
 
   -- An effect record for export (#71): params.fx = { layer?, id, x, y, fps, loop, windup_ms }, checked before
   -- anything changes. Returns the layer property value (aseprite-agent "fx", get_state's layer fx).
@@ -105,9 +108,9 @@ return function(handlers, D)
   -- in one undo step: groups = { { name, colors = { "#rrggbb", ... } } }.
   -- Pixels in no group stay on the original layer (removed when empty).
   handlers.split_layer_by_colors = function(params)
-    local sprite = app.sprite
+    local sprite = site().sprite
     if sprite.colorMode ~= ColorMode.RGB then error("Splitting by color needs an RGB sprite") end
-    local src = params.layer and layerById(params.layer, sprite) or app.layer
+    local src = params.layer and layerById(params.layer, sprite) or site().layer
     if not src or src.isGroup then error("Pick an image layer") end
     local pc = app.pixelColor
     local groupOf = {}
@@ -118,7 +121,7 @@ return function(handlers, D)
       end
     end
     local names, made = {}, {}
-    app.transaction("Split layer by color", function()
+    transaction(sprite, "Split layer by color", function()
       -- Each new layer goes just above the source, so the first group (the
       -- outline) ends up on top.
       for gi = 1, #params.groups do
@@ -229,7 +232,9 @@ return function(handlers, D)
       end
       target = find(source and source.parent and source.parent.layers or sprite.layers) or find(sprite.layers)
       if not target then
-        target = variations.aiLayer(params.new_layer, params.prompt, { above = source })
+        local s = site()
+        target = variations.aiLayer(params.new_layer, params.prompt, { above = source or s.layer, sprite = sprite })
+        D.select(s, nil, target)
       end
       if params.hide_source and source then source.isVisible = false end
       -- hide: the new layer itself stays hidden (e.g. a normal map under the colors).
@@ -241,7 +246,7 @@ return function(handlers, D)
         target = layerById(params.layer, sprite)
         if not target then error("No layer " .. tostring(params.layer)) end
       else
-        target = app.layer
+        target = site().layer
       end
       if not target or target.isGroup then error("No image layer to write to") end
     end
@@ -262,14 +267,14 @@ return function(handlers, D)
   -- (#39): see putOne. hide_source hides the layer it was made from;
   -- blend_mode and opacity set up a new layer (#69). One undo step.
   handlers.put_image = function(params)
-    local sprite = app.sprite
+    local sprite = site().sprite
     local w, h = params.width, params.height
     local bytes = rgbaBytes(params.rgba or "")
     if #bytes ~= w * h * 4 then error(string.format("Expected %d bytes, got %d", w * h * 4, #bytes)) end
     local mode, opacity = layerLook(params, "")
-    local frame = params.frame or (app.frame and app.frame.frameNumber) or 1
+    local frame = params.frame or site().frame
     local target
-    app.transaction(params.label or "AI image", function()
+    transaction(sprite, params.label or "AI image", function()
       target = putOne(sprite, params, bytes, frame, mode, opacity)
     end)
     app.refresh()
@@ -382,12 +387,15 @@ return function(handlers, D)
         end
       end
     end
-    each(sprite.layers)
-    app.range:clear()
+    -- LinkCels is a command over app.range: it needs the sprite active (inside its transaction).
+    withActive(sprite, function()
+      each(sprite.layers)
+      app.range:clear()
+    end)
   end
 
   handlers.put_images = function(params)
-    local sprite = app.sprite
+    local sprite = site().sprite
     local images = params.images or {}
     local inserts, inserted = checkInserts(sprite, params.insert)
     if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil and params.fx == nil and params.spec == nil
@@ -460,10 +468,11 @@ return function(handlers, D)
       end
     end
     local layers, seen, added = {}, {}, 0
-    local activeFrame = app.frame and app.frame.frameNumber
-    local activeLayer = app.layer
+    local s = site()
+    local activeFrame = s.frame
+    local activeLayer = s.layer
     local locked = {}
-    app.transaction(params.label or "AI images", function()
+    transaction(sprite, params.label or "AI images", function()
       for _, l in ipairs(clearLayers) do
         local cels = {}
         for _, c in ipairs(l.cels) do cels[#cels + 1] = c end
@@ -553,9 +562,8 @@ return function(handlers, D)
       for _, l in ipairs(locked) do l.isEditable = false end
       if params.spec ~= nil then sprite.properties(variations.KEY)[SPEC_KEY] = params.spec ~= "" and params.spec or nil end
     end)
-    if activeFrame then app.frame = sprite.frames[activeFrame] end
     -- A locked layer never becomes the active one: the layer that was active stays (when there was one).
-    if #locked > 0 and activeLayer and activeLayer.isEditable then app.layer = activeLayer end
+    D.select(s, activeFrame, (#locked > 0 and activeLayer and activeLayer.isEditable) and activeLayer or nil)
     app.refresh()
     return { layers = layers, frames = #sprite.frames, added = added, inserted = inserted,
              paletteAdded = params.palette ~= nil and #paletteAdd or nil }
@@ -567,7 +575,7 @@ return function(handlers, D)
   -- side is redrawn by hand instead). Existing tags keep their frames and
   -- the active frame stays. One undo step.
   handlers.mirror_frames = function(params)
-    local sprite = app.sprite
+    local sprite = site().sprite
     local frames = {}
     if params.tag then
       for _, t in ipairs(sprite.tags) do
@@ -585,8 +593,8 @@ return function(handlers, D)
       if l then keep[l.id] = true end   -- by id: layer objects are new wrappers on each access
     end
     local first
-    local activeFrame = app.frame and app.frame.frameNumber
-    app.transaction("Mirror frames", function()
+    local activeFrame = site().frame
+    transaction(sprite, "Mirror frames", function()
       -- Aseprite grows a tag that ends on the last frame over new frames; put them back.
       local ranges = {}
       for i, t in ipairs(sprite.tags) do ranges[i] = t.toFrame.frameNumber end
@@ -621,7 +629,7 @@ return function(handlers, D)
         t.name = params.new_tag
       end
     end)
-    if activeFrame then app.frame = sprite.frames[activeFrame] end
+    D.select(site(), activeFrame)
     app.refresh()
     return { from = first, to = first + #frames - 1, frames = #frames }
   end
@@ -629,8 +637,8 @@ return function(handlers, D)
   -- A slice with an optional 9-patch center (#50): engines stretch the
   -- center and keep the borders. Replaces a slice of the same name.
   handlers.set_slice = function(params)
-    local sprite = app.sprite
-    app.transaction("Set slice", function()
+    local sprite = site().sprite
+    transaction(sprite, "Set slice", function()
       for _, sl in ipairs(sprite.slices) do
         if sl.name == params.name then sprite:deleteSlice(sl) break end
       end

@@ -23,6 +23,8 @@ export interface RequestSpec {
   kind: RequestKind;
   /** Needs an active sprite. Default: true for writes, false for reads. */
   needsSprite?: boolean;
+  /** Runs with its sprite made active for the call (agent-written Lua, commands; #90). */
+  activates?: boolean;
   binary?: boolean;
   /** Params: name -> type ("integer", "layer?", "frames?all", "Attachment[]?", ...). */
   params: Record<string, string>;

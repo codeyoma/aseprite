@@ -72,9 +72,15 @@ void UndoCommand::onExecute(Context* context)
     else
       spritePosition = undo->nextRedoSpritePosition();
 
+    // This fork: a step made while its sprite wasn't the active one
+    // (a script's sprite:transaction() on a background sprite) has no
+    // recorded position (no layer), so undo stays where the user is.
+    if (spritePosition.layerId() == doc::NullId)
+      spritePosition = currentPosition;
+
     if (spritePosition != currentPosition) {
       Layer* selectLayer = spritePosition.layer();
-      if (selectLayer)
+      if (selectLayer && selectLayer->sprite() == sprite)
         editor->setLayer(selectLayer);
       editor->setFrame(spritePosition.frame());
 
@@ -121,9 +127,9 @@ void UndoCommand::onExecute(Context* context)
     Site newSite = context->activeSite();
     SpritePosition currentPosition(newSite.layer(), newSite.frame());
 
-    if (spritePosition != currentPosition) {
+    if (spritePosition.layerId() != doc::NullId && spritePosition != currentPosition) {
       Layer* selectLayer = spritePosition.layer();
-      if (selectLayer)
+      if (selectLayer && selectLayer->sprite() == sprite)
         editor->setLayer(selectLayer);
       editor->setFrame(spritePosition.frame());
     }

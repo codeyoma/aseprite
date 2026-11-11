@@ -51,7 +51,19 @@ Transaction::Transaction(Context* ctx, Doc* doc, const std::string& label, Modif
   // Here we are executing an empty CmdTransaction, just to save the
   // SpritePosition. Sub-cmds are executed then one by one, in
   // Transaction::execute()
-  m_cmds->execute(m_ctx);
+  m_cmds->execute(positionContext());
+}
+
+// The context whose active site (layer, frame, timeline range) the
+// transaction records for undo/redo. This fork: none when the
+// transaction's document isn't the active one (a script changing a
+// background sprite, e.g. with sprite:transaction()), so undo never
+// selects a layer of another sprite.
+Context* Transaction::positionContext() const
+{
+  if (m_ctx && m_ctx->activeDocument() != m_doc)
+    return nullptr;
+  return m_ctx;
 }
 
 Transaction::~Transaction()
@@ -108,10 +120,14 @@ void Transaction::commit()
 
     Palette* pal = m_doc->sprite()->palette(sprPos.frame());
     ASSERT(pal);
-    if (pal)
-      set_current_palette(pal, false);
-    else
-      set_current_palette(nullptr, false);
+    // This fork: a background document's palette never becomes the
+    // current one.
+    if (positionContext() == m_ctx) {
+      if (pal)
+        set_current_palette(pal, false);
+      else
+        set_current_palette(nullptr, false);
+    }
 
     if (m_ctx && m_ctx->isUIAvailable())
       ui::Manager::getDefault()->invalidate();
@@ -122,7 +138,7 @@ void Transaction::rollbackAndStartAgain()
 {
   auto newCmds = m_cmds->moveToEmptyCopy();
   rollback(newCmds);
-  newCmds->execute(m_ctx);
+  newCmds->execute(positionContext());
 }
 
 void Transaction::rollback(CmdTransaction* newCmds)

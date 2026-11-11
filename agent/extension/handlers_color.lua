@@ -8,6 +8,8 @@
 return function(handlers, D)
   local px, layerById, variations = D.px, D.layerById, D.variations
   local framesFromParam, imageLayers, writePalette = D.framesFromParam, D.imageLayers, D.writePalette
+  -- The request's sprite (#90), which need not be the active one, and one undo step on it.
+  local site, transaction = D.site, D.transaction
 
   -- The image layers and frames a color request covers.
   local function colorTargets(sprite, params)
@@ -24,7 +26,7 @@ return function(handlers, D)
 
   -- Every distinct color in the target cels (or the selection), with counts.
   handlers.collect_colors = function(params)
-    local sprite = app.sprite
+    local sprite = site().sprite
     local layers, frames = colorTargets(sprite, params)
     local pc = app.pixelColor
     local palette = sprite.palettes[1]
@@ -75,7 +77,7 @@ return function(handlers, D)
   end
 
   handlers.get_palette = function()
-    local sprite = app.sprite
+    local sprite = site().sprite
     local p, out = sprite.palettes[1], {}
     for i = 0, #p - 1 do
       local c = p:getColor(i)
@@ -115,10 +117,10 @@ return function(handlers, D)
 
   -- Replaces the sprite's palette (one undo step).
   handlers.set_palette = function(params)
-    local sprite = app.sprite
+    local sprite = site().sprite
     local colors = params.colors or {}
     if #colors == 0 then error("No colors") end
-    app.transaction(params.label or "Set palette", function()
+    transaction(sprite, params.label or "Set palette", function()
       paletteColors(sprite, colors, params.append)
     end)
     app.refresh()
@@ -128,7 +130,7 @@ return function(handlers, D)
   -- Recolors the target cels with a { ["#from"] = "#to" } map (one undo step).
   -- Indexed sprites change palette entries instead of pixels.
   handlers.apply_color_map = function(params)
-    local sprite = app.sprite
+    local sprite = site().sprite
     local pc = app.pixelColor
     local map = {}
     for from, to in pairs(params.map or {}) do
@@ -137,7 +139,7 @@ return function(handlers, D)
       map[pc.rgba(r, g, b, a)] = pc.rgba(r2, g2, b2, a2)
     end
     local changed = 0
-    app.transaction(params.label or "Recolor", function()
+    transaction(sprite, params.label or "Recolor", function()
       if sprite.colorMode == ColorMode.INDEXED then
         local p = sprite.palettes[1]
         for i = 0, #p - 1 do
@@ -184,15 +186,16 @@ return function(handlers, D)
   -- layer, or the existing one with that name, whose cel in the active frame
   -- is replaced. Either way it becomes the active layer.
   handlers.draw_swatches = function(params)
-    local sprite = app.sprite
+    local sprite = site().sprite
     local colors = params.colors or {}
     local size = params.size or math.max(1, math.min(8, sprite.width // math.max(1, #colors)))
     local layer
-    app.transaction("Palette swatches", function()
+    local s = site()
+    transaction(sprite, "Palette swatches", function()
       local name = params.name or "palette"
       layer = findImageLayer(sprite.layers, variations.PREFIX .. name)
-      if layer then app.layer = layer
-      else layer = variations.aiLayer(name, params.prompt) end
+      if not layer then layer = variations.aiLayer(name, params.prompt, { sprite = sprite, above = s.layer }) end
+      D.select(s, nil, layer)
       local perRow = math.max(1, sprite.width // size)
       local img = Image(sprite.width, sprite.height, ColorMode.RGB)
       for i, h in ipairs(colors) do
@@ -201,7 +204,7 @@ return function(handlers, D)
         for dy = 0, size - 1 do for dx = 0, size - 1 do img:drawPixel(x + dx, y + dy, app.pixelColor.rgba(r, g, b, a)) end end
       end
       -- newCel replaces the layer's cel in that frame, if it has one.
-      sprite:newCel(layer, app.frame or 1, img, Point(0, 0))
+      sprite:newCel(layer, s.frame, img, Point(0, 0))
     end)
     app.refresh()
     return { layer = "L" .. layer.id }

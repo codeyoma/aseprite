@@ -86,7 +86,8 @@ for line in io.stdin:lines() do
       end
       local ok, result, bytes = pcall(function()
         if runner[method] then return runner[method](msg.params or {}) end
-        return H.call(method, msg.params or {})
+        -- doc (#90): the sprite the request names (a sprite id from get_state), else the active one.
+        return H.call(method, msg.params or {}, nil, msg.doc ~= nil and { doc = msg.doc } or nil)
       end)
       if not ok then
         local err = type(result) == "table" and result or { message = tostring(result) }

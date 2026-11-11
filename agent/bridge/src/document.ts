@@ -44,6 +44,8 @@ export interface TagInfo {
 }
 
 export interface SpriteInfo {
+  /** The sprite's id for the session ("S12", #90): a request's route.doc names it. */
+  doc?: string;
   title: string;
   width: number;
   height: number;
@@ -323,10 +325,10 @@ export function contextOf(state: any): Record<string, unknown> {
   const walk = (list: any[]) => { for (const l of list ?? []) { tree.set(String(l.id), l); if (l.group) walk(l.layers); } };
   walk(s.layers);
   const active = tree.get(state.activeLayerId);
-  const { filename, width, height, colorMode, frameCount, layerCount, modified } = s;
+  const { id, filename, width, height, colorMode, frameCount, layerCount, modified } = s;
   return {
     ...ctx,
-    sprite: { filename, width, height, colorMode, frameCount, layerCount, modified },
+    sprite: { id, filename, width, height, colorMode, frameCount, layerCount, modified },
     layer: active ? {
       id: active.id, name: active.name, path: state.activeLayer, group: !!active.group, visible: active.visible,
       editable: active.editable, ...(active.group ? {} : { opacity: active.opacity }),
@@ -350,6 +352,7 @@ export function parseState(state: any): SpriteInfo {
   const active = layers.find((l) => l.id === state.activeLayerId);
   const title = String(s.filename ?? "").split(/[\\/]/).pop()!.replace(/\.[^.]+$/, "");
   return {
+    ...(typeof s.id === "string" ? { doc: s.id } : {}),
     title,
     width: s.width,
     height: s.height,

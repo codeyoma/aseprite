@@ -280,7 +280,8 @@ return function(handlers, D)
   -- params: layer (id or name), frames ("1-4", n or list), rules (list of names),
   -- expect ({ layer_frames = { [layer] = frames }, must_not_overlap = { {a, b} } }).
   local function check(params)
-    local sprite = app.sprite
+    -- The request's sprite (#90), else (called outside a request) the active one.
+    local sprite = D.site() and D.site().sprite or app.sprite
     params = params or {}
 
     local enabled = {}

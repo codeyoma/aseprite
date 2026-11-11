@@ -30,17 +30,21 @@ local function placeAbove(layer, ref)
 end
 
 -- A new layer "AI: <task>" above the active layer (or opts.above), with the
--- prompt stored on it. Returns the layer.
+-- prompt stored on it; it becomes the active layer. Returns the layer.
+-- opts.sprite (#90): the sprite to add it to (default: the active one); a
+-- sprite that isn't active keeps its layers' selection (opts.above is then
+-- the reference layer, and the caller moves the request's site).
 function M.aiLayer(task, prompt, opts)
-  local s = sprite()
-  local ref = (opts and opts.above) or app.layer
+  local s = (opts and opts.sprite) or sprite()
+  local active = s == app.sprite
+  local ref = (opts and opts.above) or (active and app.layer or nil)
   local layer = s:newLayer()
   layer.name = M.PREFIX .. tostring(task)
   placeAbove(layer, ref)
   local p = layer.properties(M.KEY)
   p.task = tostring(task)
   if prompt then p.prompt = tostring(prompt) end
-  app.layer = layer
+  if active then app.layer = layer end
   return layer
 end
 
@@ -96,11 +100,11 @@ function M.candidates(task, s)
   return list, group
 end
 
--- Image of one variation layer on the active frame (the layer alone).
+-- Image of one variation layer on a frame (default: the active frame; the layer alone).
 -- toRgb converts cel images of indexed or grayscale sprites.
-function M.render(layer, toRgb)
+function M.render(layer, toRgb, frame)
   local s = layer.sprite
-  local frame = (app.frame and app.frame.frameNumber) or 1
+  frame = frame or (app.frame and app.frame.frameNumber) or 1
   local img = Image(s.width, s.height, ColorMode.RGB)
   local cel = layer:cel(frame)
   if cel then img:drawImage(toRgb(cel.image, s.palettes[1], layer.isTilemap and layer.tileset or nil), cel.position) end

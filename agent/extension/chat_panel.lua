@@ -1436,27 +1436,28 @@ return function(deps)
     end
   end
 
-  -- Runs one request of a chat turn (agent.lua) on that chat's sprite (#90).
-  -- Chats run at the same time, so the sprite may not be the active tab:
-  -- then it is made active for this one call and the user's sprite, frame and
-  -- layer come back before anything is drawn. A request that opens or makes
-  -- a sprite moves the chat there. Steps it records belong to the chat.
-  function Panel.handleRequest(fn, chatId, ...)
+  -- Runs one request of a chat turn (agent.lua) on that chat's sprite (#90):
+  -- fn (the Document Handlers' call) gets the sprite as the request's doc,
+  -- so it acts on that sprite without making it the active tab (an envelope
+  -- doc, when the bridge sends one, names the sprite instead). A request that
+  -- opens or makes a sprite moves the chat there; when the chat's sprite was
+  -- not on screen, the user's sprite, frame and layer come back. Steps it
+  -- records belong to the chat.
+  function Panel.handleRequest(fn, chatId, method, params, blob, doc)
     local chat, target = chats:route(chatId)
-    if not chat and type(target) == "string" then error(target, 0) end
+    if not chat and type(target) == "string" and doc == nil then error(target, 0) end
     local prev = app.sprite
     local prevId = prev and prev.id
     local prevFrame, prevLayer = app.frame, app.layer
-    local swap = target ~= nil and target ~= prevId
+    local route = { doc = doc ~= nil and doc or target }
     inRequest = true
-    if swap then app.sprite = spriteById(target) end
-    local beforeId = app.sprite and app.sprite.id
     if deps.setCaptureChat then deps.setCaptureChat(chatId) end
-    local results = table.pack(pcall(fn, ...))
+    local results = table.pack(pcall(fn, method, params, blob, route))
     if deps.setCaptureChat then deps.setCaptureChat(nil) end
-    local afterId = app.sprite and app.sprite.id
-    if chat and afterId and afterId ~= beforeId then chats:rehome(chat, afterId) end
-    if swap then
+    local moved = route.moved
+    if chat and moved and doc == nil then chats:rehome(chat, moved) end
+    -- A background chat made or opened a sprite: the user stays where they were.
+    if moved and target ~= nil and target ~= prevId and (app.sprite and app.sprite.id) ~= prevId then
       local back = spriteById(prevId)
       if back then
         app.sprite = back
@@ -1465,7 +1466,7 @@ return function(deps)
       end
     end
     inRequest = false
-    if (app.sprite and app.sprite.id) ~= prevId or (chat and afterId ~= beforeId) then Panel.onSiteChange() end
+    if (app.sprite and app.sprite.id) ~= prevId or moved then Panel.onSiteChange() end
     if not results[1] then error(results[2], 0) end
     return table.unpack(results, 2, results.n)
   end

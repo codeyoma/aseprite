@@ -118,7 +118,7 @@ test("the bridge answers GET /files with the token: open sprites of the attached
     assert.equal((await fetch(url)).status, 401, "no token");
     assert.deepEqual(await (await fetch(url, auth)).json(), { connected: false, files: [] });
     // A fake extension answering get_state (protocol.json State).
-    const sprite = (filename) => ({ filename, width: 8, height: 8, colorMode: "rgb", frameCount: 1, layerCount: 1, modified: false });
+    const sprite = (filename) => ({ id: "S1", filename, width: 8, height: 8, colorMode: "rgb", frameCount: 1, layerCount: 1, modified: false });
     ws = new WebSocket(`ws://127.0.0.1:${port}`);
     await new Promise((r) => ws.once("open", r));
     ws.on("message", (data) => {

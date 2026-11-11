@@ -154,6 +154,9 @@ export function fakeDocument({
   const named = (s, name) => walk(s.layers).find((l) => l.name === name);
   let active = { sprite, frame, layer: layer !== undefined ? named(sprite, layer) : walk(sprite.layers).filter((x) => !x.group).at(-1) };
   const calls = [];
+  // Document-scoped requests (#90): each sprite's id ("S1" for the first) and where it was when last active.
+  const docOf = (s) => `S${Math.max(1, sprites.indexOf(s) + 1)}`;
+  const lastSite = new Map();
   const newSprite = (s) => ({ title: "Sprite", colorMode: "rgb", slices: [], tags: [], palette: [], defaultPalette: false, ...s });
   // A layer by id ("L12" or 12) or by name, as document_view.lua layerById.
   const byRef = (ref) => {
@@ -323,6 +326,8 @@ export function fakeDocument({
     get_state: () => {
       const s = active.sprite;
       const summary = {
+        // The sprite's id for the session (#90): its place in the fake's list.
+        id: docOf(s),
         filename: s.title, width: s.width, height: s.height, colorMode: s.colorMode,
         frameCount: s.durations.length, layerCount: s.layers.length, modified: false,
       };
@@ -1210,8 +1215,34 @@ export function fakeDocument({
     },
     /** Root layer names of the active sprite, bottom first. */
     layerNames() { return active.sprite.layers.map((l) => l.name); },
-    async request(method, params = {}) {
-      calls.push({ method, params });
+    async request(method, params = {}, _timeoutMs, route) {
+      // route (#90): which sprite the request names; recorded so tests can check it was sent.
+      calls.push(route ? { method, params, route } : { method, params });
+      // As the extension: where the active sprite is, the default site of its later routed requests.
+      lastSite.set(active.sprite, { frame: active.frame, layer: active.layer });
+      if (route?.doc === undefined || route.doc === null) return answer(method, params);
+      const target = sprites.find((s) => docOf(s) === String(route.doc) || docOf(s) === `S${route.doc}`);
+      if (!target) throw new Error(`Sprite not found: ${route.doc} (it was closed, or is not open in this Aseprite)`);
+      const outer = active;
+      if (target !== outer.sprite) {
+        const site = lastSite.get(target);
+        active = { sprite: target, frame: site?.frame ?? 1, layer: site?.layer ?? walk(target.layers).filter((l) => !l.group).at(-1) };
+      }
+      try {
+        return await answer(method, params);
+      } finally {
+        // The user's sprite stays active; a sprite the request made stays active, as in Aseprite.
+        if (target !== outer.sprite && active.sprite === target) {
+          lastSite.set(target, { frame: active.frame, layer: active.layer });
+          active = outer;
+        }
+      }
+    },
+  };
+
+  /** One request on the active sprite (request() picks the sprite a route names first). */
+  async function answer(method, params) {
+    {
       const own = extra[method];
       const h = own ?? handlers[method];
       if (!h) throw new Error(`fake document: no handler for ${method}`);
@@ -1220,8 +1251,8 @@ export function fakeDocument({
       if (!own) checkResult(method, Array.isArray(r) ? r[0] : r);
       if (Array.isArray(r)) return { result: r[0], binary: r[1] };
       return { result: r };
-    },
-  };
+    }
+  }
 }
 
 /** A sprite-size RGBA buffer filled with one color inside a rect. */

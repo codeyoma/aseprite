@@ -57,11 +57,13 @@ return function(handlers, D)
   end
 
   handlers.apply = function(params)
-    local sprite = app.sprite
+    -- The request's sprite (#90), which need not be the active one.
+    local site = D.site()
+    local sprite = site.sprite
     local ops = params.ops
     if type(ops) ~= "table" or #ops == 0 then error("ops must list at least one op") end
     local scoped = type(params.scope) == "table"
-    local startLayer, startFrame = app.layer, app.frame and app.frame.frameNumber or 1
+    local startLayer, startFrame = site.layer, site.frame
 
     local function layerOf(ref, what)
       if ref == nil then fail((what or "layer") .. " is required") end
@@ -419,7 +421,7 @@ return function(handlers, D)
     end
 
     local rollback = false
-    local ok, err = pcall(app.transaction, params.label or "Apply", function()
+    local ok, err = pcall(D.transaction, sprite, params.label or "Apply", function()
       for i, op in ipairs(ops) do runOp(i, op) end
       if #errors > 0 or params.dry_run then
         rollback = true
@@ -429,12 +431,8 @@ return function(handlers, D)
     if not ok and not rollback then error(err) end
 
     -- The active layer and frame stay what they were (when they still exist).
-    pcall(function()
-      if startLayer and app.layer ~= startLayer then app.layer = startLayer end
-    end)
-    pcall(function()
-      if startFrame <= #sprite.frames and (not app.frame or app.frame.frameNumber ~= startFrame) then app.frame = sprite.frames[startFrame] end
-    end)
+    local keepLayer = startLayer and pcall(function() return startLayer.name end) and startLayer or nil
+    D.select(site, startFrame <= #sprite.frames and startFrame or nil, keepLayer)
     app.refresh()
 
     local applied = not rollback
