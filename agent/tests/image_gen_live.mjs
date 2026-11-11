@@ -47,4 +47,13 @@ const colors = await lua(`local l for _, x in ipairs(app.sprite.layers) do if x.
   local seen, n = {}, 0 for it in l.cels[1].image:pixels() do local v = it() if app.pixelColor.rgbaA(v) > 0 and not seen[v] then seen[v] = true n = n + 1 end end return n`);
 check("the draft has at most 12 colors", colors >= 2 && colors <= 12, colors);
 
+// A plain request for new art, with no tool named: the agent starts from an image draft by itself (basics guide).
+await lua(`_G.__permissionTexts = {} return true`);
+await answer("allow");
+await chat("Draw a cute green slime as a 32x32 pixel-art sprite.", { timeout: 900_000 });
+turn = await entries();
+check("a plain 'draw a ...' starts with the image generator", turn.some((l) => /^tool: Generate an image/.test(l)), turn.filter((l) => /^tool:/.test(l)));
+const ls2 = await lua(`local out = {} if app.sprite then for _, l in ipairs(app.sprite.layers) do out[#out + 1] = l.name end end return out`);
+check("its draft and reference are on the sprite", ls2.includes("AI: Draft") && ls2.includes("AI: Reference"), ls2);
+
 done("IMAGE GEN");

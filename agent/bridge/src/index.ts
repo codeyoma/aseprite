@@ -19,7 +19,7 @@ import { startHttpEndpoint } from "./http.js";
 import { CodexImageGenerator, ImageJobs } from "./image_gen.js";
 import { SavedCommands } from "./saved_commands.js";
 import { createMcpServer, VERSION } from "./server.js";
-import { newToken, recordBridge, sessionDir } from "./session.js";
+import { homeBelongsToAnother, newToken, pinnedBridge, recordBridge, sessionDir } from "./session.js";
 import { toolContext } from "./tool.js";
 
 const DAEMON_IDLE_EXIT_MS = 120_000;
@@ -29,7 +29,12 @@ async function main() {
   if (daemon) logToFile(join(sessionDir, "daemon.log"));
   const link = new AsepriteLink();
   link.sessionExtra = { bridgePath: fileURLToPath(import.meta.url), version: VERSION, mode: daemon ? "daemon" : "stdio" };
-  recordBridge(fileURLToPath(import.meta.url), VERSION);
+  const self = fileURLToPath(import.meta.url);
+  // A home pinned to another bridge (the user's stable instance) isn't ours: tools still work over stdio, but
+  // Aseprite keeps its own bridge.
+  const foreign = homeBelongsToAnother(self);
+  if (foreign) log(`${sessionDir} belongs to ${pinnedBridge()}; not publishing this bridge there (set ASEPRITE_AGENT_HOME for your own)`);
+  recordBridge(self, VERSION);
 
   const commands = new SavedCommands();
   // spawn_agents (#33): set below, since sub-agents connect back to the endpoint.
@@ -56,7 +61,7 @@ async function main() {
     link.onRequest(method, handler);
   }
 
-  const port = await link.start(Number(process.env.ASEPRITE_AGENT_PORT ?? 0));
+  const port = await link.start(Number(process.env.ASEPRITE_AGENT_PORT ?? 0), { publish: !foreign });
   log(`listening on ws://127.0.0.1:${port} (${daemon ? "daemon" : "stdio"}), MCP HTTP on ${endpoint.url}`);
 
   const shutdown = () => {

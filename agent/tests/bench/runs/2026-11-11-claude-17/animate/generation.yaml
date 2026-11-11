@@ -1,0 +1,137 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: "603f53a36"
+date: "2026-11-11T09:52:22.229Z"
+seconds: 170
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 10 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 140
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: rules/animation"
+        status: failed
+      - tool: Inspect pixels
+        status: failed
+      - tool: Look at the sprite
+        status: failed
+      - tool: "Read guide: rules/animation"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: "Motion stage: keys"
+        status: ok
+      - tool: "Walk keys 1,3,4,6 as part layers"
+        status: ok
+      - tool: Reshape arms with elbow
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: "Motion stage: advance"
+        status: ok
+      - tool: In-betweens 2 and 5
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: "Motion stage: done"
+        status: ok
+    reply: "The tool names need the server prefix.\nReads better. Now check the limb opposition on the contacts.\nI made a 6-frame walk cycle facing right, tagged [walk](aseprite://tag/walk). The near arm and the near leg are on separate layers, along with the body, the far leg and the far arm: [AI: far arm](aseprite://layer/L842), the far leg, the body, the near leg and the near arm. I hid your original [Hero](aseprite://layer/L734) layer but didn't change it. The head and shirt are copied from it. Your character had no arms, so I added them: the near arm is light blue (#8cc8ff) and the far arm is dark navy (#1d2b53). I also kept your leg colour for the near leg and used the darkest colour (#181425) for the far leg, so each arm reads as belonging to the leg on its side.\n\n| Frame | Pose | Duration |\n|--"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 30
+    header: Claude
+    tools:
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Idle loop frames 7-10
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added a 4-frame idle loop on frames 7–10, tagged [idle](aseprite://tag/idle). The walk on frames 1–6 is unchanged.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 7 | Standing still, arms at the sides | 300 ms |\n| 8 | Breathing in: head and chest 1 px up | 200 ms |\n| 9 | Back to standing | 300 ms |\n| 10 | Breathing out: head and chest 1 px down | 200 ms |\n\n- **Timing:** one loop takes 1 second. The feet and legs never move; only the head, shirt and arms rise and fall.\n- **Body height:** the shirt grows by 1 px when breathing in and shrinks by 1 px when breathing out, so it always meets the legs.\n- **Checks:** no frame repeats the one before it, and the feet stay on the same row in every frame. The only warnings are again for the 1 px eye, which is meant to be there."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 69
+  scores:
+    readability: 2
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 3
+  overall: 2
+  note: "Clean pixels and opposing limb poses distinguish the six-frame walk from the four-frame idle. Limbs merge at 1×, while stiff arm paths and changing torso height weaken the motion's weight and consistency."

@@ -28,6 +28,82 @@ const moveSchema = z.object({
 
 export const ANIMATION_TOOLS: Tool[] = [
   {
+    name: "motion_stage",
+    title: "Motion stage",
+    description:
+      "Draw an animation in stages (#99). 'keys' starts it: until it advances, an edit may change only the key frames " +
+      "of the tag (for a 6-frame walk 1, 3, 4, 6: contacts and passings); an edit that changes another frame of the tag " +
+      "is undone, execute_lua included. 'advance' moves on to the in-betweens once every key has art and, for a walk, " +
+      "walk_check says ok. 'done' ends it. Without action: the current stage.",
+    input: z.object({
+      action: z.enum(["keys", "advance", "done"]).optional(),
+      tag: z.string().optional().describe("The animation's tag. Default 'walk'."),
+      keys: z.array(z.number().int().min(1)).optional()
+        .describe("Key frames (sprite frame numbers). Default: a 6-frame walk's 1, 3, 4, 6 (from the tag's start); otherwise its first and middle frames."),
+      walk: z.boolean().optional().describe("Is it a walk (advance needs walk_check ok)? Default: the tag's name contains 'walk' or 'run'."),
+    }),
+    kind: "edit",
+    label: (a) => (a.action ? `Motion stage: ${a.action}` : "Motion stage"),
+    async run(input, aseprite) {
+      const doc = documentOf(aseprite);
+      const info = await doc.info();
+      let spec: Record<string, any> = {};
+      try { spec = info.pixelSpec ? JSON.parse(info.pixelSpec) : {}; } catch { spec = {}; }
+      const m = spec.motion as { tag: string; keys: number[]; stage: string; walk: boolean } | undefined;
+      const store = async (motion: unknown, label: string) => {
+        await doc.putImages([], { spec: JSON.stringify({ ...spec, motion }), label });
+      };
+      if (!input.action) {
+        return { content: [text(m ? `Motion stage "${m.stage}" for tag "${m.tag}", keys ${m.keys.join(", ")}.` : "No motion stage.")] };
+      }
+      if (input.action === "keys") {
+        const tagName = input.tag ?? "walk";
+        const tag = info.tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
+        if (!tag) return failure(`No tag "${tagName}": make the tag and its frames first (apply_timeline_text).`);
+        const n = tag.to - tag.from + 1;
+        const keys = input.keys ?? (n === 6 ? [0, 2, 3, 5] : [0, Math.floor(n / 2)]).map((i) => tag.from + i);
+        if (keys.some((k: number) => k < tag.from || k > tag.to)) return failure(`Keys must be frames of "${tag.name}" (${tag.from}-${tag.to}).`);
+        const walk = input.walk ?? /walk|run/i.test(tag.name);
+        await store({ tag: tag.name, keys, stage: "keys", walk }, "Motion stage: keys");
+        const rest = Array.from({ length: n }, (_, i) => tag.from + i).filter((f) => !keys.includes(f));
+        return { content: [text(`Motion stage "keys" for "${tag.name}": draw the key frames ${keys.join(", ")} now. Edits to ` +
+          `frames ${rest.join(", ")} are undone until motion_stage advance${walk ? " (walk_check must say ok first)" : ""}.`)] };
+      }
+      if (!m) return failure("No motion stage: start one with action 'keys'.");
+      if (input.action === "advance") {
+        if (m.stage !== "keys") return failure(`The stage is already "${m.stage}".`);
+        const empty: number[] = [];
+        const images: string[] = [];
+        for (const k of m.keys) {
+          const img = await doc.pixels(undefined, k);
+          let opaque = 0;
+          for (let i = 3; i < img.data.length; i += 4) if (img.data[i] >= 128) opaque++;
+          if (!opaque) empty.push(k);
+          images.push(Buffer.from(img.data).toString("base64"));
+        }
+        if (empty.length) return failure(`Key frame${empty.length > 1 ? "s" : ""} ${empty.join(", ")} ${empty.length > 1 ? "have" : "has"} no art yet: draw every key first.`);
+        const same = m.keys.filter((k, i) => i > 0 && images[i] === images[i - 1]);
+        if (same.length) return failure(`Key frame${same.length > 1 ? "s" : ""} ${same.join(", ")} repeat${same.length > 1 ? "" : "s"} the key before: each key is a different pose.`);
+        if (m.walk) {
+          let verdict;
+          try {
+            verdict = (await measureWalk(doc, { tag: m.tag })).verdict;
+          } catch (e) {
+            return failure(`walk_check can't run yet: ${(e as Error).message}`);
+          }
+          if (verdict.status !== "ok") {
+            return failure(`Not yet: walk_check says ${verdict.status}.\n${[...verdict.errors, ...verdict.unverifiable].join("\n")}\nFix the keys, then advance again.`);
+          }
+        }
+        await store({ ...m, stage: "inbetweens" }, "Motion stage: in-betweens");
+        return { content: [text(`Motion stage "inbetweens" for "${m.tag}": draw each in-between from the keys on both sides ` +
+          `(snapshot view 'onion'), then run walk_check and motion_review again, and motion_stage done.`)] };
+      }
+      await store({ ...m, stage: "done" }, "Motion stage: done");
+      return { content: [text(`Motion stage done for "${m.tag}".`)] };
+    },
+  },
+  {
     name: "walk_check",
     title: "Walk limb check",
     description:

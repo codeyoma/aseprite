@@ -30,6 +30,7 @@
     "make_seamless",
     "make_ui",
     "mirror_direction",
+    "motion_stage",
     "new_fx_sprite",
     "normal_map",
     "outline_sprite",

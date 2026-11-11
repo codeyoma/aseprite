@@ -148,6 +148,7 @@ function M.new(opts)
   local variations = loadModule("variations.lua")    -- AI layers and variations (#25)
   local timelineText = loadModule("timeline_text.lua")
   local scopeGuard = loadModule("scope_guard.lua")
+  local motionGate = loadModule("motion_gate.lua")
   local wireParams = loadModule("wire_params.lua")
   local view = loadModule("document_view.lua").new{ px = px }
   local layerById = view.layerById
@@ -798,9 +799,25 @@ function M.new(opts)
     local scoped = type(params.scope) == "table"
     if scoped and spec.kind == "write" then return callScoped(method, spec, params) end
     if M.needsSprite(spec) and not app.sprite then error("No active sprite") end
-    local function run()
+    local function runHandler()
       if capture then return capture:around(method, withQuietAlerts, handler, params) end
       return withQuietAlerts(handler, params)
+    end
+    -- Motion stage gate (#99): in an animation's "keys" stage an edit may change only the key frames of its tag.
+    local function run()
+      local sprite = app.sprite
+      local gate = spec.kind == "scoped-write" and motionGate.read(sprite) or nil
+      if not gate then return runHandler() end
+      local before = motionGate.snapshot(sprite, gate)
+      local undoBefore = sprite.undoHistory and sprite.undoHistory.current or 0
+      local results = table.pack(runHandler())
+      local problem = motionGate.check(sprite, gate, before)
+      if problem then
+        if app.sprite == sprite then sprite:undoTo(undoBefore) end
+        app.refresh()
+        error(problem .. ". " .. motionGate.describe(sprite, gate) .. " The step was undone.")
+      end
+      return table.unpack(results, 1, results.n)
     end
     if scoped then return callScoped(method, spec, params, run) end
     return run()

@@ -229,12 +229,13 @@ test("walk_check finds 'near arm'/'near leg' layers, stores the limbs, and rerun
 });
 
 /** The run-6 walk on part layers 'near arm' and 'near leg', with a scripted critic (#99 motion review). */
-function walkFake() {
+function walkFake(shiftPassing = false) {
   const cel = (rows, keep) => {
     const img = asciiImage(rows.map((r, y) => [...r].map((c) => (c === "N" && keep(y) ? "N" : ".")).join("")));
     return { x: 0, y: 0, width: img.width, height: img.height, data: img.data };
   };
-  const frames = [1, 2, 3, 4, 5, 6].map((f) => (f === 4 ? RUN6[4] : RUN6[1]));
+  const shift = (rows) => rows.map((r) => "." + r.slice(0, -1));
+  const frames = [1, 2, 3, 4, 5, 6].map((f) => (f === 4 ? RUN6[4] : shiftPassing && (f === 3 || f === 6) ? shift(RUN6[1]) : RUN6[1]));
   return fakeDocument({
     width: 24, height: 32, frames: 6, tags: [{ name: "walk", from: 1, to: 6 }],
     layers: [
@@ -316,4 +317,38 @@ test("walk_check: a near leg not clearly lighter than the far leg is an error (#
   assert.ok(l2.near - l2.far >= MIN_DEPTH, JSON.stringify(l2));
   assert.equal(judgeWalk([{ frame: 1, arm, leg, legLight: l2 }, { frame: 4, arm: { pixels: 9, offset: 2 }, leg: { pixels: 9, offset: -2 } }]).status, "ok");
   assert.equal(legLightness(asciiImage(RUN6[1].map(() => ".".repeat(24))), new Array(24 * 32).fill(false)), undefined);
+});
+
+test("motion_stage: keys, then advance only with every key drawn and walk_check ok, then done (#99)", async () => {
+  const fake = walkFake(true);
+  const run = (input) => runTool(findTool("motion_stage"), input, fake);
+  assert.match((await run({})).content[0].text, /No motion stage/);
+  const start = await run({ action: "keys" });
+  assert.match(start.content[0].text, /draw the key frames 1, 3, 4, 6 now. Edits to frames 2, 5 are undone until motion_stage advance \(walk_check must say ok first\)/);
+  const spec = async () => JSON.parse((await fake.request("get_state")).result.activeSprite.pixelSpec);
+  assert.deepEqual((await spec()).motion, { tag: "walk", keys: [1, 3, 4, 6], stage: "keys", walk: true });
+  // The run-6 contacts: same-side swing, so advance is refused.
+  const refused = await run({ action: "advance" });
+  assert.equal(refused.isError, true);
+  assert.match(refused.content[0].text, /Not yet: walk_check says errors/);
+  assert.equal((await spec()).motion.stage, "keys");
+  assert.match((await run({ action: "keys", tag: "run" })).content[0].text, /No tag "run"/);
+});
+
+test("motion_stage advance: refuses an empty key; moves on when the walk checks out (#99)", async () => {
+  const empty = fakeDocument({ width: 8, height: 8, frames: 6, tags: [{ name: "walk", from: 1, to: 6 }], layers: [{ name: "Art", frames: [] }] });
+  await runTool(findTool("motion_stage"), { action: "keys" }, empty);
+  const r = await runTool(findTool("motion_stage"), { action: "advance" }, empty);
+  assert.match(r.content[0].text, /Key frames 1, 3, 4, 6 have no art yet/);
+
+  // A non-walk (an idle): advance needs only drawn, distinct keys.
+  const dot = (x) => { const d = new Uint8Array(8 * 8 * 4); d.set([255, 0, 0, 255], (2 * 8 + x) * 4); return { x: 0, y: 0, width: 8, height: 8, data: d }; };
+  const idle = fakeDocument({ width: 8, height: 8, frames: 4, tags: [{ name: "idle", from: 1, to: 4 }], layers: [{ name: "Art", frames: [dot(1), undefined, dot(3), undefined] }] });
+  const s = await runTool(findTool("motion_stage"), { action: "keys", tag: "idle" }, idle);
+  assert.match(s.content[0].text, /key frames 1, 3 now/);
+  assert.doesNotMatch(s.content[0].text, /walk_check/);
+  const a = await runTool(findTool("motion_stage"), { action: "advance" }, idle);
+  assert.equal(a.isError, undefined, a.content[0].text);
+  assert.match(a.content[0].text, /Motion stage "inbetweens"/);
+  assert.match((await runTool(findTool("motion_stage"), { action: "done" }, idle)).content[0].text, /done for "idle"/);
 });

@@ -97,7 +97,7 @@ export function install() {
   log(`copied ${ext.files} extension files into ${ext.dest}`);
   // The stable extension starts its bridge from here (bridge_connection.lua reads <agent home>/bridge.json).
   mkdirSync(STABLE.home, { recursive: true });
-  writeFileSync(join(STABLE.home, "bridge.json"), JSON.stringify({ bridgePath: STABLE.bridge, version: p.commit }, null, 2) + "\n");
+  writeFileSync(join(STABLE.home, "bridge.json"), JSON.stringify({ bridgePath: STABLE.bridge, version: p.commit, pinned: true }, null, 2) + "\n");
   writeFileSync(recordFile, JSON.stringify({ commit: p.commit, at: new Date().toISOString(), notes: p.notes }, null, 2));
   rmSync(preparedFile, { force: true });
   return { installed: p.commit };

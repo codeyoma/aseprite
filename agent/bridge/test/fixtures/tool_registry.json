@@ -678,6 +678,18 @@
     ]
   },
   {
+    "name": "motion_stage",
+    "title": "Motion stage",
+    "kind": "edit",
+    "label": "Motion stage",
+    "input": [
+      "action",
+      "keys",
+      "tag",
+      "walk"
+    ]
+  },
+  {
     "name": "new_fx_sprite",
     "title": "Effect as a new sprite",
     "kind": "edit",

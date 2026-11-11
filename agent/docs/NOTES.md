@@ -2,6 +2,19 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Motion stage gate: keys first, checked, then in-betweens (#99)
+- **How:**
+  - `motion_stage` (`animation_tools.ts`) writes a stage into the pixel spec (`motion`: tag, keys, stage, walk). `keys` starts it; for a 6-frame walk the keys default to 1, 3, 4, 6 of the tag.
+  - In the extension, `H.call` wraps every scoped-write request (`execute_lua`, `write_pixels`, `put_images`...) with `motion_gate.lua` while the stage is "keys". It snapshots every cel of the tag's other frames, runs the request, and undoes it when one of them changed, naming the frame and the keys.
+  - Frames outside the tag stay free. Adding frames doesn't open the gate (the locked frames keep their numbers). Removing frames skips the comparison.
+  - `advance` needs every key drawn and distinct from the key before it, and for a walk `walk_check` ok (the same `measureWalk`). `done` ends it.
+- **Why:** skill text didn't make the agent draw keys before in-betweens; it drew the whole cycle in one Lua call. Codex's review: a refusal inside one tool is bypassed through `execute_lua`, so the gate sits where every edit passes, like the sub-agent scope guard (snapshot, run, compare, undo).
+- **Architecture:** the stage reuses pixel spec storage, so no protocol change. The gate reads the sprite property per edit (a small JSON string; `json.decode` gives userdata, not tables). The tests are `motion_gate_test.lua` and the motion_stage unit tests.
+
+## Stable instance: its agent home is pinned to its own bridge
+- **How:** `stable.mjs install` writes `pinned: true` into `~/.aseprite-agent/bridge.json`. A bridge started with that home whose own path differs (`homeBelongsToAnother`) neither records itself there nor publishes `session.json`; it logs why. Its stdio tools still work.
+- **Why:** a `claude` CLI session in the repository ran the dev bridge as its MCP server without `ASEPRITE_AGENT_HOME`. Every bridge records its path in `<home>/bridge.json`, so that session pointed the user's Aseprite AI at the dev checkout, and Aseprite AI started dev code as its daemon.
+
 ## Walk check: near leg lighter than the far leg (#99)
 - **How:** at each contact, `legLightness` takes the near leg's mean OKLab L (its mask, from the hip down) and the mean L of every other opaque composite pixel under the hip (the far leg). `judgeWalk` makes it an error when the near leg is less than `MIN_DEPTH` (0.12) lighter. It's skipped when there are fewer than 3 far-leg pixels (the far leg hidden). `walk_check` prints both values.
 - **Why:** every benchmark run so far drew the legs in #3c3c5a (near) and #1d2b53 (far), ΔL 0.07. The judge read the arm against those legs as same-side in some runs and opposite in others (run 12 opposite, run 13 same-side, with the same leg colors). A pairing a judge gets right by chance isn't readable. A measured threshold turns that into a fix with a number. 0.12 lets a mid grey-violet near leg (#6a6a90, ΔL 0.24) against the navy pass.

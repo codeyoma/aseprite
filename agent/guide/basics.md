@@ -11,6 +11,15 @@ Read this before editing. Every rule here was checked against Aseprite 1.3.18.
 
 Each `execute_lua` call is one undo step. If the code raises an error, everything it did is rolled back, so a failed attempt leaves no partial changes.
 
+## New art from words: an image draft first
+
+When the user asks for new art that doesn't exist yet (a character, creature, prop, item or scene, "draw a...", "make a sprite of..."), start from an image draft, not from pixels written in code:
+1. `generate_image` with an English prompt for the design: the subject, the view they asked for (side, front, three-quarter), full body, flat colors, a clear silhouette, a plain white background, no text. The panel asks the user first; don't also ask in chat. It takes a minute or two: call it again with the job id while it says "Still generating".
+2. `storyboard_to_frames` with the image, `target_size` (the size they asked for, else one that fits the subject: 32x32 for a character, 16x16 for an item) and `draft` (the palette size, about 8-16). It opens the sprite if none is open and puts the image on a hidden `AI: Reference` layer and a pixel draft on `AI: Draft`.
+3. Rework the draft into pixel art, as the concept skill says (`read_guide("concept")`, step 6): the palette, a clean 1 px outline, shading ramps with one light direction, no stray pixels, and details that read at 1x. Then `check` and look.
+
+Skip the draft for edits of existing art, patterns, tiles, UI and icons under 16 px, or when the user says to draw it by hand. If the user declines or the generator fails, draw it yourself.
+
 ## The state block
 
 Chat messages start with an `<aseprite-state>` block: sprite size and color mode, palette, layers from top to bottom with ids such as `L12`, tags, the active layer, frame and cel, and the timeline and pixel selection. Ids stay the same for the whole session. Inside `execute_lua`, `layerById("L12")` returns that layer (it also accepts a layer name).

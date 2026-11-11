@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -31,7 +31,29 @@ export function newToken(): string {
  */
 export const bridgeFile = join(sessionDir, "bridge.json");
 
+/**
+ * The bridge this agent home is pinned to (the stable installer writes `pinned: true` into bridge.json), or undefined.
+ * Another bridge started with this home (a CLI session's MCP server, a test without its own home) must not take the
+ * home over: it records nothing and publishes no session, so the instance keeps running its own bridge.
+ */
+export function pinnedBridge(): string | undefined {
+  try {
+    const info = JSON.parse(readFileSync(bridgeFile, "utf8"));
+    return info?.pinned === true && typeof info.bridgePath === "string" ? info.bridgePath : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** True when this home is pinned to a bridge other than `self` (paths compared after resolving links). */
+export function homeBelongsToAnother(self: string, pinned = pinnedBridge()): boolean {
+  if (!pinned) return false;
+  const real = (p: string) => { try { return realpathSync(p); } catch { return p; } };
+  return real(pinned) !== real(self);
+}
+
 export function recordBridge(bridgePath: string, version: string): void {
+  if (homeBelongsToAnother(bridgePath)) return;
   try {
     mkdirSync(sessionDir, { recursive: true, mode: 0o700 });
     writeFileSync(bridgeFile, JSON.stringify({ bridgePath, version }, null, 2) + "\n");
