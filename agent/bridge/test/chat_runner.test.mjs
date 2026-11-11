@@ -116,3 +116,15 @@ test("chat.send passes structured parts through", async () => {
   assert.equal(t.conversationId, "x9");
   assert.match(t.message, /<c\/>\n<s\/>\n\nhi$/);
 });
+
+test("every event of a turn carries the panel's chat id", async () => {
+  const { runtime, events, methods } = setup();
+  await methods["chat.send"]({ prompt: "hi", provider: "claude", sessions: {}, chatId: "c7" });
+  const { sink, resolve } = runtime.turns[0];
+  sink.event({ type: "text", text: "hello" });
+  sink.event({ type: "conversation", id: "s1" });
+  resolve({ conversationId: "s1", stop: "end" });
+  await tick();
+  assert.ok(events.length >= 4);
+  assert.ok(events.every((e) => e.chatId === "c7"), JSON.stringify(events));
+});

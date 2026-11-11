@@ -22,6 +22,8 @@ export type { ProviderId as Provider } from "./providers/index.js";
 
 /** What the chat panel receives (method "chat.event"). */
 export interface ChatEvent {
+  /** The chat whose turn this event belongs to (absent outside a turn). */
+  chatId?: string;
   type: "status" | "text" | "thinking" | "tool" | "tool_result" | "done" | "error" | "session" | "plan" | "permission" | "build";
   text?: string;
   /** Step label, e.g. "Add Shadow layer". */
@@ -125,6 +127,8 @@ export interface ChatRequest extends MessageParts {
   sessions?: Record<string, string>;
   /** Older panels: the conversation id for this message's key. */
   sessionId?: string;
+  /** The panel's chat (one per tab); every event of the turn carries it. */
+  chatId?: string;
 }
 
 export interface ChatRunnerOptions {
@@ -268,18 +272,20 @@ export class ChatRunner {
     const turn = { key, runtime, stopped: false };
     this.turn = turn;
     const live = () => this.turn === turn;
+    const chatId = req.chatId;
+    const emit = (ev: ChatEvent) => this.emit(chatId ? { ...ev, chatId } : ev);
     log(`chat: starting ${key} (${runtime.name})`);
-    this.emit({ type: "status", text: `${provider.id} is working...` });
+    emit({ type: "status", text: `${provider.id} is working...` });
     const sink: TurnSink = {
       event: (ev) => {
         if (!live()) return;
-        if (ev.type === "plan") return this.emit({ type: "plan", entries: ev.entries });
+        if (ev.type === "plan") return emit({ type: "plan", entries: ev.entries });
         if (ev.type === "conversation") {
           if (this.conversations[key] === ev.id) return;
           this.conversations[key] = ev.id;
-          return this.emit({ type: "session", provider: key, sessionId: ev.id });
+          return emit({ type: "session", provider: key, sessionId: ev.id });
         }
-        this.emit(toChatEvent(ev, provider.id));
+        emit(toChatEvent(ev, provider.id));
       },
       permission: (r) => (live() && !turn.stopped ? this.askPermission(r) : Promise.resolve({ outcome: "cancelled" })),
     };
@@ -289,13 +295,13 @@ export class ChatRunner {
       .then((r) => {
         if (r.conversationId && this.conversations[key] !== r.conversationId) {
           this.conversations[key] = r.conversationId;
-          this.emit({ type: "session", provider: key, sessionId: r.conversationId });
+          emit({ type: "session", provider: key, sessionId: r.conversationId });
         }
-        if (r.stop === "cancelled" || turn.stopped) this.emit({ type: "done", text: "Stopped." });
-        else if (r.stop === "end") this.emit({ type: "done" });
-        else this.emit({ type: "done", text: `The agent stopped early (${r.detail}).` });
+        if (r.stop === "cancelled" || turn.stopped) emit({ type: "done", text: "Stopped." });
+        else if (r.stop === "end") emit({ type: "done" });
+        else emit({ type: "done", text: `The agent stopped early (${r.detail}).` });
       })
-      .catch((err) => this.emit({ type: "error", text: err instanceof Error ? err.message : String(err) }))
+      .catch((err) => emit({ type: "error", text: err instanceof Error ? err.message : String(err) }))
       .finally(() => {
         if (this.turn === turn) this.turn = undefined;
         log(`chat: ${key} (${runtime.name}) turn ended`);
@@ -320,6 +326,7 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
     "chat.send": (p: {
       prompt: string; state?: string; changes?: string; context?: string; provider?: string;
       sessions?: Record<string, string>; sessionId?: string; attachments?: (Attachment & { uri?: string })[]; mode?: string;
+      chatId?: string;
     }) => (async () => {
       if (!p.prompt?.trim()) throw new Error("Empty prompt");
       const images = await loadAttachments(p.attachments);
@@ -328,7 +335,7 @@ export function chatMethods(chat: ChatRunner, version: string): Record<string, (
       chat.send({
         prompt: p.prompt, state: p.state ?? (p.context ? `[Context] ${p.context}` : ""), changes: p.changes,
         attachments, mode: chatMode(p.mode), provider: providerFor(p.provider),
-        sessions: p.sessions, sessionId: p.sessionId || undefined,
+        sessions: p.sessions, sessionId: p.sessionId || undefined, chatId: p.chatId ? String(p.chatId) : undefined,
       }, images);
       return { started: true };
     })(),

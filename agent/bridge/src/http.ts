@@ -32,6 +32,9 @@ export interface HttpEndpointOptions {
   critic?: () => CriticRunner | undefined;
 }
 
+/** A chat turn's request may wait for the user to come back to its sprite's tab. */
+export const CHAT_REQUEST_TIMEOUT_MS = 5 * 60_000;
+
 export async function startHttpEndpoint(link: AsepriteRequester, token: string, opts: HttpEndpointOptions = {}): Promise<HttpEndpoint> {
   const validateHost = localhostHostValidation();
   const validateOrigin = localhostOriginValidation();
@@ -55,9 +58,13 @@ export async function startHttpEndpoint(link: AsepriteRequester, token: string, 
       return;
     }
     // Stateless: one MCP server and transport per request.
-    const requester: AsepriteRequester = scope
-      ? { request: (method, params = {}, timeoutMs) => link.request(method, { ...params, scope }, timeoutMs) }
-      : link;
+    // Every request here comes from a chat turn (the agent, its sub-agents
+    // and critics), so it is marked: the panel holds it while that chat's
+    // sprite is not the active tab, which can take a while.
+    const requester: AsepriteRequester = {
+      request: (method, params = {}, timeoutMs) =>
+        link.request(method, scope ? { ...params, scope } : params, Math.max(timeoutMs ?? 0, CHAT_REQUEST_TIMEOUT_MS), "chat"),
+    };
     const lead = !scope && !critic;
     const ctx = toolContext(requester, {
       commands: opts.commands, subAgents: lead ? opts.subAgents?.() : undefined, critic: lead ? opts.critic?.() : undefined,

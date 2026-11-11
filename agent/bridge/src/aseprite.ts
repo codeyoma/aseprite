@@ -293,7 +293,7 @@ export class AsepriteLink extends EventEmitter {
     });
   }
 
-  async request(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000): Promise<Reply> {
+  async request(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000, origin?: "chat"): Promise<Reply> {
     if (!isRequest(method)) throw new Error(`Not a protocol request: ${method}`);
     checkParams(method, params);
     if (!(await this.waitForConnection(3_000))) throw new AsepriteNotConnectedError();
@@ -304,7 +304,7 @@ export class AsepriteLink extends EventEmitter {
         reject(new Error(`Aseprite did not answer ${method} within ${timeoutMs / 1000}s (a modal dialog may be open)`));
       }, timeoutMs);
       this.pending.set(id, { method, resolve, reject, timer });
-      this.client!.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+      this.client!.send(JSON.stringify({ jsonrpc: "2.0", id, method, params, ...(origin ? { origin } : {}) }));
     });
   }
 }

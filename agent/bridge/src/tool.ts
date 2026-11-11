@@ -9,7 +9,8 @@ import type { SubResult, SubTask } from "./subagents.js";
 
 /** The seam tools use to reach Aseprite: AsepriteLink in the bridge, a fake in tests. */
 export interface AsepriteRequester {
-  request(method: string, params?: Record<string, unknown>, timeoutMs?: number): Promise<Reply>;
+  /** origin "chat" marks a chat turn's request: the extension holds it while the chat's sprite isn't the active tab. */
+  request(method: string, params?: Record<string, unknown>, timeoutMs?: number, origin?: "chat"): Promise<Reply>;
 }
 
 /** Runs spawn_agents' sub-tasks (SubAgents in the bridge, a fake in tests). */

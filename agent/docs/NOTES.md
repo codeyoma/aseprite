@@ -2,6 +2,17 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Chats per sprite, several chats per sprite, one turn at a time
+- **How:**
+  - The panel keeps chats grouped by sprite (`chats[key]`, key `s<Sprite.id>` or `none`). Each chat has its own Conversation, Turns (over its own sprite), Composer (draft) and queue. `activate` swaps the panel's `conv`/`turns`/`composer` upvalues, so the drawing and send code stay as they were.
+  - A tab strip at the top of the log shows the active sprite's chats: a dot on the running one, "+N" for queued messages, ✕ to close, + for a new chat. "New chat" now adds a chat instead of wiping. `sitechange` shows the active sprite's chats and drops chats of closed sprites, except the running one.
+  - One turn runs at a time (`running`). A message for any chat waits in that chat's queue, and the next turn takes the chat on screen first, then the others by age. `chat.send` carries `chatId`; the bridge tags every event of the turn with it, and `Panel.onEvent` applies it to that chat's Turns even when the chat is not on screen.
+  - Document binding: requests from the bridge's HTTP MCP endpoint (chat turns, sub-agents, critics) carry `origin: "chat"` in the JSON-RPC envelope, with a 5-minute timeout. The extension's gate (`Panel.gate`) holds them while the running chat's sprite isn't the active tab ("Waiting for its sprite's tab..."), runs them in order when you come back, and fails them when the turn ends or the sprite was closed. A chat request that makes another sprite active (create, open) moves the running chat to that sprite (`rehome`). Requests without an origin (stdio MCP clients, live tests) are never held.
+- **Why:**
+  - Every tool, including agent-written Lua, works on the active sprite, so before this a tab switch in the middle of a turn sent edits to the wrong sprite.
+  - Codex's review: swapping `app.sprite` around each request visibly switches tabs, mixes undo histories and breaks step capture, and two turns on one sprite would interleave undo ranges. So turns stay serialized and requests wait for their sprite. Truly parallel turns need document-scoped handlers and per-chat ACP lanes (a later slice).
+- **Architecture:** chat routing is `chatId` on `chat.send` and on events; document binding is the envelope `origin` plus the panel's gate in `bridge_connection.lua` (`gate`, `retryHeld`, `failHeld`). The protocol version is unchanged: both additions are optional fields.
+
 ## Working mascot; prompt queue with Send now and a pausing Stop
 - **How:**
   - `mascot.lua` draws the Aseprite logo's face (14x15 pixels, from the logo's colors) in the "Working..." row. `Mascot.pose(t)` walks a fixed script of poses: rest, look up, look up-right with thought dots that grow, glance left and right, squint, bob. A blink every 2.7 s interrupts any pose. The label word follows the pose ("Thinking...", "Looking...", "Hmm..."). The panel's ticker runs at 0.1 s while busy and advances `animT`, because `conv:elapsed()` uses `os.time` (whole seconds).

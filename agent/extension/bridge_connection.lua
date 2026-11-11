@@ -9,11 +9,14 @@
 --     onRequest = function(method, params) return result, bytes end,  -- may error
 --     onNotification = function(method, params) end,                  -- e.g. chat.event
 --     onConnectionChange = function(connected) end,
+--     gate = function(method) return true | "hold" | "error message" end,  -- optional; for origin "chat"
 --     readFile = function(path) return text end,   -- file and shell access go through
 --     runShell = function(command) end,             -- the plugin's trusted script
 --     openSocket = function(args) return WebSocket(args) end,
 --   }
 --   conn.connect(true); conn.request("chat.send", {...}, callback)
+--   conn.retryHeld()           -- runs held requests the gate now lets through
+--   conn.failHeld("message")   -- answers every held request with an error
 
 local M = {}
 
@@ -22,6 +25,10 @@ function M.new(opts)
   local preferences = opts.preferences or {}
   local onRequest = assert(opts.onRequest, "onRequest required")
   local onNotification = opts.onNotification or function() end
+  -- The gate holds requests while they can't run yet (the running chat's
+  -- sprite is not the active one); held requests run in order later.
+  local gate = opts.gate or function() return true end
+  local held = {}
   local onConnectionChange = opts.onConnectionChange or function() end
   -- Aseprite asks permission per script file for io/os calls, so they are
   -- done by agent.lua (already trusted) instead of this module.
@@ -86,7 +93,7 @@ end
   -- the data as a binary frame when onRequest returns bytes.
   local function handleRequest(msg)
     local id = msg.id
-    local ok, result, bytes = xpcall(onRequest, debug.traceback, msg.method, msg.params or {})
+    local ok, result, bytes = xpcall(onRequest, debug.traceback, msg.method, msg.params or {}, msg.origin)
     if not ok then
       local err = type(result) == "table" and result or { code = -32000, message = tostring(result) }
       send({ jsonrpc = "2.0", id = id, error = err })
@@ -159,7 +166,12 @@ local function onReceive(mt, data, err)
     elseif msg.method and msg.id == nil then
       onNotification(msg.method, msg.params)
     elseif msg.method then
-      handleRequest(msg)
+      -- Only a chat turn's requests (origin "chat") wait; held ones keep their order.
+      local g = true
+      if msg.origin == "chat" then g = (#held == 0) and gate(msg.method) or "hold" end
+      if g == true then handleRequest(msg)
+      elseif g == "hold" then held[#held + 1] = msg
+      else send({ jsonrpc = "2.0", id = msg.id, error = { code = -32000, message = tostring(g) } }) end
     elseif type(msg.id) == "string" and pendingLocal[msg.id] then
       local cb = pendingLocal[msg.id]
       pendingLocal[msg.id] = nil
@@ -247,7 +259,24 @@ local function ensureBridge(callback)
   timer:start()
 end
 
+  local function retryHeld()
+    while #held > 0 do
+      local g = gate(held[1].method)
+      if g == "hold" then return end
+      local msg = table.remove(held, 1)
+      if g == true then handleRequest(msg)
+      else send({ jsonrpc = "2.0", id = msg.id, error = { code = -32000, message = tostring(g) } }) end
+    end
+  end
+
+  local function failHeld(message)
+    for _, msg in ipairs(held) do send({ jsonrpc = "2.0", id = msg.id, error = { code = -32000, message = message } }) end
+    held = {}
+  end
+
   return {
+    retryHeld = retryHeld,
+    failHeld = failHeld,
     connect = connect,
     disconnect = disconnect,
     isConnected = function() return connected end,

@@ -92,7 +92,14 @@ function init(plugin)
   connection = load("bridge_connection.lua").new{
     protocol = protocol,
     preferences = plugin.preferences,
-    onRequest = handlers.call,
+    -- Through the panel, which moves the running chat to a sprite the
+    -- request opens or makes; the gate holds requests while the running
+    -- chat's sprite isn't the active tab.
+    onRequest = function(method, params, origin)
+      if Panel and origin == "chat" then return Panel.handleRequest(handlers.call, method, params) end
+      return handlers.call(method, params)
+    end,
+    gate = function() return not Panel or Panel.gate() end,
     onNotification = function(method, params)
       if method == "chat.event" and Panel then Panel.onEvent(params) end
     end,
@@ -107,8 +114,9 @@ function init(plugin)
   }
 
   local Conversation = load("conversation.lua")
-  local turns = load("turns.lua").new{ Conversation = Conversation, clock = os.time,
-    history = load("turn_history.lua"), capture = capture, sprite = function() return app.sprite end }
+  local Turns, TurnHistory = load("turns.lua"), load("turn_history.lua")
+  local turns = Turns.new{ Conversation = Conversation, clock = os.time,
+    history = TurnHistory, capture = capture, sprite = function() return app.sprite end }
   -- Scripted answers (tests): question id ("permission", "developer",
   -- "apply", "discard", "revert"; "*" for any) -> function(question) -> button
   -- index or true/false. Unanswered questions show the usual alert.
@@ -122,6 +130,12 @@ function init(plugin)
   Panel = load("chat_panel.lua"){
     Conversation = Conversation,
     turns = turns,
+    -- Each new chat gets its own Turns over its own sprite.
+    newTurns = function(sprite)
+      return Turns.new{ Conversation = Conversation, clock = os.time, history = TurnHistory, capture = capture, sprite = sprite }
+    end,
+    retryHeld = function() connection.retryHeld() end,
+    onTurnEnd = function() connection.failHeld("The chat's turn ended") end,
     prompter = prompter,
     request = connection.request,
     isConnected = connection.isConnected,
@@ -205,7 +219,7 @@ function init(plugin)
     -- The last sub-agent scope highlighted in the timeline (#33).
     agentCursor = function() return handlers.agentCursor() end,
     entries = function() return Panel.entries() end,
-    newChat = function() Panel.newChat() end,
+    newChat = function() return Panel.newChat() end,
     openPanel = function() Panel.open() end,
     closePanel = function() Panel.close() end,
     isPanelOpen = function() return Panel.isOpen() end,
@@ -221,6 +235,11 @@ function init(plugin)
     attach = function(kind) return Panel.attach(kind) end,
     clearAttachments = function() Panel.clearAttachments() end,
     importAnimation = function(params) Panel.importAnimation(params) end,
+    -- Chats of the active sprite (#3 per-sprite chats).
+    chats = function() return Panel.chats() end,
+    currentChat = function() return Panel.currentChat() end,
+    showChat = function(id) return Panel.showChat(id) end,
+    closeChat = function(id) return Panel.closeChat(id) end,
     queued = function() local q, paused = Panel.queued() return { items = q, paused = paused } end,
     sendNow = function(i) return Panel.sendNow(i) end,
     pendingAttachments = function() return Panel.pendingAttachments() end,
@@ -230,7 +249,7 @@ function init(plugin)
       return c and { seq = c.seq, method = c.method, changed = c.changed, claimed = c.claimed or false } or nil
     end,
     stop = function() Panel.stop() end,
-    lastTurnStatus = function() return (turns:view(nil)) end,
+    lastTurnStatus = function() return Panel.lastTurnStatus() end,
   }
 
   plugin:newMenuGroup{
@@ -337,7 +356,7 @@ function init(plugin)
   attachCommand("AgentAttachFramePopup", "Attach to AI Chat", "frame_popup_properties", "frame")
 
   if app.events then
-    app.events:on("sitechange", function() Panel.refreshContext() end)
+    app.events:on("sitechange", function() Panel.onSiteChange() end)
     -- Undo/redo from the Edit menu changes which replies are applied.
     app.events:on("aftercommand", function() Panel.refreshContext() end)
   end

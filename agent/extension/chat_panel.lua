@@ -53,14 +53,51 @@ return function(deps)
   local contentH, viewH = 0, 0
   -- The draft: prompt, mentions, Attachments, the skill chip and the /
   -- picker (#35), whose matches show at the bottom of the log.
-  local composer = (deps.Composer or loadComposer()).new{
-    commands = function() return deps.savedCommands and deps.savedCommands:load() or {} end,
-    selectionEmpty = function() return not app.sprite or app.sprite.selection.isEmpty end,
-    stateBlock = function() return deps.stateBlock() end,
-    -- What changed since the agent's last reply (#19), if anything.
-    changes = function() return turns:changesSince() end,
-    expandMentions = deps.Conversation.expandMentions,
-  }
+  local Composer = deps.Composer or loadComposer()
+  local function newComposer(chatTurns)
+    return Composer.new{
+      commands = function() return deps.savedCommands and deps.savedCommands:load() or {} end,
+      selectionEmpty = function() return not app.sprite or app.sprite.selection.isEmpty end,
+      stateBlock = function() return deps.stateBlock() end,
+      -- What changed since this chat's last reply (#19), if anything.
+      changes = function() return chatTurns:changesSince() end,
+      expandMentions = deps.Conversation.expandMentions,
+    }
+  end
+  local composer = newComposer(turns)
+
+  -- Chats: each open sprite has its own list of chats, and the panel shows
+  -- the active sprite's current chat. A chat has its own Conversation,
+  -- Turns, Composer (draft) and queue. One turn runs at a time (`running`);
+  -- a message for any other chat waits in that chat's queue. The running
+  -- chat's tool requests wait while its sprite isn't the active tab
+  -- (Panel.gate), since the agent's tools act on the active sprite.
+  local chats = {}           -- sprite key -> { list = { chat, ... }, current = chat }
+  local chatById = {}
+  local nextChat = 0
+  local current = nil        -- the chat on screen
+  local running = nil        -- the chat whose turn runs
+  local function spriteKey(sprite) return sprite and ("s" .. sprite.id) or "none" end
+  local function spriteById(id)
+    if not id then return nil end
+    for _, s in ipairs(app.sprites) do if s.id == id then return s end end
+    return nil
+  end
+  local function makeChat(key, spriteId, chatTurns)
+    nextChat = nextChat + 1
+    local chat = { id = "c" .. nextChat, key = key, spriteId = spriteId, queue = {}, queuePaused = false, draft = "" }
+    chat.turns = chatTurns or deps.newTurns(function() return spriteById(chat.spriteId) or app.sprite end)
+    chat.conv = chat.turns.conversation
+    chat.composer = (chatTurns and composer) or newComposer(chat.turns)
+    chatById[chat.id] = chat
+    local group = chats[key] or { list = {} }
+    chats[key] = group
+    group.list[#group.list + 1] = chat
+    group.current = group.current or chat
+    return chat
+  end
+  current = makeChat(spriteKey(app.sprite), app.sprite and app.sprite.id or nil, turns)
+  local hitTabs = {}           -- chat tabs: { x0, y0, x1, y1, chat, close, new }
   local hitChip = nil          -- where the chip is drawn (click removes it)
   local hitCards = {}          -- attachment cards' ✕ boxes (click removes that image)
 
@@ -75,11 +112,9 @@ return function(deps)
   local providers = { "claude" }
   local ticker = nil
   local animT = 0              -- seconds of mascot animation (ticker steps; os.time is whole seconds)
-  -- Messages sent while the agent works wait here and go one by one when the
-  -- turn ends. Stop pauses the queue; Send now (on a queued row) stops the
-  -- turn and sends that one next.
-  local queue = {}
-  local queuePaused = false
+  -- Each chat's queue (chat.queue): messages sent while a turn runs wait and
+  -- go one by one when it ends. Stop pauses the queue; Send now (on a queued
+  -- row) stops the turn and sends that one next.
 
   local C = {
     bg = Color(38, 38, 41),
@@ -562,15 +597,16 @@ return function(deps)
         local pose = Mascot.pose(animT)
         Mascot.draw(gc, pad, y, ms, pose)
         gc.color = C.dim
-        gc:fillText(pose.word .. "... " .. formatSeconds(conv:elapsed() or 0), pad + mw + u * 2, y + (mh - lh) // 2)
+        local word = (current.waiting and "Waiting for its sprite's tab" or pose.word)
+        gc:fillText(word .. "... " .. formatSeconds(conv:elapsed() or 0), pad + mw + u * 2, y + (mh - lh) // 2)
       end, nil, u * 2)
     end
 
     -- Queued messages, each with Send now and ✕.
-    for qi, q in ipairs(queue) do
+    for qi, q in ipairs(current.queue) do
       addRow(lh + u, function(y)
         local x = pad
-        local tag = queuePaused and "Paused" or "Queued"
+        local tag = current.queuePaused and "Paused" or "Queued"
         local tw = gc:measureText(tag).width + u * 4
         gc.color = C.rule
         gc:beginPath()
@@ -672,16 +708,17 @@ return function(deps)
     gc.color = C.bg
     gc:fillRect(Rectangle(0, 0, w, h))
     h = h - paintCards(gc, w, h)
+    local stripH = Panel.tabsHeight(gc)
 
     local rows, pad = buildRows(gc, w)
     local total = pad * 2
     for _, r in ipairs(rows) do total = total + r.h + r.gap end
-    contentH, viewH = total, h
+    contentH, viewH = total, h - stripH
 
     -- Bottom-anchored: newest rows at the bottom; scrollPx moves up.
-    local maxScroll = math.max(0, total - h)
+    local maxScroll = math.max(0, total - viewH)
     if scrollPx > maxScroll then scrollPx = maxScroll end
-    local y = (total <= h) and pad or (h - total + scrollPx + pad)
+    local y = (total <= viewH) and (stripH + pad) or (h - total + scrollPx + pad)
 
     hitRows = {}
     hitLinks = {}
@@ -691,6 +728,8 @@ return function(deps)
       if r.entry then hitRows[#hitRows + 1] = { y0 = y, y1 = y + r.h, entry = r.entry } end
       y = y + r.h + r.gap
     end
+
+    Panel.paintTabs(gc, w)
 
     -- Skill and command matches over the bottom of the log, just above the input.
     hitSuggest = {}
@@ -774,10 +813,11 @@ return function(deps)
 
   -- Enables Send/Stop and runs the repaint ticker while a turn runs.
   local function syncBusy()
-    local b = conv:isBusy()
+    local b = running ~= nil
     if dlg then
+      -- While any chat's turn runs, a message waits in its chat's queue.
       dlg:modify{ id = "send", text = b and "&Queue" or "&Send" }
-      dlg:modify{ id = "stop", enabled = b }
+      dlg:modify{ id = "stop", enabled = running ~= nil and running == current }
     end
     if b and not ticker and dlg then
       -- Repaint for the mascot's moves and the "Working... Ns" counter.
@@ -793,12 +833,16 @@ return function(deps)
   function Panel.onEvent(ev)
     -- The agent may have changed the document; keep the context line current.
     if ev.type == "tool_result" or ev.type == "done" or ev.type == "error" then refreshContext() end
+    -- Events go to their chat (the running one when untagged, e.g. builds).
+    local chat = (ev.chatId and chatById[ev.chatId]) or running or current
     -- The Turn controller claims edit steps' captures and finishes the turn.
-    local r = turns:apply(ev)
+    local r = chat.turns:apply(ev)
     if r.status then updateStatus(r.status) end
     if r.permission then Panel.askPermission(r.permission) end
     if r.build then Panel.onBuild(r.build) end
     if r.turnEnded then
+      if running == chat then running = nil end
+      if deps.onTurnEnd then deps.onTurnEnd() end
       updateStatus("")
       syncBusy()
       Panel.sendQueued()
@@ -1012,20 +1056,25 @@ return function(deps)
   end
 
   -- Starts the agent turn for a "send" outcome.
-  local function startTurn(r)
+  local function startTurn(r, chat)
+    chat = chat or current
     local p = r.payload
     deps.preferences.mode = p.mode:sub(1, 1):upper() .. p.mode:sub(2)
     deps.preferences.provider = p.provider
     updateAttachments()
-    -- The message, and where this reply starts in the undo history (#22).
-    turns:start(app.sprite, { text = r.shown, provider = p.provider, mode = p.mode, skill = r.skillTitle })
-    dlg:modify{ id = "prompt", text = "" }
+    if not chat.title then chat.title = (r.shown or ""):gsub("\n.*", "") end
+    -- The message, and where this reply starts in the undo history (#22),
+    -- of the chat's own sprite.
+    running = chat
+    chat.turns:start(spriteById(chat.spriteId) or app.sprite, { text = r.shown, provider = p.provider, mode = p.mode, skill = r.skillTitle })
+    if chat == current and not r.queued then dlg:modify{ id = "prompt", text = "" } end
     syncBusy()
     changed()
     updateStatus("Connecting...")
 
     local function fail(text)
-      turns:fail(text)
+      chat.turns:fail(text)
+      if running == chat then running = nil end
       syncBusy()
       updateStatus("")
       changed()
@@ -1036,9 +1085,10 @@ return function(deps)
       -- The bridge builds the agent's message from these parts (#55).
       deps.request("chat.send", {
         prompt = p.prompt, state = p.state, changes = p.changes, provider = p.provider,
-        sessions = conv:conversationIds(),
+        sessions = chat.conv:conversationIds(),
         attachments = p.attachments,
         mode = p.mode,
+        chatId = chat.id,
       }, function(_, error)
         if error then
           fail(error.message or tostring(error))
@@ -1073,10 +1123,10 @@ return function(deps)
     elseif r.kind == "command" then runSlashCommand(r)
     elseif r.kind == "pick" then showPick(r); dlg:repaint()
     elseif r.kind == "send" then
-      if conv:isBusy() then
-        -- The agent is working: the message waits for the end of the turn.
+      if running then
+        -- A turn runs (this chat's or another's): the message waits.
         r.queued = true
-        queue[#queue + 1] = r
+        current.queue[#current.queue + 1] = r
         dlg:modify{ id = "prompt", text = "" }
         updateAttachments()
         changed()
@@ -1086,52 +1136,258 @@ return function(deps)
     end
   end
 
-  -- Sends the first queued message when no turn runs (after a turn ends,
-  -- or from Send now). A queued message takes the State block and changes
-  -- as they are now.
+  -- Sends the next queued message when no turn runs (after a turn ends, or
+  -- from Send now): the chat on screen first, then the others in the order
+  -- they were made. A queued message takes the State block and changes as
+  -- they are now.
   function Panel.sendQueued()
-    if conv:isBusy() or queuePaused or #queue == 0 or not dlg then return false end
-    local r = table.remove(queue, 1)
-    r.payload.state, r.payload.changes = composer:freshContext()
-    startTurn(r)
+    if running or not dlg then return false end
+    local pick
+    if #current.queue > 0 and not current.queuePaused then pick = current end
+    if not pick then
+      local ids = {}
+      for id in pairs(chatById) do ids[#ids + 1] = id end
+      table.sort(ids, function(a, b) return tonumber(a:sub(2)) < tonumber(b:sub(2)) end)
+      for _, id in ipairs(ids) do
+        local c = chatById[id]
+        if #c.queue > 0 and not c.queuePaused then pick = c; break end
+      end
+    end
+    if not pick then return false end
+    local r = table.remove(pick.queue, 1)
+    r.payload.state, r.payload.changes = pick.composer:freshContext()
+    startTurn(r, pick)
     return true
   end
 
-  -- Send now: this queued message goes next; a running turn is stopped first
-  -- (its end sends it).
+  -- Send now: this queued message (of the chat on screen) goes next; a
+  -- running turn is stopped first (its end sends it).
   function Panel.sendNow(index)
-    local item = queue[index or 1]
+    local q = current.queue
+    local item = q[index or 1]
     if not item then return false end
-    table.remove(queue, index or 1)
-    table.insert(queue, 1, item)
-    queuePaused = false
-    if conv:isBusy() then deps.request("chat.stop", {}, function() end)
+    table.remove(q, index or 1)
+    table.insert(q, 1, item)
+    current.queuePaused = false
+    if running then deps.request("chat.stop", {}, function() end)
     else Panel.sendQueued() end
     changed()
     return true
   end
 
   function Panel.removeQueued(index)
-    if not queue[index] then return false end
-    table.remove(queue, index)
-    if #queue == 0 then queuePaused = false end
+    local q = current.queue
+    if not q[index] then return false end
+    table.remove(q, index)
+    if #q == 0 then current.queuePaused = false end
     changed()
     return true
   end
 
-  -- The queued messages' texts (tests and scripts).
+  -- The queued messages' texts of the chat on screen (tests and scripts).
   function Panel.queued()
     local out = {}
-    for _, q in ipairs(queue) do out[#out + 1] = q.shown end
-    return out, queuePaused
+    for _, q in ipairs(current.queue) do out[#out + 1] = q.shown end
+    return out, current.queuePaused
   end
 
-  -- Stop pauses the queue, so the next message doesn't start on its own.
+  -- Stop the running turn (of the chat on screen) and pause its queue, so
+  -- the next message doesn't start on its own.
   function Panel.stop()
-    if #queue > 0 then queuePaused = true end
+    local chat = running or current
+    if #chat.queue > 0 then chat.queuePaused = true end
     deps.request("chat.stop", {}, function() end)
     changed()
   end
+
+  ---------------------------------------------------------------------------
+  -- Chats: tabs per sprite, switching, the request gate
+  ---------------------------------------------------------------------------
+
+  -- Shows a chat: its messages, draft, attachments and queue.
+  local function activate(chat)
+    if current and current ~= chat and dlg then current.draft = dlg.data.prompt or "" end
+    current = chat
+    turns, conv, composer = chat.turns, chat.conv, chat.composer
+    if chats[chat.key] then chats[chat.key].current = chat end
+    scrollPx = 0
+    if dlg then
+      dlg:modify{ id = "prompt", text = chat.draft or "" }
+      updateAttachments()
+      syncBusy()
+      refreshContext()
+      changed()
+    end
+  end
+
+  function Panel.showChat(id)
+    local chat = type(id) == "table" and id or chatById[id]
+    if not chat then return false end
+    activate(chat)
+    return true
+  end
+
+  -- Closes a chat of the sprite on screen (not the running one). The last
+  -- chat of a sprite is replaced by an empty one.
+  function Panel.closeChat(id)
+    local chat = chatById[id]
+    if not chat then return false end
+    if chat == running then prompter.tip("Stop this chat's turn before closing it"); return false end
+    local group = chats[chat.key]
+    for i, c in ipairs(group.list) do if c == chat then table.remove(group.list, i); break end end
+    chatById[id] = nil
+    if #group.list == 0 then makeChat(chat.key, chat.spriteId) end
+    if group.current == chat then group.current = group.list[math.max(1, #group.list)] end
+    if current == chat then activate(group.current) else changed() end
+    return true
+  end
+
+  -- The active sprite changed (tab switch, open, close): show its chats.
+  -- Chats of closed sprites go, except the running one.
+  local inRequest = false
+  function Panel.onSiteChange()
+    if inRequest then return end
+    for key, group in pairs(chats) do
+      if key ~= "none" and not spriteById(group.list[1] and group.list[1].spriteId) then
+        local keep = {}
+        for _, c in ipairs(group.list) do
+          if c == running then keep[#keep + 1] = c else chatById[c.id] = nil end
+        end
+        if #keep == 0 then chats[key] = nil else group.list = keep; group.current = keep[1] end
+      end
+    end
+    local sprite = app.sprite
+    local key = spriteKey(sprite)
+    if not current or current.key ~= key or not chatById[current.id] then
+      local group = chats[key]
+      if not group then makeChat(key, sprite and sprite.id or nil); group = chats[key] end
+      activate(group.current)
+    else
+      refreshContext()
+      if dlg then dlg:repaint() end
+    end
+    if deps.retryHeld then deps.retryHeld() end
+  end
+
+  -- Moves a chat to another sprite's tabs (the agent opened or made it).
+  local function rehome(chat, sprite)
+    local old = chats[chat.key]
+    if old then
+      for i, c in ipairs(old.list) do if c == chat then table.remove(old.list, i); break end end
+      if #old.list == 0 then chats[chat.key] = nil
+      elseif old.current == chat then old.current = old.list[1] end
+    end
+    chat.key, chat.spriteId = spriteKey(sprite), sprite and sprite.id or nil
+    local group = chats[chat.key] or { list = {} }
+    chats[chat.key] = group
+    -- An untouched empty chat made for the new sprite gives way.
+    for i = #group.list, 1, -1 do
+      local c = group.list[i]
+      if c ~= chat and #c.conv:entries() == 0 and #c.queue == 0 then table.remove(group.list, i); chatById[c.id] = nil end
+    end
+    group.list[#group.list + 1] = chat
+    group.current = chat
+  end
+
+  -- Wraps one request from the bridge (agent.lua). A request that makes
+  -- another sprite active (create, open) moves the running chat there.
+  function Panel.handleRequest(fn, ...)
+    local before = app.sprite and app.sprite.id
+    inRequest = true
+    local results = table.pack(pcall(fn, ...))
+    inRequest = false
+    local after = app.sprite and app.sprite.id
+    if after ~= before then
+      if running and after then rehome(running, app.sprite) end
+      Panel.onSiteChange()
+    end
+    if not results[1] then error(results[2], 0) end
+    return table.unpack(results, 2, results.n)
+  end
+
+  -- Whether a request from the bridge may run now: true, "hold" while the
+  -- running chat's sprite is not the active one, or an error message.
+  function Panel.gate()
+    if not running or not running.spriteId then return true end
+    if not spriteById(running.spriteId) then return "The sprite this chat works on was closed" end
+    local ok = app.sprite and app.sprite.id == running.spriteId
+    local waiting = not ok
+    if running.waiting ~= waiting then running.waiting = waiting; if dlg then dlg:repaint() end end
+    return ok or "hold"
+  end
+
+  -- The tab strip's height (one line of tabs).
+  function Panel.tabsHeight(gc)
+    local lh = gc:measureText("Ag").height
+    return lh + math.max(2, lh // 3) * 3
+  end
+
+  -- Tabs of the sprite's chats: a dot while a chat's turn runs, a count of
+  -- queued messages, ✕ to close, + for a new chat.
+  function Panel.paintTabs(gc, w)
+    hitTabs = {}
+    local lh = gc:measureText("Ag").height
+    local u = math.max(2, lh // 3)
+    local h = Panel.tabsHeight(gc)
+    gc.color = C.bubble
+    gc:fillRect(Rectangle(0, 0, w, h))
+    local group = chats[current.key]
+    local x = u * 2
+    for i, chat in ipairs(group and group.list or { current }) do
+      local title = chat.title and chat.title ~= "" and chat.title or ("Chat " .. i)
+      local maxT = lh * 8
+      if gc:measureText(title).width > maxT then
+        while #title > 1 and gc:measureText(title .. "…").width > maxT do title = dropLastChar(title) end
+        title = title .. "…"
+      end
+      if #chat.queue > 0 then title = title .. " +" .. #chat.queue end
+      local dot = chat == running and (lh // 2) or 0
+      local closeW = #group.list > 1 and gc:measureText("✕").width + u or 0
+      local tw = gc:measureText(title).width + dot + (dot > 0 and u or 0) + closeW + u * 4
+      if x + tw > w - lh * 2 then break end
+      local y0 = u
+      if chat == current then
+        gc.color = C.highlight
+        gc:beginPath()
+        gc:roundedRect(Rectangle(x, y0, tw, lh + u), u * 2, u * 2)
+        gc:fill()
+      end
+      local tx = x + u * 2
+      if dot > 0 then
+        gc.color = C.accent
+        gc:beginPath()
+        gc:oval(Rectangle(tx, y0 + (lh + u - dot) // 2, dot, dot))
+        gc:fill()
+        tx = tx + dot + u
+      end
+      gc.color = chat == current and C.text or C.dim
+      gc:fillText(title, tx, y0 + u // 2)
+      hitTabs[#hitTabs + 1] = { x0 = x, y0 = y0, x1 = x + tw - closeW, y1 = y0 + lh + u, chat = chat }
+      if closeW > 0 then
+        local cx = x + tw - closeW - u
+        gc.color = C.faint
+        gc:fillText("✕", cx, y0 + u // 2)
+        hitTabs[#hitTabs + 1] = { x0 = cx - u, y0 = y0, x1 = x + tw, y1 = y0 + lh + u, chat = chat, close = true }
+      end
+      x = x + tw + u
+    end
+    gc.color = C.text
+    gc:fillText("+", x + u, u + u // 2)
+    hitTabs[#hitTabs + 1] = { x0 = x, y0 = u, x1 = x + lh + u * 2, y1 = u + lh + u, new = true }
+  end
+
+  -- The chats of the sprite on screen (tests and scripts).
+  function Panel.chats()
+    local out = {}
+    local group = chats[current.key]
+    for _, c in ipairs(group and group.list or {}) do
+      out[#out + 1] = { id = c.id, title = c.title, current = c == current, running = c == running,
+                        queued = #c.queue, entries = #c.conv:entries(), waiting = c.waiting or false }
+    end
+    return out
+  end
+  function Panel.currentChat() return current.id end
+  function Panel.lastTurnStatus() return (turns:view(nil)) end
 
   ---------------------------------------------------------------------------
   -- Public API
@@ -1147,7 +1403,8 @@ return function(deps)
     send(provider, mode)
   end
 
-  function Panel.isBusy() return conv:isBusy() end
+  -- Whether any chat's turn runs.
+  function Panel.isBusy() return running ~= nil end
   function Panel.placeholder() return PLACEHOLDER end
   function Panel.isOpen() return dlg ~= nil end
   function Panel.promptText() return dlg and dlg.data.prompt or nil end
@@ -1355,13 +1612,13 @@ return function(deps)
     return false
   end
 
-  -- New chat: the bridge forgets the conversation ids and the panel its messages.
+  -- New chat: another chat for the active sprite, shown now. The other
+  -- chats keep their messages, queues and running turns.
   function Panel.newChat()
-    queue, queuePaused = {}, false
-    deps.request("chat.reset", {}, function() end)
-    conv:reset()
-    composer:newConversation()
-    if dlg then syncBusy(); updateStatus(""); changed() end
+    local sprite = app.sprite
+    local chat = makeChat(spriteKey(sprite), sprite and sprite.id or nil)
+    Panel.showChat(chat)
+    return chat.id
   end
 
   function Panel.entries()
@@ -1412,6 +1669,14 @@ return function(deps)
         dlg:repaint()
       end,
       onmousedown = function(ev)
+        for _, t in ipairs(hitTabs) do
+          if ev.x >= t.x0 and ev.x <= t.x1 and ev.y >= t.y0 and ev.y <= t.y1 then
+            if t.new then Panel.newChat()
+            elseif t.close then Panel.closeChat(t.chat.id)
+            else Panel.showChat(t.chat.id) end
+            return
+          end
+        end
         for _, c in ipairs(hitCards) do
           if ev.x >= c.x0 and ev.x <= c.x1 and ev.y >= c.y0 and ev.y <= c.y1 then
             Panel.removeAttachment(c.index)
