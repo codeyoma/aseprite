@@ -13,6 +13,8 @@ tools: [generate_character, motion_stage, walk_check, motion_review, read_guide,
 1. Read the timing table before you plan: `read_guide("rules/animation")` (`rule:anim.timing` for frames, durations and key poses per animation; `rule:anim.budget` for how many frames the sprite's size can carry). Don't plan from memory.
 2. Pick the animation's row, then write the frames and timing as timeline text (`apply_timeline_text`): add frames, a tag, and durations in one call. Use at least two durations (`rule:anim.ticks`).
 
+A character built from part layers (a group `AI: <name>`), or a new motion for one: follow `read_guide("character-motions")`, which appends the motion after the base pose and generates it per layer.
+
 ## Block the key poses first (#99)
 1. The first frame is the reference: keep it as it is. Its palette, height, facing and which parts are near and far stay the same in every frame; if the state block has a pixel spec, follow it.
 2. Mark the landmarks on the reference before drawing: the ground row, the hip height, and for a walk the support foot. Every key keeps the hips at the table's height (`rule:anim.walk.limbs`, the Hip column), and a foot carrying weight stays on the ground row and slides back the same number of pixels each frame (the walk's ground speed, `rule:anim.timing.walk`), never forward or by a jump.

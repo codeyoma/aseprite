@@ -180,8 +180,8 @@ do
   local r = c:decide{ text = text .. "please", provider = "codex", mode = "ask" }
   check("mentions expanded for the agent",
     r.payload.prompt == "shade Body (aseprite://layer/L12) and Frame 2 (aseprite://frame/2) please", r.payload.prompt)
-  check("the bubble keeps the tokens and lists attachments",
-    r.shown == "shade @[Body] and @[Frame 2] please\nAttached: selection\nAttached: ref.png", r.shown)
+  check("the bubble keeps the tokens; the images go as cards",
+    r.shown == "shade @[Body] and @[Frame 2] please" and #r.images == 2 and r.images[2].label == "ref.png", r.shown)
   check("attachments in the payload", #r.payload.attachments == 2 and r.payload.attachments[1].uri == "aseprite://selection")
   check("changes in the payload", r.payload.changes:find("changes%-since") ~= nil)
   check("sending clears mentions and attachments", next(c.mentions) == nil and #c:pendingAttachments() == 0)

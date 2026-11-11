@@ -100,6 +100,11 @@ return function(deps)
   local hitTabs = {}           -- chat tabs: { x0, y0, x1, y1, chat, close, new }
   local hitChip = nil          -- where the chip is drawn (click removes it)
   local hitCards = {}          -- attachment cards' ✕ boxes (click removes that image)
+  local hitThumbs = {}         -- sent images under user bubbles: { x0, y0, x1, y1, path, label }
+  local hoverThumb = nil       -- the one under the mouse: drawn large over the log
+  local thumbCache = {}        -- path -> Image (false: unreadable); filled outside paint
+  local thumbWanted = {}       -- paths paint asked for; loaded by a timer, then repainted
+  local thumbTimer = nil
 
   -- The text without its last character. Whole UTF-8 characters: cutting a
   -- byte off "…" or "—" leaves invalid UTF-8, which crashes text shaping.
@@ -387,7 +392,34 @@ return function(deps)
             gc:fillText(l, x0 + bx, ty)
             ty = ty + lineHeight(l) + u // 2
           end
-        end, nil, u * 4)
+        end, nil, (e.images and #e.images > 0) and u * 2 or u * 4)
+        -- The images sent with it: small cards under the bubble, right-aligned. Hover shows one large; a click opens it.
+        if e.images and #e.images > 0 then
+          local box = lh * 3
+          addRow(box, function(y)
+            local x = w - pad - (#e.images * (box + u * 2) - u * 2)
+            for _, im in ipairs(e.images) do
+              local cell = math.max(2, box // 6)
+              for cy = 0, box - 1, cell do
+                for cx = 0, box - 1, cell do
+                  gc.color = ((cx // cell + cy // cell) % 2 == 0) and Color(92, 92, 100) or Color(70, 70, 78)
+                  gc:fillRect(Rectangle(x + cx, y + cy, math.min(cell, box - cx), math.min(cell, box - cy)))
+                end
+              end
+              local img = im.path and thumbCache[im.path]
+              if img then
+                local sc = box / math.max(img.width, img.height)
+                if sc >= 1 then sc = math.floor(sc) end
+                local dw, dh = math.max(1, math.floor(img.width * sc)), math.max(1, math.floor(img.height * sc))
+                gc:drawImage(img, Rectangle(0, 0, img.width, img.height), Rectangle(x + (box - dw) // 2, y + (box - dh) // 2, dw, dh))
+              elseif im.path and thumbCache[im.path] == nil then
+                thumbWanted[im.path] = true
+              end
+              hitThumbs[#hitThumbs + 1] = { x0 = x, y0 = y, x1 = x + box, y1 = y + box, path = im.path, label = im.label }
+              x = x + box + u * 2
+            end
+          end, nil, u * 4)
+        end
 
       elseif k == "header" then
         local status, turnAction, mixed = turns:view(e)
@@ -445,6 +477,52 @@ return function(deps)
           addRow(h, draw, nil, u)
         end
         rows[#rows].gap = u * 3
+
+      elseif k == "question" then
+        -- ask_user: the question, then its options as buttons; a click sends the option as the user's message.
+        local lines = wrapCached(gc, e, "text", e.text, textW - u * 4)
+        local qh = 0
+        for _, l in ipairs(lines) do qh = qh + lineHeight(l) + u // 2 end
+        addRow(qh + u * 2, function(y)
+          gc.color = C.accent
+          gc:fillRect(Rectangle(pad, y, u, qh + u))
+          gc.color = C.text
+          local ty = y + u // 2
+          for _, l in ipairs(lines) do gc:fillText(l, pad + u * 3, ty); ty = ty + lineHeight(l) + u // 2 end
+        end, nil, u)
+        -- Option buttons, wrapped onto rows that fit the width.
+        local rowsOf, row, rowW = {}, {}, 0
+        for i, label in ipairs(e.options or {}) do
+          local bw = gc:measureText(label).width + u * 6
+          if #row > 0 and rowW + bw > textW then rowsOf[#rowsOf + 1] = row; row, rowW = {}, 0 end
+          row[#row + 1] = { label = label, w = bw, index = i }
+          rowW = rowW + bw + u * 2
+        end
+        if #row > 0 then rowsOf[#rowsOf + 1] = row end
+        for _, r in ipairs(rowsOf) do
+          addRow(lh + u * 2, function(y)
+            local x = pad + u * 3
+            for _, b in ipairs(r) do
+              local chosen = e.answered == b.label
+              gc.color = chosen and C.accent or C.rule
+              gc:beginPath()
+              gc:roundedRect(Rectangle(x, y, b.w, lh + u), u * 2, u * 2)
+              gc:fill()
+              gc.color = (e.answered and not chosen) and C.faint or C.text
+              gc:fillText(b.label, x + u * 3, y + u // 2)
+              if not e.answered then
+                hitButtons[#hitButtons + 1] = { x0 = x, y0 = y, x1 = x + b.w, y1 = y + lh + u, action = "answer_question", entry = e, index = b.index }
+              end
+              x = x + b.w + u * 2
+            end
+          end, nil, u)
+        end
+        if not e.answered then
+          addRow(lh, function(y)
+            gc.color = C.faint
+            gc:fillText("Pick one, or type your own answer below.", pad + u * 3, y)
+          end, nil, u * 2)
+        end
 
       elseif k == "text" then
         -- Replies may cite objects as [label](aseprite://...) links (#20).
@@ -725,6 +803,7 @@ return function(deps)
     hitRows = {}
     hitLinks = {}
     hitButtons = {}
+    hitThumbs = {}
     for _, r in ipairs(rows) do
       if y + r.h >= 0 and y <= h then r.draw(y) end
       if r.entry then hitRows[#hitRows + 1] = { y0 = y, y1 = y + r.h, entry = r.entry } end
@@ -732,6 +811,48 @@ return function(deps)
     end
 
     Panel.paintTabs(gc, w)
+
+    -- The hovered sent image, large, above its card.
+    if hoverThumb then
+      local img = hoverThumb.path and thumbCache[hoverThumb.path]
+      if img then
+        local lh = gc:measureText("Ag").height
+        local u = math.max(2, lh // 3)
+        local maxS = math.min(w - u * 4, math.floor(h * 0.6), 360)
+        local sc = maxS / math.max(img.width, img.height)
+        if sc >= 1 then sc = math.max(1, math.floor(sc)) end
+        local dw, dh = math.max(1, math.floor(img.width * sc)), math.max(1, math.floor(img.height * sc))
+        local bw, bh = dw + u * 2, dh + u * 3 + lh
+        local x = math.max(u, math.min(w - bw - u, hoverThumb.x1 - bw))
+        local y = hoverThumb.y0 - bh - u
+        if y < u then y = math.min(h - bh - u, hoverThumb.y1 + u) end
+        gc.color = C.bubble
+        gc:fillRect(Rectangle(x, y, bw, bh))
+        local cell = math.max(4, dw // 16)
+        for cy = 0, dh - 1, cell do
+          for cx = 0, dw - 1, cell do
+            gc.color = ((cx // cell + cy // cell) % 2 == 0) and Color(92, 92, 100) or Color(70, 70, 78)
+            gc:fillRect(Rectangle(x + u + cx, y + u + cy, math.min(cell, dw - cx), math.min(cell, dh - cy)))
+          end
+        end
+        gc:drawImage(img, Rectangle(0, 0, img.width, img.height), Rectangle(x + u, y + u, dw, dh))
+        gc.color = C.dim
+        gc:fillText((hoverThumb.label or "") .. "  ·  click to open", x + u, y + u * 2 + dh)
+      end
+    end
+    -- Thumbnails paint couldn't draw yet: load them after this paint (loading inside paint re-enters it).
+    if next(thumbWanted) and not thumbTimer then
+      thumbTimer = Timer{ interval = 0.05, ontick = function()
+        thumbTimer:stop(); thumbTimer = nil
+        for path in pairs(thumbWanted) do
+          local a = { path = path }
+          thumbCache[path] = (deps.attachments and app.fs.isFile(path) and deps.attachments:thumbnail(a)) or false
+        end
+        thumbWanted = {}
+        if dlg then dlg:repaint() end
+      end }
+      thumbTimer:start()
+    end
 
     -- Skill and command matches over the bottom of the log, just above the input.
     hitSuggest = {}
@@ -1100,7 +1221,10 @@ return function(deps)
     chat.mood:answered(animT)
     chat.mood:send(animT, { attachments = p.attachments ~= nil, resumed = resumed })
     chat.mood:queued(false, animT)
-    chat.turns:start(spriteById(chat.spriteId) or app.sprite, { text = r.shown, provider = p.provider, mode = p.mode, skill = r.skillTitle })
+    for _, im in ipairs(r.images or {}) do
+      if im.path and im.thumb and thumbCache[im.path] == nil then thumbCache[im.path] = im.thumb end
+    end
+    chat.turns:start(spriteById(chat.spriteId) or app.sprite, { text = r.shown, provider = p.provider, mode = p.mode, skill = r.skillTitle, images = r.images })
     -- Turns overlapping on one sprite share its undo history: neither reply
     -- can be reverted alone (#90), so both are marked.
     for _, other in pairs(chats.byId) do
@@ -1453,6 +1577,14 @@ return function(deps)
       if dlg then dlg:repaint() end
       return ok and true or false
     end
+    if action == "answer_question" then
+      if not entry or entry.answered then return false end
+      local label = entry.options and entry.options[index]
+      if not label then return false end
+      entry.answered = label
+      Panel.submit(label)
+      return true
+    end
     if action == "apply_plan" then
       if conv:isBusy() or (entry and entry.planApplied) then return false end
       if entry then entry.planApplied = true end
@@ -1551,7 +1683,8 @@ return function(deps)
     for _, e in ipairs(conv:entries()) do
       out[#out + 1] = { kind = e.kind, text = e.text, status = e.status, secs = e.secs,
         changed = e.capture and e.capture.changed or nil, applyPlan = e.applyPlan, planApplied = e.planApplied,
-        task = e.task, resolved = e.resolved, count = e.items and #e.items or nil, result = e.result }
+        task = e.task, resolved = e.resolved, count = e.items and #e.items or nil, result = e.result,
+        images = e.images, options = e.options, answered = e.answered }
     end
     return out
   end
@@ -1599,7 +1732,23 @@ return function(deps)
         scrollPx = math.max(0, math.min(math.max(0, contentH - viewH), scrollPx + (ev.deltaY < 0 and step or -step)))
         dlg:repaint()
       end,
+      onmousemove = function(ev)
+        local over = nil
+        for _, t in ipairs(hitThumbs) do
+          if ev.x >= t.x0 and ev.x <= t.x1 and ev.y >= t.y0 and ev.y <= t.y1 then over = t; break end
+        end
+        if (over and over.path) ~= (hoverThumb and hoverThumb.path) or (over == nil) ~= (hoverThumb == nil) then
+          hoverThumb = over
+          dlg:repaint()
+        end
+      end,
       onmousedown = function(ev)
+        for _, t in ipairs(hitThumbs) do
+          if ev.x >= t.x0 and ev.x <= t.x1 and ev.y >= t.y0 and ev.y <= t.y1 then
+            if t.path and app.fs.isFile(t.path) then app.open(t.path) else prompter.tip("That image is no longer there") end
+            return
+          end
+        end
         for _, t in ipairs(hitTabs) do
           if ev.x >= t.x0 and ev.x <= t.x1 and ev.y >= t.y0 and ev.y <= t.y1 then
             if t.new then Panel.newChat()

@@ -50,7 +50,7 @@ function Turns:lastTurn() return self.last end
 -- message: { text, provider, mode, skill }.
 function Turns:start(sprite, message)
   if message then
-    self.conversation:send(message.text, message.provider, message.mode, message.skill)
+    self.conversation:send(message.text, message.provider, message.mode, message.skill, message.images)
   end
   local list = self.conversation:entries()
   local header = list[#list]

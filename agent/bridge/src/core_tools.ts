@@ -22,6 +22,25 @@ export const checkExpect = z.object({
 
 export const CORE_TOOLS: Tool[] = [
   {
+    name: "ask_user",
+    title: "Ask the user",
+    description:
+      "Ask the user a question you need answered before going on (how finely to split a character into layers, which " +
+      "of two directions to take), with 2-6 answers shown as buttons in the chat. Then end your turn: their choice (or " +
+      "their own words) arrives as their next message. Ask only what blocks you; for the rest pick a sensible default.",
+    input: z.object({
+      question: z.string().min(1).max(600),
+      options: z.array(z.string().min(1).max(80)).min(2).max(6).describe("The answers to offer, your recommendation first."),
+    }),
+    kind: "read",
+    label: () => "Ask the user",
+    async run(input, ctx) {
+      if (!ctx.post) return failure("ask_user works in the chat panel; ask in your reply instead and end your turn.");
+      ctx.post({ type: "question", text: input.question, choices: input.options });
+      return { content: [text("Asked the user (the question and its buttons are in the chat). End your turn now without doing the work: their answer arrives as their next message.")] };
+    },
+  },
+  {
     name: "get_state",
     title: "Get Aseprite state",
     description:

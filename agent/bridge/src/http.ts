@@ -35,6 +35,8 @@ export interface HttpEndpointOptions {
   ask?: (chat: string, kind: string, title: string) => Promise<boolean>;
   /** Image generation jobs (#102), for the lead agent's tools. */
   images?: ImageJobs;
+  /** Shows an event in a chat's log (ask_user), for the lead agent's tools. */
+  post?: (chat: string, ev: { type: string; text?: string; choices?: string[] }) => void;
 }
 
 /** A chat turn's request may wait for the user to come back to its sprite's tab. */
@@ -79,6 +81,7 @@ export async function startHttpEndpoint(link: AsepriteRequester, token: string, 
       commands: opts.commands, subAgents: lead ? bind(opts.subAgents?.()) : undefined, critic: lead ? bind(opts.critic?.()) : undefined,
       ask: lead && opts.ask ? (kind, title) => opts.ask!(chat ?? "", kind, title) : undefined,
       images: lead ? opts.images : undefined,
+      post: lead && opts.post ? (ev) => opts.post!(chat ?? "", ev) : undefined,
     });
     const mcp = createMcpServer(ctx, { readOnly: path === "/mcp/ask" || critic, subAgent: !!scope, critic });
     const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });

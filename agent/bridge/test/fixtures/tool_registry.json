@@ -90,6 +90,16 @@
     ]
   },
   {
+    "name": "ask_user",
+    "title": "Ask the user",
+    "kind": "read",
+    "label": "Ask the user",
+    "input": [
+      "options",
+      "question"
+    ]
+  },
+  {
     "name": "check",
     "title": "Check pixel art",
     "kind": "read",
@@ -399,8 +409,10 @@
     "kind": "edit",
     "label": "Generate a layered character",
     "input": [
+      "base_frame",
       "colors",
       "frames",
+      "inbetweens",
       "job",
       "layers",
       "name",

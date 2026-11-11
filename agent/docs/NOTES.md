@@ -2,6 +2,21 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Character motions, ask_user, later layered rounds, image cards in the chat
+- **How:**
+  - `generate_character` writes later rounds into the character's group. It stores the character in the pixel spec (`characters.<name>`: reference layer, palette, layers, base frame, master sheets). A later round finds the existing part layers by name inside `AI: <name>` and writes into them. It reuses the reference layer and palette, sends the base pose and the last master along as references, and adds only the new layers.
+  - Layers can be `effect: true` (slash trails, sparks). Their prompt draws only the effect, where it belongs, with blank panels allowed, and they skip alignment.
+  - `inbetweens: true` marks a round of in-betweens, which starts no new motion stage.
+  - `ask_user` (`core_tools.ts`) posts a "question" chat event (`choices`, protocol v35) through a per-chat `post` in the tool context, then tells the agent to end its turn. The panel draws the question with option buttons. A click sends the option as the user's next message; typing an answer also works.
+  - The skill `character-motions` covers the workflow:
+    - one sprite per character, a base pose, then each motion appended as a tag;
+    - for a new character, ask how finely to split it and wait;
+    - up to 9 frames in one round, one image per layer holding every frame;
+    - longer motions: 8 keys first, then the in-betweens in rounds of up to 9.
+  - Sent images show under the user's bubble as small cards: the entry keeps `images` (label, path), which survive a relaunch. Thumbnails are cached in the panel and loaded by a timer outside paint. Hovering a card shows the image large; a click opens it in Aseprite. The bubble no longer lists "Attached:" lines.
+- **Why:** the user's design for animations: a master, then the parts, weapons, clothing and effects as layers. Each layer's image holds all of its frames, cut apart. Motions are tagged ranges built on a base frame. The user also asked that the agent ask how finely to split a character and wait, and that sent images be visible in the chat. In a live run, "a girl with a katana swinging the sword" led the agent to read character-motions, call ask_user and stop.
+- **Architecture:** the character record lives in the existing pixel spec. `ask_user` reuses the chat event stream and the panel's button hits. `Panel.entries()` now passes `images`, `options` and `answered` to tests.
+
 ## Agent permission requests are allowed without asking
 - **How:** `Panel.askPermission` picks the request's allow option (allow-always when offered, else allow-once) and answers it without a dialog; the log says "allowed automatically". That covers ACP tool permissions and the bridge's own questions (`ChatRunner.ask`: the image generator). AI Agent > "Ask Before Agent Actions" (plugin preference `askPermissions`) brings the dialogs back. The live harness turns asking on, since tests answer the dialogs; `permission_live` also checks the automatic path.
 - **Why:** the user asked for every agent request to be allowed: the dialogs interrupted work.

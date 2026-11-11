@@ -8,10 +8,10 @@ import {
 } from "./concept.js";
 import { documentOf, resolveFrames, type Document, type SpriteInfo } from "./document.js";
 import { blank, countColors, encodePng, flatten, readPng, scale, shrink, snapToPalette, writePng, type Rgba } from "./image.js";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { quantize } from "./color.js";
+import { parseHex, quantize } from "./color.js";
 import type { Aspect, Job } from "./image_gen.js";
 import { DEFAULT_LAYERS, alignToMaster, generateLayered, gridFor, shifted, type LayeredResult, type PartLayer } from "./layered.js";
 import { hex } from "./color.js";
@@ -90,6 +90,8 @@ interface LayeredMeta {
   colors: number;
   character: string;
   tag?: string;
+  /** The frames are in-betweens of an animation whose keys exist (no new motion stage). */
+  inbetweens?: boolean;
 }
 
 /** A layer panel more than this share outside the master's silhouette, after the shift, is misaligned. */
@@ -109,7 +111,6 @@ async function applyLayered(ctx: any, r: LayeredResult, m: LayeredMeta): Promise
   const layout = { cols: g.cols, rows: g.rows };
   const read = (path: string) => readConcept(readPng(path), w, h, layout, "snap").images.slice(0, m.poses.length);
   const masterPanels = read(r.master.path);
-  const palette = quantize(masterPanels.flatMap((img) => countColors(img)), m.colors);
   const frames = m.frames ?? m.poses.map((_, i) => i + 1);
   const need = Math.max(...frames);
   let opened = "";
@@ -118,59 +119,83 @@ async function applyLayered(ctx: any, r: LayeredResult, m: LayeredMeta): Promise
     opened = `Opened "${t.title}" (${w}x${h}, ${need} frames). `;
     info = await doc.info();
   }
-  const taken = new Set(info.layers.map((l) => l.name));
-  const refName = taken.has("AI: Reference") ? `${m.character} reference` : "Reference";
-  const items: any[] = masterPanels.map((image, i) => ({ image: snapToPalette(image, palette), frame: frames[i], newLayer: refName, locked: true, hide: true }));
+  let spec: Record<string, any> = {};
+  try { spec = info.pixelSpec ? JSON.parse(info.pixelSpec) : {}; } catch { spec = {}; }
+  const characters: Record<string, any> = spec.characters ?? {};
+  const known = characters[m.character] ?? {};
+  // A later round (more frames, another motion) uses the character's palette, reference layer and part layers.
+  const palette = known.palette?.length
+    ? (known.palette as string[]).map((x) => parseHex(x)!).filter(Boolean)
+    : quantize(masterPanels.flatMap((img) => countColors(img)), m.colors);
+  const group = `AI: ${m.character}`;
+  const inGroup = (name: string) => info!.layers.find((l) => l.name === name && l.path[l.path.length - 1] === group && !l.group);
+  const refLayer = (known.reference && info.layers.find((l) => l.name === known.reference)) as { id: string; name: string } | undefined;
+  const refName = refLayer ? refLayer.name : (info.layers.some((l) => l.name === "AI: Reference") ? `AI: ${m.character} reference` : "AI: Reference");
+  const items: any[] = masterPanels.map((image, i) => ({
+    image: snapToPalette(image, palette), frame: frames[i],
+    ...(refLayer ? { layer: refLayer.id } : { newLayer: refName.replace(/^AI: /, ""), locked: true, hide: true }),
+  }));
   const notes: string[] = [];
-  const placed: string[] = [];
-  let below = `AI: ${refName}`;
+  const placed: string[] = [], created: string[] = [];
+  let below = refName;
+  const effects = new Set(m.layers.filter((l) => l.effect).map((l) => l.name));
   for (const l of r.layers) {
-    if (!l.image) { notes.push(`- ${l.name}: not generated (${l.error ?? "no image"}); draw it on a layer "${l.name}" in the group from the reference.`); continue; }
+    if (!l.image) { notes.push(`- ${l.name}: not generated (${l.error ?? "no image"}); draw it on "${l.name}" in the group from the reference.`); continue; }
     let panels: Rgba[];
     try { panels = read(l.image.path); } catch (e) { notes.push(`- ${l.name}: unreadable (${(e as Error).message}); draw it from the reference.`); continue; }
+    if (!panels.some((p) => countColors(p).length)) { notes.push(`- ${l.name}: the image came back empty; draw it from the reference.`); continue; }
+    const existing = inGroup(l.name);
+    const target = existing ? { layer: existing.id } : { newLayer: l.name, above: below };
     const shifts: string[] = [];
     let worst = 0;
     panels.forEach((p, i) => {
       const snapped = snapToPalette(p, palette);
+      if (!countColors(snapped).length) return;
+      if (effects.has(l.name)) { items.push({ image: snapped, frame: frames[i], ...target }); return; }
       const a = alignToMaster(snapped, masterPanels[i]);
       worst = Math.max(worst, a.pixels ? a.outside : 0);
       if (a.dx || a.dy) shifts.push(`pose ${i + 1} moved ${a.dx},${a.dy}`);
-      if (a.pixels) items.push({ image: shifted(snapped, a.dx, a.dy), frame: frames[i], newLayer: l.name, above: below });
+      items.push({ image: shifted(snapped, a.dx, a.dy), frame: frames[i], ...target });
     });
-    if (!panels.some((p) => countColors(p).length)) { notes.push(`- ${l.name}: the image came back empty; draw it from the reference.`); continue; }
-    below = `AI: ${l.name}`;
+    if (!existing) { below = `AI: ${l.name}`; created.push(l.name); }
     placed.push(l.name);
-    notes.push(`- ${l.name}: ${shifts.length ? shifts.join(", ") : "in place"}` +
+    notes.push(`- ${l.name}${effects.has(l.name) ? " (effect)" : ""}: ${effects.has(l.name) ? "placed as drawn" : shifts.length ? shifts.join(", ") : "in place"}` +
       (worst > MISALIGNED ? `; ${Math.round(worst * 100)}% falls outside the master's silhouette: compare it with the reference and redraw what is off` : ""));
   }
   await doc.putImages(items, { frames: need, label: `Layered ${m.character}`, palette: palette.map((c) => hex(c)) });
-  // Group the parts, bottom to top, under "AI: <character>", named by part.
-  const group = `AI: ${m.character}`;
-  await ctx.request("execute_lua", { code: [
-    "local s = app.sprite",
-    "local function find(name) for _, l in ipairs(s.layers) do if l.name == name then return l end end end",
-    `local g = s:newGroup(); g.name = ${JSON.stringify(group)}`,
-    `for _, n in ipairs(${luaList(placed)}) do local l = find("AI: " .. n); if l then l.parent = g; l.name = n end end`,
-    "return true",
-  ].join("\n") });
-  // walk_check's limbs, and the motion stage for a tag.
+  // New part layers join the group (made on the first round), named by part.
+  if (created.length) {
+    await ctx.request("execute_lua", { code: [
+      "local s = app.sprite",
+      "local function find(name) for _, l in ipairs(s.layers) do if l.name == name then return l end end end",
+      `local g = find(${JSON.stringify(group)})`,
+      `if not g then g = s:newGroup(); g.name = ${JSON.stringify(group)} end`,
+      `for _, n in ipairs(${luaList(created)}) do local l = find("AI: " .. n); if l then l.parent = g; l.name = n end end`,
+      "return true",
+    ].join("\n") });
+  }
   info = await doc.info();
-  let spec: Record<string, any> = {};
   try { spec = info.pixelSpec ? JSON.parse(info.pixelSpec) : {}; } catch { spec = {}; }
-  if (placed.includes("near arm") && placed.includes("near leg")) {
+  const all = new Set([...(known.layers ?? []), ...placed]);
+  spec.characters = { ...(spec.characters ?? {}), [m.character]: {
+    reference: refName, palette: palette.map((c) => hex(c)), layers: [...all],
+    base: known.base ?? frames[0], masters: [...(known.masters ?? []), { frames, path: r.master.path }],
+  } };
+  if (all.has("near arm") && all.has("near leg")) {
     spec.walk = { ...(spec.walk ?? {}), nearArm: { layer: "near arm" }, nearLeg: { layer: "near leg" } };
   }
   let stage = "";
   const tag = m.tag ? info.tags.find((t) => t.name.toLowerCase() === m.tag!.toLowerCase()) : undefined;
-  if (tag && frames.length > 1) {
+  if (tag && frames.length > 1 && !m.inbetweens) {
     spec.motion = { tag: tag.name, keys: frames, stage: "keys", walk: /walk|run/i.test(tag.name) };
-    spec.walk = { ...spec.walk, tag: tag.name, contacts: spec.walk?.contacts };
-    stage = ` Motion stage "keys" for "${tag.name}" (keys ${frames.join(", ")}): walk_check, then motion_stage advance for the in-betweens.`;
+    spec.walk = { ...spec.walk, tag: tag.name };
+    stage = ` Motion stage "keys" for "${tag.name}" (keys ${frames.join(", ")}): check it, then motion_stage advance for the in-betweens.`;
   }
   await doc.putImages([], { spec: JSON.stringify(spec), label: "Layered character spec" });
-  return `${opened}Put "${m.character}" on the sprite: the master in a hidden, locked "AI: ${refName}", and ${placed.length} part ` +
-    `layer${placed.length === 1 ? "" : "s"} in the group "${group}" (bottom to top: ${placed.join(", ")}) on frames ${frames.join(", ")}, ` +
-    `with one ${palette.length}-color palette.${stage}\n${notes.join("\n")}\n` +
+  return `${opened}Put "${m.character}" on frames ${frames.join(", ")}: the master in "${refName}" (hidden, locked), ` +
+    `${placed.length} part layer${placed.length === 1 ? "" : "s"} in the group "${group}" (${placed.join(", ")}` +
+    `${created.length && created.length < placed.length ? `; new: ${created.join(", ")}` : ""}), one ${palette.length}-color palette.${stage}\n` +
+    `${notes.join("\n")}\n` +
     "These are drafts at the target size: clean each part (outline, ramps, stray pixels), keep the joints joined, then snapshot.";
 }
 
@@ -214,11 +239,13 @@ export const CONCEPT_TOOLS: Tool[] = [
       frames: z.array(z.number().int().min(1)).optional().describe("The sprite frame of each pose. Default: the motion stage's keys, else 1..N."),
       tag: z.string().optional().describe("The animation's tag: its motion stage starts at keys."),
       target_size: targetSize,
-      layers: z.array(z.object({ name: z.string(), part: z.string() })).min(1).max(16).optional()
+      layers: z.array(z.object({ name: z.string(), part: z.string(), effect: z.boolean().optional() })).min(1).max(12).optional()
         .describe("The part layers, bottom to top, each with how to tell the image model which part it is. Default the 8 rough layers; finer only when the user asks."),
       colors: z.number().int().min(4).max(64).optional().describe("Palette size. Default 16."),
       name: z.string().optional().describe("The character's name for the group. Default 'Character'."),
-      reference: z.boolean().optional().describe("Attach a snapshot of the sprite's current frame 1, so the master keeps an existing character's design. Default: true when the sprite already has art."),
+      reference: z.boolean().optional().describe("Attach the character's base pose (and its earlier master sheet), so the master keeps an existing design. Default: true when the sprite already has art."),
+      base_frame: z.number().int().min(1).optional().describe("The frame with the character's base pose, for the reference. Default: the character's stored base, else frame 1."),
+      inbetweens: z.boolean().optional().describe("These frames are in-betweens of keys already made (a long animation's second round): describe each pose as between its two keys."),
       job: z.string().optional().describe("Wait for this job instead of starting one."),
     }),
     kind: "edit",
@@ -266,26 +293,35 @@ export const CONCEPT_TOOLS: Tool[] = [
       if (!ok) return failure("The user declined the image generator. Draw the character yourself, and don't ask for it again in this turn.");
       const meta: LayeredMeta = {
         subject: input.subject, poses: input.poses, frames, layers, colors: input.colors ?? 16,
-        character: input.name ?? "Character", tag: input.tag,
+        character: input.name ?? "Character", tag: input.tag, inbetweens: input.inbetweens,
         size: input.target_size ? (Array.isArray(input.target_size) ? input.target_size : [input.target_size.width, input.target_size.height]) as [number, number] : undefined,
       };
       // An existing character: its frame 1, enlarged on white, goes along with the master's prompt.
-      let reference: string | undefined;
+      // An existing character: its base pose (enlarged on white) and its latest master sheet go along as references.
+      const references: string[] = [];
       const info = await documentOf(ctx).infoOrNone();
       if (info && input.reference !== false) {
-        const px = await documentOf(ctx).pixels(undefined, 1);
-        let opaque = 0;
-        for (let i = 3; i < px.data.length; i += 4) if (px.data[i] >= 128) opaque++;
-        if (opaque) {
-          const s = Math.max(1, Math.floor(512 / Math.max(px.width, px.height)));
-          reference = join(mkdtempSync(join(tmpdir(), "aseprite-ref-")), "character.png");
-          writePng(reference, scale(flatten(px, { r: 255, g: 255, b: 255, a: 255 }), s));
+        let known: any;
+        try { known = info.pixelSpec ? JSON.parse(info.pixelSpec).characters?.[input.name ?? "Character"] : undefined; } catch { known = undefined; }
+        const base = input.base_frame ?? known?.base ?? 1;
+        if (base <= info.durations.length) {
+          const px = await documentOf(ctx).pixels(undefined, base);
+          let opaque = 0;
+          for (let i = 3; i < px.data.length; i += 4) if (px.data[i] >= 128) opaque++;
+          if (opaque) {
+            const s = Math.max(1, Math.floor(512 / Math.max(px.width, px.height)));
+            const file = join(mkdtempSync(join(tmpdir(), "aseprite-ref-")), "character.png");
+            writePng(file, scale(flatten(px, { r: 255, g: 255, b: 255, a: 255 }), s));
+            references.push(file);
+          }
         }
+        const last = known?.masters?.[known.masters.length - 1]?.path;
+        if (typeof last === "string" && existsSync(last)) references.push(last);
       }
       let job: Job<LayeredResult>;
       try {
         job = jobs.startTask<LayeredResult>("layered", input.subject, (signal, j) => generateLayered(jobs.generator,
-          { subject: input.subject!, view: input.view ?? "Side view, facing right", poses: input.poses!, reference }, layers, signal, 3,
+          { subject: input.subject!, view: input.view ?? "Side view, facing right", poses: input.poses!, references }, layers, signal, 3,
           (done, total) => { j.progress = `${done} of ${total} images`; }), 25 * 60_000, meta);
       } catch (e) {
         return failure((e as Error).message);

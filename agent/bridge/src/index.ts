@@ -53,6 +53,7 @@ async function main() {
   const endpoint = await startHttpEndpoint(link, newToken(), {
     commands, subAgents: () => subAgents, critic: () => subAgents, images,
     ask: (chatId, kind, title) => chatRunner?.ask(chatId, kind, title) ?? Promise.resolve(false),
+    post: (chatId, ev) => chatRunner?.notify({ ...(ev as any), ...(chatId ? { chatId } : {}) }),
   });
   const chat = new ChatRunner(link, endpoint);
   chatRunner = chat;

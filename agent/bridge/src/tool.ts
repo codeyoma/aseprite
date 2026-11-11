@@ -54,6 +54,8 @@ export interface ToolContext extends AsepriteRequester {
   ask?: (kind: string, title: string) => Promise<boolean>;
   /** Image generation jobs (#102); absent where there is no generator. */
   images?: ImageJobs;
+  /** Shows an event in the calling chat's log (ask_user's question card); absent outside the panel's chats. */
+  post?: (ev: { type: string; text?: string; choices?: string[] }) => void;
   /** ab_compare's coin flip; default Math.random (tests pass a seeded one). */
   random?: () => number;
 }
@@ -61,9 +63,10 @@ export interface ToolContext extends AsepriteRequester {
 /** A ToolContext over `aseprite`; the commands store defaults to the user's folder. */
 export function toolContext(
   aseprite: AsepriteRequester,
-  opts: { commands?: SavedCommands; subAgents?: SubAgentRunner; critic?: CriticRunner; ask?: ToolContext["ask"]; images?: ImageJobs } = {},
+  opts: { commands?: SavedCommands; subAgents?: SubAgentRunner; critic?: CriticRunner; ask?: ToolContext["ask"]; images?: ImageJobs; post?: ToolContext["post"] } = {},
 ): ToolContext {
   return {
+    post: opts.post,
     ask: opts.ask,
     images: opts.images,
     request: (method, params, timeoutMs) => aseprite.request(method, params, timeoutMs),

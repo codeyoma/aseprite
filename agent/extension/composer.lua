@@ -256,10 +256,11 @@ function Composer:decide(ctx)
   -- @[label] tokens become "label (aseprite://...)" for the agent (#20).
   local expanded = self.expandMentions(prompt, self.mentions)
   -- Attached images go as image blocks; the bridge adds a line for each.
-  local attachments, shown = {}, prompt
+  -- The bubble shows them as image cards (images), not as text.
+  local attachments, images, shown = {}, {}, prompt
   for _, a in ipairs(self.pending) do
     attachments[#attachments + 1] = { label = a.label, path = a.path, uri = a.uri }
-    shown = shown .. "\nAttached: " .. a.label
+    images[#images + 1] = { label = a.short or a.label, path = a.path, thumb = a.thumb }
   end
   if #self.pending > 0 then self.imageSent = true end
   -- The header names the skill, so the bubble shows only the request.
@@ -274,6 +275,7 @@ function Composer:decide(ctx)
     payload = { prompt = expanded, state = state, changes = changes, provider = ctx.provider, mode = ctx.mode,
                 attachments = #attachments > 0 and attachments or nil },
     shown = shown,
+    images = #images > 0 and images or nil,
     -- Before the catalog arrives (right after start), name the skill by its id.
     skillTitle = skill and skill.title or skillName,
   }

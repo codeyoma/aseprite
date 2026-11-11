@@ -320,7 +320,7 @@ test("generate_character: one consent, then the parts land in a group, aligned, 
   assert.equal(r.isError, undefined, t);
   assert.equal(asked.length, 1);
   assert.match(asked[0], /3 images \(1 master sheet \+ 2 layers: torso, near arm/);
-  assert.match(t, /2 part layers in the group "AI: Knight" \(bottom to top: torso, near arm\) on frames 1, 3/);
+  assert.match(t, /Put "Knight" on frames 1, 3: the master in "AI: Reference" \(hidden, locked\), 2 part layers in the group "AI: Knight" \(torso, near arm\)/);
   assert.match(t, /- near arm: pose 1 moved -1,0\n/, "pose 1 sticks out past the master and is moved back; pose 2 already lies inside");
   assert.match(t, /Motion stage "keys" for "walk" \(keys 1, 3\)/);
   const st = (await fake.request("get_state")).result.activeSprite;
@@ -333,4 +333,50 @@ test("generate_character: one consent, then the parts land in a group, aligned, 
   assert.match(lua[0], /g.name = "AI: Knight"/);
   const again = await runTool(findTool("generate_character"), { job: "img-1" }, ctx);
   assert.match(textOf(again), /already on the sprite/);
+});
+
+test("generate_character, a later round: writes into the character's existing part layers and reference, effects unaligned (#103)", async () => {
+  const { ImageJobs } = await import("../dist/image_gen.js");
+  const paths = { master: sheet(), torso: sheet({ arm: false }), "near arm": sheet({ torso: false, armShift: 5 }), slash: sheet({ torso: false, armShift: 40 }) };
+  const prompts = [];
+  const gen = { async generate(prompt, aspect, signal, refs = []) {
+    prompts.push({ prompt, refs });
+    const name = prompt.includes("ONLY the torso") ? "torso" : prompt.includes("ONLY the arm") ? "near arm" : prompt.includes("ONLY a slash") ? "slash" : "master";
+    return { path: paths[name], width: 200, height: 200 };
+  } };
+  const blankCel = () => ({ x: 0, y: 0, width: 20, height: 20, data: new Uint8Array(20 * 20 * 4) });
+  const base = blankCel(); base.data.set([40, 90, 220, 255], (10 * 20 + 10) * 4);
+  const fake = fakeDocument({ width: 20, height: 20, frames: 6, layers: [
+    { name: "AI: Reference", frames: [blankCel()] },
+    { name: "AI: Knight", group: true, layers: [{ name: "torso", frames: [base] }, { name: "near arm", frames: [] }] },
+  ], extra: { execute_lua: () => ({ ok: true }) } });
+  await documentOf(fake).putImages([], { spec: JSON.stringify({ characters: { Knight: {
+    reference: "AI: Reference", palette: ["#2858dc", "#dc2828"], layers: ["torso", "near arm"], base: 1, masters: [{ frames: [1], path: paths.master }] } } }) });
+  const ctx = { ...fake, images: new ImageJobs(gen), ask: async () => true };
+  const r = await runTool(findTool("generate_character"), {
+    subject: "the knight", poses: ["slash wind-up", "slash"], frames: [5, 6], name: "Knight", inbetweens: true,
+    layers: [{ name: "torso", part: "the torso" }, { name: "near arm", part: "the arm" }, { name: "slash", part: "a slash trail", effect: true }],
+  }, ctx);
+  const t = textOf(r);
+  assert.equal(r.isError, undefined, t);
+  assert.equal(prompts[0].refs.length, 2, "the master sees the base pose and the earlier master");
+  assert.match(t, /3 part layers in the group "AI: Knight" \(torso, near arm, slash; new: slash\), one 2-color palette/);
+  assert.match(t, /- slash \(effect\): placed as drawn/);
+  assert.doesNotMatch(t, /Motion stage/, "in-betweens start no stage");
+  const info = await documentOf(fake).info();
+  const torso = (await fake.request("get_state")).result.activeSprite.layers.find((l) => l.name === "AI: Knight").layers.find((l) => l.name === "torso");
+  assert.ok(torso.celFrames.includes(5) && torso.celFrames.includes(6), JSON.stringify(torso));
+  assert.equal(info.layers.filter((l) => l.name === "AI: Reference").length, 1, "the reference layer is reused");
+  const spec = JSON.parse(info.pixelSpec);
+  assert.deepEqual(spec.characters.Knight.masters.map((x) => x.frames), [[1], [5, 6]]);
+});
+
+test("ask_user posts a question card to the chat and tells the agent to end its turn", async () => {
+  const posted = [];
+  const fake = fakeDocument({ width: 8, height: 8 });
+  const r = await runTool(findTool("ask_user"), { question: "How finely should I split the character?", options: ["8 rough layers", "Detailed (14)"] },
+    { ...fake, post: (ev) => posted.push(ev) });
+  assert.deepEqual(posted, [{ type: "question", text: "How finely should I split the character?", choices: ["8 rough layers", "Detailed (14)"] }]);
+  assert.match(textOf(r), /End your turn now/);
+  assert.match(textOf(await runTool(findTool("ask_user"), { question: "x?", options: ["a", "b"] }, fake)), /ask in your reply instead/);
 });

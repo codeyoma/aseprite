@@ -43,6 +43,8 @@ export interface ChatEvent {
   sessionId?: string;
   /** "plan": the agent's plan as a checklist (ACP). */
   entries?: PlanEntry[];
+  /** "question" (ask_user): the answers offered as buttons. */
+  choices?: string[];
   /** "permission": the request to answer with chat.permission, and its options. */
   requestId?: string;
   options?: { optionId: string; name: string; kind: string }[];

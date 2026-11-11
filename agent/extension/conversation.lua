@@ -9,12 +9,13 @@
 --   local r = c:apply(chatEvent)          -- r.turnEnded, r.status
 --
 -- Entry shapes (entries are read-only for callers):
---   { kind = "user" | "header" | "text" | "status" | "error", text }
+--   { kind = "user" | "header" | "text" | "status" | "error", text }   (a user entry may have images = { { label, path } })
 --   { kind = "thought", text, secs }
 --   { kind = "tool", text, id, toolKind = "edit"|"read", detail, status = nil|"ok"|"failed", result }
 --   { kind = "worked", secs, check = nil|{ errors, warnings }, applyPlan = nil|true, planApplied = nil|true }
 --     (check: the turn's last check, if any; applyPlan: a Plan-mode reply that can be carried out)
 --   { kind = "plan", items = { { content, status = "pending"|"in_progress"|"completed" }, ... } }
+--   { kind = "question", text, options = { "label", ... }, answered = nil|"label" }   (ask_user)
 --   { kind = "variations", task, items = { { name, image }, ... }, prompt, resolved = nil|"Kept v2"|"Discarded" }
 
 local PROVIDER_NAMES = { claude = "Claude", codex = "Codex" }
@@ -85,8 +86,14 @@ end
 -- Starts a turn: the user's bubble and the provider's header, with the
 -- mode when it is not Agent (#24).
 -- skill: the title of the skill the message runs with (#35), shown too.
-function Conversation:send(text, provider, mode, skill)
-  push(self, { kind = "user", text = text })
+-- images: the attached images, { { label, path }, ... } (shown as cards under the bubble).
+function Conversation:send(text, provider, mode, skill, images)
+  local list
+  if images and #images > 0 then
+    list = {}
+    for _, im in ipairs(images) do list[#list + 1] = { label = tostring(im.label or ""), path = im.path and tostring(im.path) or nil } end
+  end
+  push(self, { kind = "user", text = text, images = list })
   local name = PROVIDER_NAMES[provider] or provider
   if MODE_NAMES[mode] then name = name .. " · " .. MODE_NAMES[mode] end
   if skill then name = name .. " · " .. skill end
@@ -123,6 +130,12 @@ function Conversation:apply(ev)
   end
   if t == "session" then
     if ev.provider then self.ids[ev.provider] = ev.sessionId end
+  elseif t == "question" then
+    -- ask_user: a question with option buttons; the answer is the user's next message.
+    sinceLast(self)
+    local options = {}
+    for _, o in ipairs(ev.choices or {}) do options[#options + 1] = tostring(o) end
+    push(self, { kind = "question", text = ev.text or "", options = options })
   elseif t == "text" then
     sinceLast(self)
     push(self, { kind = "text", text = ev.text or "" })
@@ -217,7 +230,7 @@ function Conversation:serialize()
   for _, e in ipairs(self.list) do
     if SAVED[e.kind] then
       list[#list + 1] = { kind = e.kind, text = e.text, secs = e.secs, id = e.id, name = e.name, toolKind = e.toolKind,
-        detail = e.detail, status = e.status, result = e.result, check = e.check, items = e.items, mode = e.mode }
+        detail = e.detail, status = e.status, result = e.result, check = e.check, items = e.items, mode = e.mode, images = e.images }
     end
   end
   local ids = {}
@@ -235,6 +248,10 @@ function Conversation:restore(data)
     local e = {}
     for _, f in ipairs(FIELDS) do e[f] = src[f] end
     if src.check then e.check = { errors = src.check.errors, warnings = src.check.warnings } end
+    if src.images then
+      e.images = {}
+      for _, im in ipairs(src.images) do e.images[#e.images + 1] = { label = im.label, path = im.path } end
+    end
     if src.items then
       e.items = {}
       for _, it in ipairs(src.items) do e.items[#e.items + 1] = { content = it.content, status = it.status } end

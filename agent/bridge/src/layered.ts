@@ -9,6 +9,8 @@ import type { Rgba } from "./image.js";
 export interface PartLayer {
   name: string;
   part: string;
+  /** An effect (a slash trail, sparks): drawn only in the panels where it appears, and not aligned to the body. */
+  effect?: boolean;
 }
 
 /**
@@ -48,8 +50,8 @@ export interface SheetRequest {
   view: string;
   /** One line per key pose, in frame order. */
   poses: string[];
-  /** An image of the existing character (a snapshot of the sprite) the master must match, if any. */
-  reference?: string;
+  /** Images of the existing character (its base pose, earlier master sheets) the master must match. */
+  references?: string[];
 }
 
 const layoutLines = (g: Grid, n: number) => [
@@ -62,7 +64,7 @@ const layoutLines = (g: Grid, n: number) => [
 export function masterPrompt(r: SheetRequest, g: Grid): string {
   return [
     `Character key-pose sheet for a pixel-art sprite: ${r.subject}.`,
-    ...(r.reference ? ["The attached image is this character as it exists: keep its design, colors and proportions exactly."] : []),
+    ...(r.references?.length ? [`The attached image${r.references.length > 1 ? "s show" : " shows"} this character as it exists (its base pose${r.references.length > 1 ? " and earlier sheets" : ""}): keep its design, colors and proportions exactly.`] : []),
     `${r.view}. Full body, flat colors, a clean dark outline, simple shapes that read when small, ` +
       "the near limbs (toward the viewer) clearly lighter than the far limbs.",
     ...layoutLines(g, r.poses.length),
@@ -74,6 +76,14 @@ export function masterPrompt(r: SheetRequest, g: Grid): string {
 
 /** One layer's sheet: only that part, from the attached master, in every panel, at the same place. */
 export function layerPrompt(part: PartLayer, g: Grid, n: number): string {
+  if (part.effect) {
+    return [
+      `The attached image is a character sheet: ${n} pose${n > 1 ? "s" : ""} in a ${g.cols} x ${g.rows} grid of square panels.`,
+      `Make an image of exactly the same size and the same grid in which each panel shows ONLY ${part.part} for that ` +
+        "panel's moment of the motion, placed where it belongs relative to the character in that panel. Leave a panel " +
+        "plain white where the effect doesn't appear. No character, no text, no borders, plain white background.",
+    ].join("\n");
+  }
   return [
     `The attached image is a character sheet: ${n} pose${n > 1 ? "s" : ""} in a ${g.cols} x ${g.rows} grid of square panels.`,
     `Make an image of exactly the same size and the same grid in which each panel shows ONLY ${part.part} of that ` +
@@ -97,7 +107,7 @@ export async function generateLayered(
   progress: (done: number, total: number) => void = () => {},
 ): Promise<LayeredResult> {
   const g = gridFor(r.poses.length);
-  const master = await gen.generate(masterPrompt(r, g), g.aspect, signal, r.reference ? [r.reference] : []);
+  const master = await gen.generate(masterPrompt(r, g), g.aspect, signal, r.references ?? []);
   const total = layers.length + 1;
   let done = 1;
   progress(done, total);

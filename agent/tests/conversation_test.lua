@@ -206,4 +206,13 @@ do
   check("no links", plain == "no links here" and #none == 0)
 end
 
+do -- ask_user: a question entry with its choices
+  local c = Conversation.new{ clock = os.time }
+  c:send("make a knight", "claude")
+  local r = c:apply{ type = "question", text = "How finely?", choices = { "8 rough layers", "Detailed" } }
+  local list = c:entries()
+  local q = list[#list]
+  check("question entry", not r.turnEnded and q.kind == "question" and q.text == "How finely?" and #q.options == 2 and q.options[2] == "Detailed")
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))
