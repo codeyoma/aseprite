@@ -2,6 +2,15 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Fluid effects: smoke, fire, gas, liquids (#106)
+- **How:**
+  - `sprite_fx/fluid.ts` holds two solvers written from the papers. `GasSim` is Stable Fluids on a MAC grid: forces (buoyancy from temperature, weight from density, vorticity confinement), a Gauss-Seidel projection with over-relaxation done directly on the face velocities, semi-Lagrangian advection of density, temperature and fuel (plus a uniform wind), self-advection, then burning, cooling and dissipation. Each side is a wall or open (outflow, clean air comes in). `FlipSim` is PIC/FLIP: particles move under gravity, are pushed apart, splat to the faces, the grid is projected with a density correction, and the change goes back to the particles (0.9 FLIP). Sparse cells count as air, so trapped air pockets collapse.
+  - Presets are data (`FLUID_PRESETS`): canvas size, timing, ramp, emitter shape, rates, forces. `renderFluid` runs the sim at a fixed rate (gas 40 Hz, liquid 120 Hz), samples a frame every 1/fps s, downsamples a 2x grid, shades with Bayer 4x4 dithering on the ramp steps (transparency is the step below the first color, so edges dither out), and for loops simulates two cycles after a warm-up and crossfades the fields.
+  - `fluid_tools.ts` is one tool, `fluid_fx`, with `apply` preview / layer / sprite. The layer path reuses `fxSchedule`, `placed`, `freeLayerName` and `fxPalette` from `fx_tools.ts`, so timing, cutting and palette append match `add_fx`; one `put_images` request carries the frames, palette and FX record.
+  - Measured on an M-series Mac: a 64x64 grid x 48 frames renders in about 190 ms one-shot and 450 ms as a loop (two cycles plus warm-up); every preset at its default size renders in 110-230 ms.
+- **Why:** the FX library's pixelfx smoke and fire are particle sprites; real flowing gas and water needed a solver. A MAC grid instead of Stam's collocated one makes the divergence the projection removes the same one tests measure, and lets the gas and liquid solvers share the layout. Crossfading fields rather than colors keeps the ramp and dither pattern intact across the seam. Ten Minute Physics has no license and PavelDoGreat's code is a WebGL shader pipeline, so nothing is copied.
+- **Architecture:** a pure module (`sprite_fx/fluid.ts`, no document access) under a thin tool; no protocol or extension change. The FX record (`fluid:<preset>`, settings JSON in `render`) is not a library id, so `check_fx` checks the layer with its no-record rules (border, loop seam, colors) and export sees an ordinary effect layer. Semi-Lagrangian advection is not conservative: a swirl in a closed box keeps its smoke within a few percent, but strong buoyancy into a wall loses about 15%; presets open the sides the smoke leaves by.
+
 ## Juice and the sprite-effect core (#104)
 - **How:**
   - `sprite_fx/curves.ts` has Penner's easings, a closed-form damped spring, a decaying bounce and a seeded shake.

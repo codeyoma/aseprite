@@ -25,6 +25,7 @@ import { FX_RECIPE_TOOLS } from "./fx_recipe_tools.js";
 import { CRITIC_TOOLS } from "./critic.js";
 import { CONCEPT_TOOLS } from "./concept_tools.js";
 import { JUICE_TOOLS } from "./juice_tools.js";
+import { FLUID_TOOLS } from "./fluid_tools.js";
 
 export const TOOL_MODULES: { what: string; tools: Tool[] }[] = [
   { what: "Core: state, Lua, snapshots, checks, undo, sub-agents", tools: CORE_TOOLS },
@@ -51,4 +52,5 @@ export const TOOL_MODULES: { what: string; tools: Tool[] }[] = [
   { what: "Fresh-eyes critic and the blind A/B gate (#76)", tools: CRITIC_TOOLS },
   { what: "Concept-first: pixel spec and storyboard reference frames (#79)", tools: CONCEPT_TOOLS },
   { what: "Juice: squash, wobble, bounce, shake, flash, spin and pop from a layer (#104)", tools: JUICE_TOOLS },
+  { what: "Fluid effects: smoke, fire, gas, liquids (#106)", tools: FLUID_TOOLS },
 ];

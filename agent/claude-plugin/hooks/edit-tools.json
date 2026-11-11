@@ -16,6 +16,7 @@
     "export_palette_lut",
     "find_sprites",
     "fix_pixel_art",
+    "fluid_fx",
     "fx_from_recipe",
     "fx_overlay",
     "generate_character",
