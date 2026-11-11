@@ -18,7 +18,7 @@
 // the `stable` commit, with its build/ inside), app/ (the installed binary and
 // data, a copy, so a build never touches the running program), installed.json.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { installExtension, IS_WINDOWS, REPO, STABLE } from "./instances.mjs";
@@ -71,7 +71,8 @@ export function prepare() {
   if (c.needsBuild) {
     log("building Aseprite (the first build takes a while)");
     if (existsSync(join(STABLE.src, "build", "build.ninja"))) run("cmake", ["--build", "build"], STABLE.src);
-    else if (IS_WINDOWS) run("build.cmd", ["--auto", "--norun"], STABLE.src);
+    // build.cmd loads Visual Studio's environment and ends with `pause`: answer it.
+    else if (IS_WINDOWS) run("cmd", ["/c", "echo.| build.cmd --auto --norun"], STABLE.src);
     else run("./build.sh", ["--auto", "--norun"], STABLE.src);
   }
   log("building the bridge");
@@ -115,7 +116,8 @@ export function start() {
 
 /** macOS: ~/Applications/Aseprite AI.app, a small app that starts the stable binary (its own bundle id, so it never opens the dev build). */
 export function launcher() {
-  if (process.platform !== "darwin") throw new Error("The launcher app is for macOS; on Windows, see docs/INSTANCES.md");
+  if (IS_WINDOWS) return windowsShortcut();
+  if (process.platform !== "darwin") throw new Error("No launcher on this platform: run `node agent/tools/stable.mjs start`");
   const app = join(homedir(), "Applications", "Aseprite AI.app", "Contents");
   mkdirSync(join(app, "MacOS"), { recursive: true });
   mkdirSync(join(app, "Resources"), { recursive: true });
@@ -134,6 +136,29 @@ export function launcher() {
   const icon = join(STABLE.src, "build", "bin", "Aseprite.app", "Contents", "Resources", "Aseprite.icns");
   if (existsSync(icon)) cpSync(icon, join(app, "Resources", "Aseprite.icns"));
   return join(homedir(), "Applications", "Aseprite AI.app");
+}
+
+/** Windows: a Start menu shortcut "Aseprite AI" to the installed program (it needs no environment: stable uses the defaults). */
+function windowsShortcut() {
+  const lnk = join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "Microsoft", "Windows", "Start Menu", "Programs", "Aseprite AI.lnk");
+  const ps = `$s = (New-Object -ComObject WScript.Shell).CreateShortcut('${lnk.replace(/'/g, "''")}'); ` +
+    `$s.TargetPath = '${appBin.replace(/'/g, "''")}'; $s.WorkingDirectory = '${appDir.replace(/'/g, "''")}'; $s.Save()`;
+  execFileSync("powershell", ["-NoProfile", "-Command", ps]);
+  return lnk;
+}
+
+/** Windows: a running program can't be renamed; waits until the installed one can (it was started without a pid file). */
+async function waitUnlocked(file) {
+  for (;;) {
+    try {
+      renameSync(file, file + ".probe");
+      renameSync(file + ".probe", file);
+      return;
+    } catch (e) {
+      if (e.code === "ENOENT") return;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }
 
 async function waitFor(pid) {
@@ -159,6 +184,7 @@ if (process.argv[1] && process.argv[1].endsWith("stable.mjs")) {
     else if (cmd === "install" || cmd === "update") {
       if (cmd === "update") prepare();
       if (wait) await waitFor(wait);
+      else if (rest.includes("--wait") && IS_WINDOWS && existsSync(appBin)) await waitUnlocked(appBin);
       if (existsSync(preparedFile)) console.log(JSON.stringify(install(), null, 2));
       if (thenStart) start();
     } else if (cmd === "start") start();

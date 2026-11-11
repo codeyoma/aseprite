@@ -25,6 +25,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AsepriteLink } from "./aseprite.js";
+import { exe, installedAsepriteBins, which } from "./platform.js";
 import { HeadlessLink, headlessRequested, LiveFileError } from "./headless.js";
 import { findTool, formatCheck, runTool, toolContext, type AsepriteRequester, type ToolResult } from "./tools.js";
 import { VERSION } from "./server.js";
@@ -125,18 +126,18 @@ async function tool(name: string, input: Record<string, unknown>): Promise<ToolR
 // File mode
 // ---------------------------------------------------------------------------
 
-/** The Aseprite executable: ASEPRITE_BIN, this repository's build, `aseprite` on PATH, or the macOS app. */
+/** The Aseprite executable: ASEPRITE_BIN, this repository's build, an installed Aseprite, or `aseprite` on PATH. */
 export function asepriteBin(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
     process.env.ASEPRITE_BIN,
     process.env.ASEPRITE,
-    join(here, "../../../build/bin/aseprite"),
-    "/Applications/Aseprite.app/Contents/MacOS/aseprite",
+    join(here, "../../../build/bin", exe("aseprite")),
+    ...installedAsepriteBins(),
   ].filter(Boolean) as string[];
   for (const c of candidates) if (existsSync(c)) return c;
-  const which = spawnSync("/bin/sh", ["-c", "command -v aseprite"], { encoding: "utf8" });
-  if (which.status === 0 && which.stdout.trim()) return which.stdout.trim();
+  const onPath = which("aseprite");
+  if (onPath) return onPath;
   throw new CliError("Aseprite executable not found", "Set ASEPRITE_BIN to the aseprite binary, or put `aseprite` on PATH.");
 }
 

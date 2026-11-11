@@ -19,6 +19,7 @@ import { basename, extname, join } from "node:path";
 import { hex, parseHex, type RGBA } from "./color.js";
 import { repoRoot } from "./developer.js";
 import { sessionDir } from "./session.js";
+import { installedAsepriteData } from "./platform.js";
 
 export interface PaletteCredit {
   author: string; // "" when Lospec has no author name
@@ -52,7 +53,7 @@ export function asepriteExtensionDirs(): string[] {
   const root = repoRoot();
   return [
     root && join(root, "data", "extensions"),
-    "/Applications/Aseprite.app/Contents/Resources/data/extensions",
+    ...installedAsepriteData().map((d) => join(d, "extensions")),
     process.env.ASEPRITE_DATA && join(process.env.ASEPRITE_DATA, "extensions"),
   ].filter((d): d is string => !!d && existsSync(d));
 }

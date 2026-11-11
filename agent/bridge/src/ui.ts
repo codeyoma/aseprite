@@ -2,6 +2,7 @@
 // (data/fonts/aseprite_font.png and aseprite_mini.png, CC BY 4.0), read
 // the way Aseprite reads sprite-sheet fonts: glyph cells separated by the
 // key color at (0, 0), in codepoint order from ' '.
+import { installedAsepriteData } from "./platform.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { repoRoot } from "./developer.js";
@@ -17,7 +18,7 @@ export function fontDirs(): string[] {
   const root = repoRoot();
   return [
     root && join(root, "data", "fonts"),
-    "/Applications/Aseprite.app/Contents/Resources/data/fonts",
+    ...installedAsepriteData().map((d) => join(d, "fonts")),
     process.env.ASEPRITE_DATA && join(process.env.ASEPRITE_DATA, "fonts"),
   ].filter((d): d is string => !!d && existsSync(d));
 }

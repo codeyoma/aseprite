@@ -3,6 +3,7 @@
 // worktree of its own on a branch dev/<date>-<slug>; Apply brings the work
 // into the user's checkout, and the panel rebuilds and relaunches Aseprite.
 import { sessionDir } from "./session.js";
+import { exe } from "./platform.js";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -242,7 +243,7 @@ export function build(root: string, onLine: (line: string) => void): Promise<{ o
 
 /** The Aseprite binary to relaunch: the fork's build. */
 export function asepriteBinary(root: string): string | undefined {
-  const bin = join(root, "build", "bin", "aseprite");
+  const bin = join(root, "build", "bin", exe("aseprite"));
   return existsSync(bin) ? bin : undefined;
 }
 

@@ -65,3 +65,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/*.aseprite-extension dist/*.tgz --title "$GITHUB_REF_NAME" --notes "Aseprite Agent extension and bridge. Requires Aseprite 1.3 or later."
+
+  # The bridge's unit tests on Windows (no Aseprite build: never built or
+  # distributed here). Catches POSIX-only paths, shells and scripts.
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: agent/bridge
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: agent/bridge/package-lock.json
+      - run: npm ci
+      - run: npm test

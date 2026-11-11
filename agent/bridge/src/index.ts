@@ -11,19 +11,21 @@ import { SubAgents } from "./subagents.js";
 import { cleanAttachments } from "./attachments.js";
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
-import { AsepriteLink, log } from "./aseprite.js";
+import { join } from "node:path";
+import { AsepriteLink, log, logToFile } from "./aseprite.js";
 import { bridgeMethods } from "./bridge_methods.js";
 import { ChatRunner } from "./chat.js";
 import { startHttpEndpoint } from "./http.js";
 import { SavedCommands } from "./saved_commands.js";
 import { createMcpServer, VERSION } from "./server.js";
-import { newToken, recordBridge } from "./session.js";
+import { newToken, recordBridge, sessionDir } from "./session.js";
 import { toolContext } from "./tool.js";
 
 const DAEMON_IDLE_EXIT_MS = 120_000;
 
 async function main() {
   const daemon = process.argv.includes("--daemon");
+  if (daemon) logToFile(join(sessionDir, "daemon.log"));
   const link = new AsepriteLink();
   link.sessionExtra = { bridgePath: fileURLToPath(import.meta.url), version: VERSION, mode: daemon ? "daemon" : "stdio" };
   recordBridge(fileURLToPath(import.meta.url), VERSION);

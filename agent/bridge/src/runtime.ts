@@ -64,11 +64,8 @@ export interface Runtime {
 
 const stamp = () => new Date().toISOString().replace(/[:.]/g, "-");
 
-export function which(cmd: string): string | undefined {
-  const r = spawnSync("/bin/sh", ["-c", `command -v ${cmd}`], { encoding: "utf8" });
-  const out = r.stdout.trim();
-  return r.status === 0 && out ? out : undefined;
-}
+export { which } from "./platform.js";
+import { which } from "./platform.js";
 
 /** ACP: one long-lived agent per conversation key, prompted per turn. */
 export class AcpRuntime implements Runtime {

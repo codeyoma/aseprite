@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -309,8 +310,24 @@ export class AsepriteLink extends EventEmitter {
   }
 }
 
+let logFile: string | undefined;
+/** Daemon mode: logs go to this file instead of stderr. */
+export function logToFile(file: string): void {
+  logFile = file;
+}
+
 export function log(message: string): void {
   // stdout carries MCP traffic, so logs go to stderr. The ase CLI turns them off.
   if (process.env.ASEPRITE_AGENT_QUIET) return;
-  process.stderr.write(`[aseprite-agent] ${message}\n`);
+  const line = `[aseprite-agent] ${message}\n`;
+  // A daemon has no terminal (on Windows it is started without redirection): it appends to <agent home>/daemon.log.
+  if (logFile) {
+    try {
+      appendFileSync(logFile, `${new Date().toISOString()} ${line}`);
+    } catch {
+      // the log is best effort
+    }
+    return;
+  }
+  process.stderr.write(line);
 }

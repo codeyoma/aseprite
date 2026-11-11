@@ -241,10 +241,14 @@ local function ensureBridge(callback)
     if not bridgePath or not app.fs.isFile(bridgePath) then
       return callback(false, "No bridge found. Run `claude` (or Codex) once with the aseprite MCP server so Aseprite learns where the bridge is.")
     end
-    local logFile = app.fs.joinPath(agentHome(), "daemon.log")
-    -- A login shell gives the bridge the user's PATH (node, claude, codex).
-    local inner = "nohup node " .. shellQuote(bridgePath) .. " --daemon > " .. shellQuote(logFile) .. " 2>&1 &"
-    runShell("/bin/zsh -lc " .. shellQuote(inner))
+    -- The daemon writes <agent home>/daemon.log itself.
+    if app.os.windows then
+      -- cmd.exe: start detached, without a console window, with Aseprite's PATH.
+      runShell('start "" /B node "' .. bridgePath:gsub('"', '') .. '" --daemon')
+    else
+      -- A login shell gives the bridge the user's PATH (node, claude, codex).
+      runShell("/bin/zsh -lc " .. shellQuote("nohup node " .. shellQuote(bridgePath) .. " --daemon > /dev/null 2>&1 &"))
+    end
   end
   connect(true)
 
