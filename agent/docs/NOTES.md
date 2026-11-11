@@ -2,6 +2,25 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Dev and stable instances, updates, Windows
+- **How:**
+  - `ASEPRITE_AGENT_HOME` (bridge `session.ts`, extension `agentHome()`) and Aseprite's `ASEPRITE_USER_FOLDER` make an instance; `tools/instances.mjs` defines dev (this checkout's build, `~/.aseprite-agent-dev`, its own user folder, linked extension) and stable (`~/.aseprite-agent-stable`, default user folder and home, copied extension).
+  - Live tests and benchmarks start and stop only the dev instance, by pid; their bridge uses the dev home.
+  - `tools/release.mjs` moves `stable` to a tested commit with a tag.
+  - `tools/stable.mjs` prepares (a worktree at `stable`, Aseprite rebuilt only when something outside `agent/` changed, bridge built) beside the running app, then installs (a copy of `build/bin`, the extension, `<home>/bridge.json`).
+  - The panel's Check for Updates runs it through `update.*` bridge methods; the installer waits for Aseprite to quit.
+  - Windows:
+    - the daemon starts with `start "" /B`; `platform.ts` scans PATH and knows `.exe` and install folders;
+    - the Codex auth file is copied where a symlink isn't allowed;
+    - `npm test` and the Lua runner are Node scripts; LF everywhere (`.gitattributes`);
+    - the saved-command store turns off `core.autocrlf`;
+    - a `windows-latest` CI job runs the unit tests.
+- **Why:**
+  - The user's Aseprite and the agent's tests shared one app, user folder and agent home. A test bridge took over the user's Aseprite, and `--restart` killed it.
+  - Builds can't be distributed (EULA), so updates build locally.
+  - A full build of the stable copy took 2 min 23 s on this Mac.
+- **Architecture:** an instance is two environment variables; everything else is derived from them.
+
 ## Fewer round trips, Chats module, fast paths, one owner per helper (#88, #89, #91, #92, #94)
 - **How:**
   - #88: `execute_lua` takes `look` (true or "filmstrip") and `check`; the snapshot and the findings come back with the edit (`snapshotContent`, `checkContent` in core_tools.ts). The chat system prompt includes `guide/basics.md`, so a conversation no longer starts with `read_guide("basics")`, and it tells the agent to use look/check.

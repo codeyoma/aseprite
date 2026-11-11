@@ -48,7 +48,7 @@ Aseprite (C++ fork)  ──  Lua extension (agent/extension)  ──WebSocket JS
 
 - Milestones M1–M12 are closed. **M13 "Speed and structure"** is in progress.
   - #87 (lean sessions) is closed.
-  - The work for #88 (look/check on `execute_lua`, basics in the prompt), #89 (Chats module), #91 (Lua fast paths), #92 (shared helpers) and #94 (dead code) is done and unit-tested. It still needs the live regression run and its commit.
+  - #89, #91, #92 and #94 are closed. #88 is half done: look/check on `execute_lua` and the basics guide in the prompt are in; the declarative apply tool and a smaller core tool set are still open.
   - Still open: #90 (document-scoped requests, which would allow truly parallel chats), #93 (project memory, checkpoints), #95 (native helpers), #96 (wire seam), #97 (FX domain module).
 - **Measured** (see the 2026-11-11 notes):
   - Model calls are about 94% of a turn's time.
@@ -64,5 +64,5 @@ Aseprite (C++ fork)  ──  Lua extension (agent/extension)  ──WebSocket JS
 - `handlers_check.lua`: findings only for the 32 most used off-palette colors.
 - **Known gaps**:
   - Every tool, including agent-written Lua, acts on the *active* sprite (#90).
-  - It only runs on macOS today; the tools and scripts assume POSIX.
-  - Live tests restart the same Aseprite the user works in.
+  - Windows passes unit tests in CI but has not run the app yet (`docs/BUILD-windows.md`).
+- Two instances (user's stable, agent's dev) are described in `docs/INSTANCES.md`; tests only touch dev.
