@@ -89,6 +89,12 @@ return function(deps)
     spriteExists = function(id) return spriteById(id) ~= nil end,
   }
   chats:make(app.sprite and app.sprite.id or nil, true)
+  local promptOwner = chats.current   -- the chat whose text the prompt box holds
+  -- Empties the prompt box after its text was sent or queued.
+  local function clearPrompt()
+    if promptOwner then promptOwner.draft = "" end
+    if dlg then dlg:modify{ id = "prompt", text = "" } end
+  end
   local hitTabs = {}           -- chat tabs: { x0, y0, x1, y1, chat, close, new }
   local hitChip = nil          -- where the chip is drawn (click removes it)
   local hitCards = {}          -- attachment cards' ✕ boxes (click removes that image)
@@ -1050,6 +1056,7 @@ return function(deps)
   -- just "/query" shows matching skills and commands.
   local function onPromptChange()
     if not dlg then return end
+    if promptOwner then promptOwner.draft = dlg.data.prompt or "" end
     local r = composer:onTextChange(dlg.data.prompt or "")
     if r.mentionPicker then openPicker() end
     if r.needCatalog then refreshCatalog() end
@@ -1066,7 +1073,7 @@ return function(deps)
     else
       conv:note("error", "/" .. r.name .. ": " .. tostring(result.error))
     end
-    dlg:modify{ id = "prompt", text = "" }
+    clearPrompt()
     refreshContext()
     changed()
   end
@@ -1087,7 +1094,7 @@ return function(deps)
     chat.mood:send(animT, { attachments = p.attachments ~= nil, resumed = resumed })
     chat.mood:queued(false, animT)
     chat.turns:start(spriteById(chat.spriteId) or app.sprite, { text = r.shown, provider = p.provider, mode = p.mode, skill = r.skillTitle })
-    if chat == chats.current and not r.queued then dlg:modify{ id = "prompt", text = "" } end
+    if chat == promptOwner and not r.queued then clearPrompt() end
     syncBusy()
     changed()
     updateStatus("Connecting...")
@@ -1147,7 +1154,7 @@ return function(deps)
         -- A turn runs (this chat's or another's): the message waits.
         chats:enqueue(chats.current, r)
         if chats.running ~= chats.current then chats.current.mood:queued(true, animT) end
-        dlg:modify{ id = "prompt", text = "" }
+        clearPrompt()
         updateAttachments()
         changed()
       else
@@ -1204,13 +1211,20 @@ return function(deps)
   ---------------------------------------------------------------------------
 
   -- Shows a chat: its messages, draft, attachments and queue.
+  -- The text in the prompt box belongs to promptOwner: it is saved to that
+  -- chat's draft before another chat's draft is shown. (chats:siteChanged has
+  -- already made the new chat current, so "current" can't tell whose text it is.)
   local function activate(chat)
-    if chats.current and chats.current ~= chat and dlg then chats.current.draft = dlg.data.prompt or "" end
+    if dlg and promptOwner and promptOwner ~= chat then promptOwner.draft = dlg.data.prompt or "" end
     chats:show(chat)
     turns, conv, composer = chat.turns, chat.conv, chat.composer
     scrollPx = 0
+    -- The new owner first: setting the text fires the box's change event,
+    -- which saves the text into the owner's draft.
+    local switching = promptOwner ~= chat
+    promptOwner = chat
+    if dlg and switching then dlg:modify{ id = "prompt", text = chat.draft or "" } end
     if dlg then
-      dlg:modify{ id = "prompt", text = chat.draft or "" }
       updateAttachments()
       syncBusy()
       refreshContext()
