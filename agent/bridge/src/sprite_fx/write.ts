@@ -8,6 +8,7 @@
 import { contactSheet, encodePng, trim, type Rgba } from "../image.js";
 import type { Document, FxInfo, PutImagesItem, SpriteInfo } from "../document.js";
 import type { Content } from "../tool.js";
+import { aiLayer } from "../fx/record.js";
 
 const BACKDROP = { r: 24, g: 24, b: 32, a: 255 }, LABEL = { r: 200, g: 200, b: 210, a: 255 };
 
@@ -32,6 +33,10 @@ export interface EffectWrite {
   prompt: string;
   /** An FX record for the new layer (an effect pipeline's JSON, #107), written in the same request. */
   fx?: FxInfo;
+  /** Layers emptied first in the same request (#97: the effect's own layer when it is re-applied). */
+  clear?: string[];
+  /** Frame durations to set (numbered after the insert). */
+  durations?: { frame: number; ms: number }[];
 }
 
 /**
@@ -63,10 +68,10 @@ export async function writeEffect(doc: Document, info: SpriteInfo, w: EffectWrit
   if (items.length) items[0].hideSource = true;
   const res = await doc.putImages(items, {
     insert: w.insert ? [{ after: w.insert.after, durations: w.insert.durations }] : undefined,
-    label: w.label, prompt: w.prompt, palette: w.palette,
-    fx: w.fx && items.length ? { ...w.fx, layer: `AI: ${w.name}` } : undefined,
+    label: w.label, prompt: w.prompt, palette: w.palette, clear: w.clear, durations: w.durations,
+    fx: w.fx && items.length ? { ...w.fx, layer: aiLayer(w.name) } : undefined,
   });
-  return { layer: res.layers[0]?.name ?? `AI: ${w.name}`, frames: total };
+  return { layer: res.layers[0]?.name ?? aiLayer(w.name), frames: total };
 }
 
 function hasContent(img: Rgba): boolean {

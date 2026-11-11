@@ -133,6 +133,21 @@ function M.new(opts)
   -- Sprite description (get_state)
   -------------------------------------------------------------------------
 
+  -- The FX record on a layer (#71) and the hits on a sprite (#70), as stored by put_images (handlers_sprite.lua):
+  -- copied as they are; their meaning is the bridge's FX domain module (bridge/src/fx/record.ts, #97).
+  local function fxRecordOf(l)
+    local fx = l.properties("aseprite-agent").fx
+    if type(fx) ~= "table" or not fx.id then return nil end
+    return { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windupMs, recipe = fx.recipe, render = fx.render }
+  end
+  local function fxHitsOf(sprite)
+    local hits = {}
+    for _, h in ipairs(sprite.properties("aseprite-agent")["fx.hits"] or {}) do
+      hits[#hits + 1] = { frame = h.frame, freezeMs = h.freezeMs, shakeMs = h.shakeMs, amp = h.amp }
+    end
+    return #hits > 0 and hits or nil
+  end
+
   local function describeLayers(layers)
     local out = {}
     -- Top-most layer first, as in the timeline.
@@ -169,11 +184,7 @@ function M.new(opts)
         item.celFrames = cels
         if #links > 0 then item.celLinks = links end
         -- An effect recorded by the FX tools (#71): the layer property aseprite-agent "fx".
-        local fx = l.properties("aseprite-agent").fx
-        if type(fx) == "table" and fx.id then
-          item.fx = { id = fx.id, x = fx.x, y = fx.y, fps = fx.fps, loop = fx.loop, windupMs = fx.windupMs,
-            recipe = fx.recipe, render = fx.render }
-        end
+        item.fx = fxRecordOf(l)
       end
       out[#out + 1] = item
     end
@@ -233,11 +244,7 @@ function M.new(opts)
     if #slices > 0 then info.slices = slices end
 
     -- Hits recorded by hit_stop (#70): the sprite property aseprite-agent "fx.hits".
-    local hits = {}
-    for _, h in ipairs(sprite.properties("aseprite-agent")["fx.hits"] or {}) do
-      hits[#hits + 1] = { frame = h.frame, freezeMs = h.freezeMs, shakeMs = h.shakeMs, amp = h.amp }
-    end
-    if #hits > 0 then info.fxHits = hits end
+    info.fxHits = fxHitsOf(sprite)
 
     -- A pixel spec stored by the concept tools (#79): the sprite property aseprite-agent "concept.spec".
     local spec = sprite.properties("aseprite-agent")["concept.spec"]
@@ -337,13 +344,6 @@ function M.new(opts)
         frames = frames,
       }
     end
-
-    -- Hits recorded by hit_stop (#70): the sprite property aseprite-agent "fx.hits".
-    local hits = {}
-    for _, h in ipairs(sprite.properties("aseprite-agent")["fx.hits"] or {}) do
-      hits[#hits + 1] = { frame = h.frame, freezeMs = h.freezeMs, shakeMs = h.shakeMs, amp = h.amp }
-    end
-    if #hits > 0 then info.fxHits = hits end
 
     local sel = sprite.selection
     if sel and not sel.isEmpty then

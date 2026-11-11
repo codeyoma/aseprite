@@ -6,12 +6,11 @@
 // data, which adapts Hollow Crown; no code is taken from it.
 import * as z from "zod/v4";
 import { documentOf, type Document, type FrameInsert, type PutImagesItem, type SpriteInfo, type TagInfo } from "./document.js";
-import { renderFx } from "./fx/index.js";
 import type { FxAnchor, FxEntry } from "./fx/library.js";
+import { fxImpact, planPlacement, previewPlacement, writePlacement } from "./fx/place.js";
 import { RECIPE_LIMITS, parseRecipe, recipeEntry } from "./fx/recipe.js";
-import {
-  anchorInput, effectOptions, freeLayerName, fxAnchorPoint, fxCanvas, fxImpact, fxPalette, hexList, isFailure, lookup, optionsInput, placed,
-} from "./fx_tools.js";
+import { effectOptions, fxCanvas, isFxLayerName } from "./fx/record.js";
+import { anchorInput, hexList, isFailure, lookup, optionsInput, previewInput } from "./fx_tools.js";
 import { bounds, type Rgba } from "./image.js";
 import type { RGBA } from "./color.js";
 import { failure, text, type Tool } from "./tool.js";
@@ -117,7 +116,7 @@ export function overlayPlan(o: OverlayPlanInput): OverlayPlan {
   };
 }
 
-// fxImpact moved to fx_tools.ts (#71: add_fx and new_fx_sprite record the windup); re-exported for callers here.
+// fxImpact lives in fx/place.ts (#97); re-exported for callers here.
 export { fxImpact };
 
 /**
@@ -165,21 +164,15 @@ export function hitStopPlan(freezeMs: number, shake?: { amp: number; ms: number 
   return { contactExtra: freezeMs - shakeMs, shakeMs, durations: splitMs(shakeMs, n), offsets, clamped: shake.ms > freezeMs };
 }
 
-/** The effect's color and glow items on its layers, at the planned frames and times. */
-function effectItems(e: FxEntry, opts: Record<string, unknown>, seed: number, canvas: { width: number; height: number; x: number; y: number },
-  samples: { frame: number; t: number }[], left: number, top: number, info: SpriteInfo, glow: "layer" | "baked" | "none", main: string,
-  snap?: RGBA[]) {
-  const r = renderFx(e.module, opts, { times: samples.map((s) => s.t / 1000), seed, canvas, palette: snap });
-  const colorItems: PutImagesItem[] = [], glowItems: PutImagesItem[] = [];
-  samples.forEach((s, i) => {
-    const c = placed(glow === "baked" ? r.frames[i] : r.color[i], left, top, info.width, info.height);
-    if (c) colorItems.push({ image: c.image, x: c.x, y: c.y, frame: s.frame, newLayer: main });
-    if (glow !== "layer") return;
-    const g = placed(r.glow[i], left, top, info.width, info.height);
-    if (g) glowItems.push({ image: g.image, x: g.x, y: g.y, frame: s.frame, newLayer: `${main} glow`, blendMode: "addition" });
-  });
-  if (colorItems.length) for (const g of glowItems) g.above = `AI: ${main}`;
-  return { colorItems, glowItems };
+/** The frame (numbered before the inserts) whose art a frame numbered after them shows. */
+export function originalFrame(inserts: FrameInsert[], frame: number): number {
+  let f = frame;
+  for (const ins of [...inserts].sort((x, y) => x.after - y.after)) {
+    const n = ins.durations.length;
+    if (f <= ins.after) break;
+    f = f <= ins.after + n ? ins.after : f - n;
+  }
+  return f;
 }
 
 /** The pixels of a layer's frame turned white (alpha kept), cut to them; undefined when it is empty. */
@@ -215,7 +208,8 @@ export const FX_TIMING_TOOLS: Tool[] = [
       "are in world space; they do not follow the body). With anchor_layer the default anchor is 'ground' for melee " +
       "effects (their origin is the character's feet) and the effect's own otherwise. flip mirrors it for a " +
       "character facing left. Layers, glow and palette work as in add_fx. The reply gives the impact frame and the " +
-      "hit-stop the effect's act data suggests (for hit_stop).",
+      "hit-stop the effect's act data suggests (for hit_stop). preview: true shows the placement over the animation's " +
+      "frames instead (nothing changes).",
     input: z.object({
       id: z.string().optional().describe("Effect id from list_fx, e.g. 'sword-slash'. Or recipe."),
       recipe: z.union([z.string(), z.record(z.string(), z.unknown())]).optional()
@@ -237,9 +231,10 @@ export const FX_TIMING_TOOLS: Tool[] = [
       glow: z.enum(["layer", "baked", "none"]).optional().describe("Default 'layer' (an Addition layer)."),
       fps: z.number().min(1).max(60).optional().describe("The effect's frame rate for retimed and extended frames. Default its own (usually 30)."),
       options: optionsInput,
+      preview: previewInput,
     }),
     kind: "edit",
-    label: (a) => (a?.id ? `Effect ${a.id} on the animation` : a?.recipe ? "Recipe effect on the animation" : "Effect on the animation"),
+    label: (a) => (a?.preview ? "Preview effect on the animation" : a?.id ? `Effect ${a.id} on the animation` : a?.recipe ? "Recipe effect on the animation" : "Effect on the animation"),
     async run(input, ctx) {
       if ((input.id === undefined) === (input.recipe === undefined)) return failure("Give id (a library effect) or recipe, one of them.");
       let e: FxEntry, recipeJson: string | undefined;
@@ -302,19 +297,21 @@ export const FX_TIMING_TOOLS: Tool[] = [
         snap = info.palette;
         if (!snap.length) return failure("The sprite palette has no colors to snap to.");
       }
-      const main = freeLayerName(info, e.id);
-      const at = fxAnchorPoint(e, anchor, opts, seed, canvas);
-      const { colorItems, glowItems } = effectItems(e, opts, seed, canvas, plan.samples, ax - at.x, ay - at.y, info, input.glow ?? "layer", main, snap);
-      if (!colorItems.length && !glowItems.length) {
-        return failure(`${e.id} at ${ax},${ay} lands outside the ${info.width}x${info.height} sprite; nothing was added.`);
+      const pl = planPlacement(info, {
+        e, opts, render: input, seed, canvas, anchor, x: ax, y: ay, samples: plan.samples, glow: input.glow ?? "layer", snap, fps,
+        recipe: recipeJson,
+      });
+      if (!pl) return failure(`${e.id} at ${ax},${ay} lands outside the ${info.width}x${info.height} sprite; nothing was added.`);
+      if (input.preview) {
+        return { content: [await previewPlacement(doc, info, pl, { sourceOf: (f) => originalFrame(plan.inserts, f) }), text(
+          `Preview of ${e.title} (${e.id}) on ${where} ${range(from, to)}: it would show on frames ${range(plan.samples[0].frame, plan.samples.at(-1)!.frame)} ` +
+          `(numbered after ${plan.inserted} inserted frame${plan.inserted === 1 ? "" : "s"}) at effect times ` +
+          `${plan.samples.slice(0, 12).map((s) => Math.round(s.t)).join(", ")}${plan.samples.length > 12 ? ", …" : ""} ms` +
+          `${input.hit_frame !== undefined ? `, its impact (${impact.ms} ms in) on frame ${plan.hitFrame}` : ""}; each frame shows the animation with the ` +
+          "effect as fx_overlay would place it (same timing, impact, cut, palette, glow and seed). Nothing changed.")] };
       }
-      const { append, note: paletteNote } = await fxPalette(doc, info, colorItems, input.palette);
-      const res = await doc.putImages([...colorItems, ...glowItems], {
-        insert: plan.inserts, durations: plan.durations, label: `Effect ${e.id} on the animation`, prompt: `fx_overlay ${e.id}`, palette: append,
-        fx: {
-          layer: colorItems.length ? `AI: ${main}` : `AI: ${main} glow`, id: e.id, x: ax - at.x + canvas.x, y: ay - at.y + canvas.y,
-          fps, loop: e.loop, windupMs: impact.ms, ...(recipeJson ? { recipe: recipeJson } : {}),
-        },
+      const { res, paletteNote } = await writePlacement(doc, info, pl, {
+        palette: input.palette, insert: plan.inserts, durations: plan.durations, label: `Effect ${e.id} on the animation`, prompt: `fx_overlay ${e.id}`,
       });
       const after = await doc.info();
       const first = plan.samples[0].frame, last = plan.samples.at(-1)!.frame;
@@ -383,7 +380,7 @@ export const FX_TIMING_TOOLS: Tool[] = [
             shakeLayers.push(l.id);
           }
         } else {
-          shakeLayers = info.layers.filter((l) => !l.group && l.visible && !l.name.startsWith("AI: fx")).map((l) => l.id);
+          shakeLayers = info.layers.filter((l) => !l.group && l.visible && !isFxLayerName(l.name)).map((l) => l.id);
         }
       }
       const items: PutImagesItem[] = [];

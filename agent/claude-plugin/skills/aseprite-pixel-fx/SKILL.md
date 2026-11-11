@@ -11,19 +11,29 @@ tools: [read_guide, list_fx, preview_fx, fx_from_recipe, add_fx, fx_overlay, hit
 ## Pick before you make
 1. `list_fx` with a few words from the request (`query: "slash"`, `category: "fire"`, `loop: true` for torches and auras). Each line gives the id, loop or one-shot, duration, size and default anchor.
 2. `preview_fx` the one or two closest matches and look at the contact sheet before placing anything. Tune with `palette` (a dark-to-bright ramp in the game's colors, or `"sprite"` on `add_fx` to snap to the sprite palette), `seed` (another spark pattern), `options` (the effect's own sizes, from `list_fx`) and `light` (glow strength, 0-4).
-3. Nothing fits (the library has no ice or frost, for example): write a recipe and `fx_from_recipe` it with `apply: "preview"` until it reads right, then `apply: "layer"`. A frost nova, as a starting point:
+3. Nothing fits (the library has no ice or frost, for example): write a recipe and `fx_from_recipe` it with `apply: "preview"` until it reads right, then `apply: "layer"`. A frost nova, as a starting point (the curated one in `bridge/src/fx/examples.ts`: a clustered flash, directional shards that lean forward, and a decay that fades the back side first):
    ```json
-   { "name": "frost-nova", "size": [96, 64], "origin": [48, 40], "duration": 0.7, "anchor": "ground", "floor": 4,
+   { "name": "frost-nova", "size": [112, 64], "origin": [44, 32], "duration": 0.6, "fps": 30, "seed": 7, "anchor": "center",
      "palette": ["#0e1a2e", "#1f4f8a", "#3f8fd0", "#9fdcff", "#ffffff"],
      "phases": [
-       { "name": "flash", "start": 0, "end": 0.1, "shapes": [{ "type": "glow", "radius": 18, "alpha": [0.9, 0] }] },
-       { "name": "burst", "start": 0, "end": 0.45, "bands": [{ "radius": [4, 40], "thickness": 3, "alpha": [1, 0] }],
-         "emitters": [{ "kind": "flake", "count": 40, "speed": [60, 120], "spread": 180, "life": [0.3, 0.6], "drag": 2 }],
-         "lights": [{ "radius": 30, "strength": 0.6, "life": 0.3 }] },
-       { "name": "decay", "start": 0.15, "end": 0.5,
-         "emitters": [{ "kind": "vapour", "count": 12, "speed": [5, 15], "life": [0.2, 0.35], "over": 0.1, "radius": 10, "y": -6 }] } ] }
+       { "name": "flash", "start": 0, "end": 0.1,
+         "shapes": [{ "type": "disc", "radius": [5, 2], "color": -1, "alpha": [1, 0], "ease": "out" }, { "type": "glow", "radius": 12, "alpha": [0.9, 0] }],
+         "emitters": [{ "kind": "star", "count": 5, "speed": [0, 10], "life": [0.05, 0.1], "radius": 3, "color": -1 }],
+         "lights": [{ "radius": 22, "strength": 1.2, "life": 0.12 }] },
+       { "name": "burst", "start": 0, "end": 0.3,
+         "rings": [{ "radius": [3, 26], "width": 1, "color": "cool", "alpha": [0.9, 0], "ease": "out" }],
+         "emitters": [
+           { "kind": "streak", "count": 7, "angle": 0, "spread": 18, "speed": [130, 180], "life": [0.22, 0.34], "trail": 3, "drag": 4 },
+           { "kind": "streak", "count": 4, "angle": 180, "spread": 18, "speed": [90, 130], "life": [0.1, 0.16], "trail": 2, "drag": 4 },
+           { "kind": "streak", "count": 4, "angle": -40, "spread": 14, "speed": [100, 140], "life": [0.15, 0.24], "trail": 2, "drag": 3 },
+           { "kind": "streak", "count": 3, "angle": -140, "spread": 14, "speed": [80, 110], "life": [0.08, 0.14], "trail": 2, "drag": 4 } ] },
+       { "name": "decay", "start": 0.12, "end": 0.55,
+         "emitters": [
+           { "kind": "flake", "count": 10, "x": 10, "radius": 8, "angle": 0, "spread": 60, "speed": [10, 30], "life": [0.2, 0.36], "over": 0.06, "gravity": 20, "drag": 2 },
+           { "kind": "vapour", "count": 6, "x": 14, "radius": 6, "angle": 0, "spread": 40, "speed": [12, 24], "life": [0.16, 0.28], "over": 0.1, "color": 2 },
+           { "kind": "flake", "count": 4, "x": -8, "radius": 5, "angle": 180, "spread": 60, "speed": [8, 16], "life": [0.08, 0.14], "gravity": 20 } ] } ] }
    ```
-   Keep every particle's delay + life inside `duration` so a one-shot ends empty. On an attack, give the recipe to `fx_overlay` (`recipe` instead of `id`, below) so it lands on the hit frame.
+   Keep every particle's delay + life inside `duration` so a one-shot ends empty. On an attack, give the recipe to `fx_overlay` (`recipe` instead of `id`, below) so it lands on the hit frame. Mirror it with `flip` for a character facing left. `preview: true` on `add_fx` or `fx_overlay` shows the placement over the sprite's frames (same timing, cut and palette) before you write it.
 
 ## Size it before you place it
 Measure the character first (`snapshot` or its layer bounds), then set the recipe or options so that:

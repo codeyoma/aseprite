@@ -2,11 +2,13 @@
 // PIC/FLIP particles, shaded to a palette ramp with Bayer dithering (sprite_fx/fluid.ts). One tool, fluid_fx:
 // preview a contact sheet, put the effect on an 'AI: fx fluid <preset>' layer in one undo step, or make it a sprite.
 import * as z from "zod/v4";
-import { nearest, parseHex, type RGBA } from "./color.js";
+import { hex, nearest, parseHex, type RGBA } from "./color.js";
 import { documentOf, type PutImagesItem } from "./document.js";
-import { freeLayerName, fxPalette, fxSchedule, placed } from "./fx_tools.js";
+import { fxPalette, fxSchedule, placed } from "./fx/place.js";
+import { aiLayer, buildRecord, freeLayerName } from "./fx/record.js";
+import { fluidSettings } from "./fx/render_record.js";
 import { bounds, type Rgba } from "./image.js";
-import { FLUID_PRESETS, FLUID_PRESET_NAMES, MAX_SIZE, renderFluid, type Emitter, type FluidPresetName, type FluidRender, type FluidSettings } from "./sprite_fx/fluid.js";
+import { FLUID_PRESETS, FLUID_PRESET_NAMES, MAX_SIZE, renderFluid, type FluidPresetName, type FluidRender, type FluidSettings } from "./sprite_fx/fluid.js";
 import { effectPreview, imageLayer } from "./sprite_fx/write.js";
 import { failure, text, type Tool } from "./tool.js";
 
@@ -107,22 +109,14 @@ export const FLUID_TOOLS: Tool[] = [
     async run(input, ctx) {
       const preset = input.preset as FluidPresetName;
       const apply = (input.apply ?? "preview") as "preview" | "layer" | "sprite";
-      const p = FLUID_PRESETS[preset];
-      const fps = input.fps ?? p.fps;
-      const frames = input.frames ?? (input.duration_ms ? Math.max(2, Math.round((input.duration_ms * fps) / 1000)) : undefined);
       const needsSprite = apply === "layer" || input.emit_layer !== undefined || input.colors === "sprite";
       const doc = needsSprite ? documentOf(ctx) : undefined;
       const info = doc ? await doc.info() : undefined;
 
       const ramp = rampOf(input.colors, preset, info?.palette ?? []);
       if (typeof ramp === "string") return failure(ramp);
-      const settings: FluidSettings = {
-        preset, width: input.width, height: input.height, frames, fps, loop: input.loop, seed: input.seed,
-        ramp: ramp.length ? ramp : undefined, buoyancy: input.buoyancy, vorticity: input.vorticity,
-        wind: typeof input.wind === "number" ? { x: input.wind, y: 0 } : input.wind, dissipation: input.dissipation,
-        gravity: input.gravity, strength: input.strength, level: input.level, emitter: input.emitter as Emitter | undefined,
-        resolution: input.resolution, threshold: input.threshold,
-      };
+      // One owner for input -> settings (fx/render_record.ts), so check_fx re-renders the record the same way.
+      const settings: FluidSettings = fluidSettings(input, ramp);
       const start = input.start_frame ?? info?.frame ?? 1;
       if (info && start > info.durations.length) return failure(`start_frame ${start} is past the last frame (${info.durations.length}).`);
       let onSprite = false;
@@ -142,9 +136,10 @@ export const FLUID_TOOLS: Tool[] = [
 
       let r: FluidRender;
       try { r = renderFluid(settings); } catch (err) { return failure((err as Error).message); }
+      // The settings as `render`; a 'sprite' ramp is stored resolved, so the record re-renders without the sprite.
       const record = JSON.stringify(Object.fromEntries(Object.entries({
         ...input, apply: undefined, x: undefined, y: undefined, start_frame: undefined, frames: r.frames.length, fps: r.fps, loop: r.loop,
-        seed: input.seed ?? 1,
+        seed: input.seed ?? 1, colors: input.colors === "sprite" ? ramp.map((c) => hex({ ...c, a: 255 })) : input.colors,
       }).filter(([, v]) => v !== undefined)));
       const stats = `${r.frames.length} frames of ${r.width}x${r.height} at ${r.fps} fps (${r.durationMs} ms, ${r.loop ? "a seamless loop" : "a one-shot"}); ` +
         `grid ${r.grid.width}x${r.grid.height}, ${r.steps} steps, rendered in ${r.ms} ms; ${r.colors.length} colors (${r.colors.join(" ")})` +
@@ -162,7 +157,7 @@ export const FLUID_TOOLS: Tool[] = [
         const name = `fluid-${preset}`;
         const res = await documentOf(ctx).createAnimation(r.width, r.height, r.frames.map((image) => ({ image, duration })), {
           title: name, tags: [{ name, from: 1, to: r.frames.length }], palette: r.colors,
-          fx: { id, x: r.origin.x, y: r.origin.y, fps: r.fps, loop: r.loop, windupMs, render: record },
+          fx: buildRecord({ id, x: r.origin.x, y: r.origin.y, fps: r.fps, loop: r.loop, windupMs, render: record }),
         });
         return { content: [text(`Made "${res.title}": ${stats} Tag ${name}, its colors as the palette; the emitter's centre is at ${r.origin.x},${r.origin.y}.`)] };
       }
@@ -184,7 +179,7 @@ export const FLUID_TOOLS: Tool[] = [
       const { append, note } = await fxPalette(doc!, sprite, items, input.colors === "sprite" ? "sprite" : undefined);
       const res = await doc!.putImages(items, {
         frames: plan.frames, duration: newMs, label: `Fluid: ${preset}`, prompt: `fluid_fx ${preset}`, palette: append,
-        fx: { layer: `AI: ${main}`, id, x: left + r.origin.x, y: top + r.origin.y, fps: r.fps, loop: r.loop, windupMs, render: record },
+        fx: { layer: aiLayer(main), ...buildRecord({ id, x: left + r.origin.x, y: top + r.origin.y, fps: r.fps, loop: r.loop, windupMs, render: record }) },
       });
       const first = plan.samples[0].frame, last = plan.samples.at(-1)!.frame;
       const cut = r.frames.some((f) => {
@@ -193,7 +188,7 @@ export const FLUID_TOOLS: Tool[] = [
       });
       return {
         content: [text(
-          `Added ${preset} on ${res.layers[0]?.name ?? `AI: ${main}`}, frames ${first}-${last}` +
+          `Added ${preset} on ${res.layers[0]?.name ?? aiLayer(main)}, frames ${first}-${last}` +
           `${res.added ? ` (${res.added} frame${res.added === 1 ? "" : "s"} added, ${newMs} ms each)` : ""}, ` +
           `${onSprite ? `emitting from ${input.emit_layer}` : `the emitter's centre at ${left + r.origin.x},${top + r.origin.y}`}. ${stats}${note}` +
           `${cut ? " Part of it reaches past the sprite's edge and is cut there." : ""} One undo step.`,
