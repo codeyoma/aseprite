@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## BUILD-windows.md records the stable runs (#108)
+- **How:** "Checked on Windows" now lists the stable updates to stable-2026-11-12-4 to -6 and what they showed. It names the checks not done yet: an agent turn and the provider box in the stable panel, the menu's Check for Updates with `--wait --start`, and both instances side by side. The `update` line says later updates rebuild through `vs-build.cmd` and run `npm ci` only when the lockfile changed.
+- **Why:** the section still said that the stable checks wait for a release with the Windows fixes, but that release is out and installed. #108 is done when this section says what was run.
+- **Architecture:** docs only.
+
 ## Windows stable updates rebuild in Visual Studio's environment
 - **How:** when the stable source already has a build, `stable.mjs prepare` on Windows writes `<stable root>/vs-build.cmd` (call vcvars64.bat, found with vswhere as build.cmd does, then `cmake --build build -- aseprite`) and runs it. A first build still goes through `build.cmd --auto --norun`; macOS and Linux are unchanged.
 - **Why:** outside Visual Studio's environment neither cmake nor the compiler is on PATH, and `build.cmd --auto` cannot rebuild: once a build exists, build.sh lists it, prints "No build selected" and exits 0. So the first update after an install (and every Check for Updates) installed the new extension and bridge with the old aseprite.exe.
