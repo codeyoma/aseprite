@@ -51,4 +51,26 @@ s.properties("aseprite-agent")["concept.spec"] = ""
 r = H.call("execute_lua", { code = draw(5) })
 check("no stage: no gate", r.ok and drawn(5))
 
+-- The Motion Clip store (#109): keys are tag-relative, and every clip in its keys stage is gated.
+local idle = s:newTag(7, 7); idle.name = "idle"
+s:newEmptyFrame(); s:newEmptyFrame() -- frames 8, 9
+local run = s:newTag(7, 9); run.name = "run"
+local function store(stage)
+  s.properties("aseprite-agent")["motion"] = json.encode{ version = 1, rigs = {}, clips = {
+    walk = { kind = "walk", facing = "right", loop = true, keys = { { at = 1 }, { at = 4 } }, stage = stage },
+    run = { kind = "run", facing = "right", loop = true, keys = { { at = 1 } }, stage = "keys" },
+  } }
+end
+store("keys")
+ok, err = pcall(H.call, "execute_lua", { code = draw(6) })
+check("the store gates the walk's non-keys", not ok and not drawn(6) and tostring(err):match('Motion clip "walk"'), err)
+r = H.call("execute_lua", { code = draw(4) })
+check("a tag-relative key can be drawn", r.ok and drawn(4))
+ok, err = pcall(H.call, "execute_lua", { code = draw(8) })
+check("a second clip in its keys stage is gated too", not ok and not drawn(8) and tostring(err):match('Motion clip "run"'), err)
+store("inbetweens")
+r = H.call("execute_lua", { code = draw(6) })
+check("the walk's in-betweens open after advance", r.ok and drawn(6))
+s.properties("aseprite-agent")["motion"] = ""
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

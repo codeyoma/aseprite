@@ -783,24 +783,33 @@
     ]
   },
   {
+    "name": "motion_clip",
+    "title": "Motion clip",
+    "kind": "edit",
+    "label": "Motion clip",
+    "input": [
+      "action",
+      "base_frame",
+      "character",
+      "contacts",
+      "facing",
+      "followers",
+      "keys",
+      "kind",
+      "loop",
+      "parts",
+      "root_travel",
+      "staged",
+      "tag"
+    ]
+  },
+  {
     "name": "motion_review",
     "title": "Walk motion review",
     "kind": "read",
     "label": "Ask a critic how the walk reads",
     "input": [
       "tag"
-    ]
-  },
-  {
-    "name": "motion_stage",
-    "title": "Motion stage",
-    "kind": "edit",
-    "label": "Motion stage",
-    "input": [
-      "action",
-      "keys",
-      "tag",
-      "walk"
     ]
   },
   {
@@ -1019,7 +1028,7 @@
     "name": "rotate_layer",
     "title": "Rotate cleanly",
     "kind": "edit",
-    "label": "Rotate  \u00b0",
+    "label": "Rotate  °",
     "input": [
       "angle",
       "frames",

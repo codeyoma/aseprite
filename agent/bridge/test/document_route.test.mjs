@@ -21,8 +21,13 @@ import { fakeDocument, rect } from "./helpers/fake_document.mjs";
 const ASEPRITE = process.env.ASEPRITE;
 const extensionDir = fileURLToPath(new URL("../../extension", import.meta.url));
 
+test("protocol 43: the motion store travels in put_images and get_state (#109)", () => {
+  assert.equal(PROTOCOL.version, 43);
+  assert.equal(PROTOCOL.requests.put_images.params.motion, "string?");
+  assert.equal(PROTOCOL.shapes.Sprite.motion, "string?");
+});
+
 test("protocol 42: SpriteSummary has an id; activates marks the requests that run in the foreground", () => {
-  assert.equal(PROTOCOL.version, 42);
   assert.equal(PROTOCOL.shapes.SpriteSummary.id, "string");
   const activates = Object.entries(PROTOCOL.requests).filter(([, r]) => r.activates).map(([n]) => n).sort();
   assert.deepEqual(activates, ["apply_timeline_text", "execute_lua", "run_command"]);

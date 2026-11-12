@@ -33,6 +33,7 @@ import { encodeSnapshot } from "./png.js";
 import { ruleIds, rulesIndex } from "./rules.js";
 import { failure, text, type AsepriteRequester, type CriticSession, type Tool, type ToolContext, type ToolResult } from "./tool.js";
 import { framesSpec } from "./tool_inputs.js";
+import { MotionStore } from "./motion_clip.js";
 import { MIN_SWING, measureWalk, type ContactReading } from "./walk_check.js";
 import { SHEET_BACKDROP, SHEET_LABEL, snapshotView, VIEW_TARGET } from "./views.js";
 
@@ -655,7 +656,7 @@ export const CRITIC_TOOLS: Tool[] = [
       const doc = documentOf(ctx);
       let measure;
       try {
-        measure = await measureWalk(doc, { tag: input.tag });
+        measure = await measureWalk(doc, { tag: input.tag }, (await MotionStore.load(doc)).walkContract(input.tag));
       } catch (e) {
         return failure(`${(e as Error).message} (motion_review uses the limbs walk_check stored.)`);
       }

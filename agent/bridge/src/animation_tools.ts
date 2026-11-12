@@ -5,6 +5,7 @@ import * as z from "zod/v4";
 import { along, ease, imageColors, smear, squashStretch, subpixelShift, transform, type Easing } from "./animation.js";
 import { documentOf } from "./document.js";
 import { failure, text, type Tool } from "./tool.js";
+import { KINDS, MotionStore, defaultContacts, defaultKeys, deriveJoints, describeClip, describeRig, guessParent, kindOf, selText, type Rig, type RigPart } from "./motion_clip.js";
 import { measureWalk, type ContactReading, type LimbSelector } from "./walk_check.js";
 
 const limb = z.object({
@@ -14,7 +15,6 @@ const limb = z.object({
 }).optional();
 
 const sel = (l: any): LimbSelector | undefined => (l ? { layer: l.layer, colors: l.colors, rows: l.rows } : undefined);
-const selText = (l: LimbSelector) => [l.layer && `layer "${l.layer}"`, l.colors?.length && `colors ${l.colors.join(" ")}`, l.rows && `rows ${l.rows[0]}-${l.rows[1]}`].filter(Boolean).join(", ");
 
 const moveSchema = z.object({
   dx: z.number().optional().describe("Pixels right."),
@@ -28,79 +28,163 @@ const moveSchema = z.object({
 
 export const ANIMATION_TOOLS: Tool[] = [
   {
-    name: "motion_stage",
-    title: "Motion stage",
+    name: "motion_clip",
+    title: "Motion clip",
     description:
-      "Draw an animation in stages (#99). 'keys' starts it: until it advances, an edit may change only the key frames " +
-      "of the tag (for a 6-frame walk 1, 3, 4, 6: contacts and passings); an edit that changes another frame of the tag " +
-      "is undone, execute_lua included. 'advance' moves on to the in-betweens once every key has art and, for a walk, " +
-      "walk_check says ok. 'done' ends it. Without action: the current stage.",
+      "The animation's plan as data on the sprite (#109), one clip per tag: kind, facing, loop, key frames with their " +
+      "poses, contacts, root travel and followers (hair or a cape that lag), plus a rig per character (part layers, " +
+      "parents, joints). 'plan' writes the clip and starts the keys stage: until 'advance', an edit may change only the " +
+      "tag's key frames (any other edit is undone, execute_lua included). 'advance' moves on to the in-betweens once " +
+      "every key has art, keys differ from the key before (unless marked hold) and, for a walk or run, walk_check's " +
+      "contacts say ok. 'done' needs every frame of the tag drawn, no frame repeating the one before, and for a walk " +
+      "the whole walk_check ok. 'rig' stores a character's parts (joints you give, or suggested from the pixels at " +
+      "the base frame and marked derived: check them). No action: every clip and rig.",
     input: z.object({
-      action: z.enum(["keys", "advance", "done"]).optional(),
-      tag: z.string().optional().describe("The animation's tag. Default 'walk'."),
-      keys: z.array(z.number().int().min(1)).optional()
-        .describe("Key frames (sprite frame numbers). Default: a 6-frame walk's 1, 3, 4, 6 (from the tag's start); otherwise its first and middle frames."),
-      walk: z.boolean().optional().describe("Is it a walk (advance needs walk_check ok)? Default: the tag's name contains 'walk' or 'run'."),
+      action: z.enum(["show", "plan", "advance", "done", "rig", "remove"]).optional(),
+      tag: z.string().optional().describe("The clip's tag. Default: the clip in progress, else 'walk'."),
+      kind: z.enum(KINDS).optional().describe("Default from the tag's name (walk, run, idle; else action)."),
+      facing: z.enum(["right", "left"]).optional(),
+      loop: z.boolean().optional().describe("Default: true for walk, run, idle and cycle."),
+      keys: z.array(z.union([z.number().int().min(1), z.object({
+        frame: z.number().int().min(1), pose: z.string().optional(), hold: z.boolean().optional(),
+      })])).optional().describe("Key frames (sprite frame numbers), or {frame, pose, hold}. Default: a 6-frame walk's 1, 3, 4, 6 of the tag (contacts and passings); otherwise its first and middle frames."),
+      contacts: z.array(z.number().int().min(1)).optional().describe("Frames where a planted foot carries the weight (sprite frames). Default for a walk: the tag's first and halfway frames."),
+      root_travel: z.number().optional().describe("Pixels the body travels per loop (in place: how far a planted foot slides back)."),
+      followers: z.array(z.object({ layer: z.string(), follows: z.string(), lag: z.number().min(0).max(4) })).optional(),
+      character: z.string().optional().describe("The character (its rig) the clip animates."),
+      staged: z.boolean().optional().describe("plan: start the keys stage (default true); false stores the clip without a gate."),
+      base_frame: z.number().int().min(1).optional().describe("rig: the frame its joints are measured on. Default the character's first key, else 1."),
+      parts: z.array(z.object({
+        layer: z.string(), parent: z.string().optional(),
+        joint: z.tuple([z.number(), z.number()]).optional(), end: z.tuple([z.number(), z.number()]).optional(), rigid: z.boolean().optional(),
+      })).optional().describe("rig: the parts, root first. Missing parents are guessed from names (arms off the torso, a hand off its arm); missing joints are suggested from the pixels."),
     }),
     kind: "edit",
-    label: (a) => (a.action ? `Motion stage: ${a.action}` : "Motion stage"),
+    label: (a) => `Motion clip${a.action && a.action !== "show" ? `: ${a.action}` : ""}`,
     async run(input, aseprite) {
       const doc = documentOf(aseprite);
-      const info = await doc.info();
-      let spec: Record<string, any> = {};
-      try { spec = info.pixelSpec ? JSON.parse(info.pixelSpec) : {}; } catch { spec = {}; }
-      const m = spec.motion as { tag: string; keys: number[]; stage: string; walk: boolean } | undefined;
-      const store = async (motion: unknown, label: string) => {
-        await doc.putImages([], { spec: JSON.stringify({ ...spec, motion }), label });
-      };
-      if (!input.action) {
-        return { content: [text(m ? `Motion stage "${m.stage}" for tag "${m.tag}", keys ${m.keys.join(", ")}.` : "No motion stage.")] };
+      let store: MotionStore;
+      try { store = await MotionStore.load(doc); } catch (e) { return failure((e as Error).message); }
+      const action = input.action ?? "show";
+      if (action === "show") {
+        const { views, orphans } = store.views();
+        const rigs = Object.entries(store.motion.rigs);
+        if (!views.length && !rigs.length) return { content: [text("No motion clip or rig on this sprite. Plan one with action 'plan'.")] };
+        return { content: [text([...views.map(describeClip), ...rigs.map(([n, r]) => describeRig(n, r)),
+          ...(orphans.length ? [`Clips whose tag is gone: ${orphans.join(", ")} (remove them, or tag the frames again).`] : [])].join("\n"))] };
       }
-      if (input.action === "keys") {
-        const tagName = input.tag ?? "walk";
-        const tag = info.tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
-        if (!tag) return failure(`No tag "${tagName}": make the tag and its frames first (apply_timeline_text).`);
-        const n = tag.to - tag.from + 1;
-        const keys = input.keys ?? (n === 6 ? [0, 2, 3, 5] : [0, Math.floor(n / 2)]).map((i) => tag.from + i);
-        if (keys.some((k: number) => k < tag.from || k > tag.to)) return failure(`Keys must be frames of "${tag.name}" (${tag.from}-${tag.to}).`);
-        const walk = input.walk ?? /walk|run/i.test(tag.name);
-        await store({ tag: tag.name, keys, stage: "keys", walk }, "Motion stage: keys");
-        const rest = Array.from({ length: n }, (_, i) => tag.from + i).filter((f) => !keys.includes(f));
-        return { content: [text(`Motion stage "keys" for "${tag.name}": draw the key frames ${keys.join(", ")} now. Edits to ` +
-          `frames ${rest.join(", ")} are undone until motion_stage advance${walk ? " (walk_check must say ok first)" : ""}.`)] };
+      if (action === "rig") {
+        const character = input.character ?? Object.keys(store.motion.rigs)[0] ?? "Character";
+        const known = store.rig(character);
+        const given: RigPart[] = input.parts ?? known?.parts.map((p) => ({ ...p })) ?? [];
+        if (!given.length) return failure("Give the rig's parts (layer names, root first).");
+        const names: string[] = given.map((p) => p.layer);
+        const missing = names.filter((n: string) => !store.info.layers.some((l) => l.name === n && !l.group));
+        if (missing.length) return failure(`No image layer ${missing.map((m: string) => `"${m}"`).join(", ")}.`);
+        const firstKey = store.views().views.find((v) => v.clip.character === character)?.keys[0];
+        const base = input.base_frame ?? known?.base ?? firstKey ?? 1;
+        if (base > store.info.durations.length) return failure(`Frame ${base} doesn't exist.`);
+        const parts: RigPart[] = given.map((p) => ({
+          ...p, parent: p.parent ?? guessParent(p.layer, names),
+          ...(p.joint || p.end ? { source: "set" } : {}),
+        }));
+        const bad = parts.find((p) => p.parent && !names.includes(p.parent));
+        if (bad) return failure(`${bad.layer}'s parent "${bad.parent}" is not one of the parts.`);
+        const rig: Rig = { base, parts: await deriveJoints(doc, parts, base), ...(known?.source ? { source: known.source } : {}) };
+        store.setRig(character, rig);
+        await store.save(`Rig ${character}`);
+        const derived = rig.parts.some((p) => p.source === "derived");
+        return { content: [text(describeRig(character, rig) + (derived ? "\nJoints marked [derived] are suggestions from the pixels: " +
+          "check them on a snapshot of the base frame and set the wrong ones (joint at the shoulder, hip or grip; end at the hand, foot or tip)." : ""))] };
       }
-      if (!m) return failure("No motion stage: start one with action 'keys'.");
-      if (input.action === "advance") {
-        if (m.stage !== "keys") return failure(`The stage is already "${m.stage}".`);
-        const empty: number[] = [];
-        const images: string[] = [];
-        for (const k of m.keys) {
-          const img = await doc.pixels(undefined, k);
+      const tagName = input.tag ?? store.active()?.name ?? "walk";
+      const tag = store.tag(tagName);
+      if (action === "remove") {
+        return store.removeClip(tagName) && (await store.save(`Remove clip ${tagName}`))
+          ? { content: [text(`Removed the clip "${tagName}".`)] } : failure(`No clip "${tagName}".`);
+      }
+      if (!tag) return failure(`No tag "${tagName}": make the tag and its frames first (apply_timeline_text).`);
+      const n = tag.to - tag.from + 1;
+      if (action === "plan") {
+        const old = store.view(tag.name)?.clip;
+        const kind = input.kind ?? old?.kind ?? kindOf(tag.name);
+        const rel = (f: number) => f - tag.from + 1;
+        type KeyIn = { frame: number; pose?: string; hold?: boolean };
+        const keyList: KeyIn[] | undefined = input.keys?.map((k: number | KeyIn) => (typeof k === "number" ? { frame: k } : k));
+        if (keyList?.some((k) => k.frame < tag.from || k.frame > tag.to)) return failure(`Keys must be frames of "${tag.name}" (${tag.from}-${tag.to}).`);
+        if (input.contacts?.some((f: number) => f < tag.from || f > tag.to)) return failure(`Contacts must be frames of "${tag.name}" (${tag.from}-${tag.to}).`);
+        const keys = keyList
+          ? [...keyList].sort((a, b) => a.frame - b.frame).map((k) => ({ at: rel(k.frame), ...(k.pose ? { pose: k.pose } : {}), ...(k.hold ? { hold: true } : {}) }))
+          : old && !input.kind ? old.keys : defaultKeys(kind, n).map((at) => ({ at }));
+        const contacts = input.contacts?.map(rel) ?? old?.contacts ?? defaultContacts(kind, n);
+        const v = store.setClip(tag, {
+          ...(old ?? {}),
+          kind, facing: input.facing ?? old?.facing ?? "right", loop: input.loop ?? old?.loop ?? kind !== "action", keys,
+          ...(contacts ? { contacts } : {}),
+          ...(input.root_travel !== undefined ? { rootTravel: input.root_travel } : {}),
+          ...(input.followers ? { followers: input.followers } : {}),
+          ...(input.character ? { character: input.character } : {}),
+          stage: input.staged === false ? "none" : "keys",
+        });
+        await store.save(`Motion clip: plan ${tag.name}`);
+        const rest = v.frames.filter((f) => !v.keys.includes(f));
+        const walk = kind === "walk" || kind === "run";
+        return { content: [text(describeClip(v) + (v.clip.stage === "keys"
+          ? `\nDraw the key frames ${v.keys.join(", ")} now. Edits to frames ${rest.join(", ") || "(none)"} are undone until motion_clip advance` +
+            `${walk ? " (walk_check must say ok on the contacts first)" : ""}.` : ""))] };
+      }
+      const v = store.view(tag.name);
+      if (!v) return failure(`No clip for "${tag.name}": plan one first (motion_clip action 'plan').`);
+      const images = new Map<number, string>();
+      const art = async (f: number) => {
+        if (!images.has(f)) {
+          const img = await doc.pixels(undefined, f);
           let opaque = 0;
           for (let i = 3; i < img.data.length; i += 4) if (img.data[i] >= 128) opaque++;
-          if (!opaque) empty.push(k);
-          images.push(Buffer.from(img.data).toString("base64"));
+          images.set(f, opaque ? Buffer.from(img.data).toString("base64") : "");
         }
+        return images.get(f)!;
+      };
+      const walk = v.clip.kind === "walk" || v.clip.kind === "run";
+      const walkProblems = async (contactsOnly: boolean): Promise<string | undefined> => {
+        if (!walk) return undefined;
+        try {
+          const m = await measureWalk(doc, { tag: v.name }, store.walkContract(v.name), { contactsOnly });
+          if (m.changed && store.setWalkContract(m.contract)) await store.save("Walk limbs");
+          if (m.verdict.status !== "ok") return `walk_check says ${m.verdict.status}:\n${[...m.verdict.errors, ...m.verdict.unverifiable].join("\n")}`;
+        } catch (e) {
+          return `walk_check can't run yet: ${(e as Error).message}`;
+        }
+        return undefined;
+      };
+      if (action === "advance") {
+        if (v.clip.stage !== "keys") return failure(`The clip "${v.name}" is in stage "${v.clip.stage}", not "keys".`);
+        const empty: number[] = [];
+        for (const k of v.keys) if (!(await art(k))) empty.push(k);
         if (empty.length) return failure(`Key frame${empty.length > 1 ? "s" : ""} ${empty.join(", ")} ${empty.length > 1 ? "have" : "has"} no art yet: draw every key first.`);
-        const same = m.keys.filter((k, i) => i > 0 && images[i] === images[i - 1]);
-        if (same.length) return failure(`Key frame${same.length > 1 ? "s" : ""} ${same.join(", ")} repeat${same.length > 1 ? "" : "s"} the key before: each key is a different pose.`);
-        if (m.walk) {
-          let verdict;
-          try {
-            verdict = (await measureWalk(doc, { tag: m.tag })).verdict;
-          } catch (e) {
-            return failure(`walk_check can't run yet: ${(e as Error).message}`);
-          }
-          if (verdict.status !== "ok") {
-            return failure(`Not yet: walk_check says ${verdict.status}.\n${[...verdict.errors, ...verdict.unverifiable].join("\n")}\nFix the keys, then advance again.`);
-          }
-        }
-        await store({ ...m, stage: "inbetweens" }, "Motion stage: in-betweens");
-        return { content: [text(`Motion stage "inbetweens" for "${m.tag}": draw each in-between from the keys on both sides ` +
-          `(snapshot view 'onion'), then run walk_check and motion_review again, and motion_stage done.`)] };
+        const same: number[] = [];
+        for (let i = 1; i < v.keys.length; i++) if (!v.clip.keys[i].hold && (await art(v.keys[i])) === (await art(v.keys[i - 1]))) same.push(v.keys[i]);
+        if (same.length) return failure(`Key frame${same.length > 1 ? "s" : ""} ${same.join(", ")} repeat${same.length > 1 ? "" : "s"} the key before: draw a different pose, or plan it with hold: true.`);
+        const w = await walkProblems(true);
+        if (w) return failure(`Not yet: ${w}\nFix the keys, then advance again.`);
+        store.setClip(v.tag, { ...v.clip, stage: "inbetweens" });
+        await store.save("Motion clip: in-betweens");
+        return { content: [text(`Clip "${v.name}" is in stage "inbetweens": make each in-between from the keys on both sides ` +
+          `(snapshot view 'onion'), then${walk ? " walk_check and motion_review again, and" : ""} motion_clip done.`)] };
       }
-      await store({ ...m, stage: "done" }, "Motion stage: done");
-      return { content: [text(`Motion stage done for "${m.tag}".`)] };
+      // done
+      if (v.clip.stage === "keys") return failure(`The clip "${v.name}" is still in the keys stage: advance first.`);
+      const empty: number[] = [];
+      for (const f of v.frames) if (!(await art(f))) empty.push(f);
+      if (empty.length) return failure(`Not done: frame${empty.length > 1 ? "s" : ""} ${empty.join(", ")} of "${v.name}" ${empty.length > 1 ? "have" : "has"} no art.`);
+      const repeats: number[] = [];
+      for (let i = 1; i < v.frames.length; i++) if ((await art(v.frames[i])) === (await art(v.frames[i - 1]))) repeats.push(v.frames[i]);
+      if (repeats.length) return failure(`Not done: frame${repeats.length > 1 ? "s" : ""} ${repeats.join(", ")} repeat${repeats.length > 1 ? "" : "s"} the frame before. A held pose is one frame with a longer duration.`);
+      const w = await walkProblems(false);
+      if (w) return failure(`Not done: ${w}`);
+      store.setClip(v.tag, { ...v.clip, stage: "done" });
+      await store.save("Motion clip: done");
+      return { content: [text(`Clip "${v.name}" is done.`)] };
     },
   },
   {
@@ -126,13 +210,14 @@ export const ANIMATION_TOOLS: Tool[] = [
       const doc = documentOf(aseprite);
       let m;
       try {
-        m = await measureWalk(doc, { tag: input.tag, facing: input.facing, contacts: input.contacts, nearArm: sel(input.near_arm), nearLeg: sel(input.near_leg) });
+        const store = await MotionStore.load(doc);
+        m = await measureWalk(doc, { tag: input.tag, facing: input.facing, contacts: input.contacts, nearArm: sel(input.near_arm), nearLeg: sel(input.near_leg) },
+          store.walkContract(input.tag));
+        if (m.changed && store.setWalkContract(m.contract)) await store.save("Walk limbs");
       } catch (e) {
         return failure((e as Error).message);
       }
-      const { contract, readings, verdict } = m;
-      const changed = m.newSpec !== undefined;
-      if (changed) await doc.putImages([], { spec: m.newSpec, label: "Walk limbs" });
+      const { contract, readings, verdict, changed } = m;
       const lim = (r: ContactReading["arm"]) => r.offset === undefined ? `${r.pixels} px, not measurable`
         : `root ${r.root![0]},${r.root![1]} tip ${r.tip![0]},${r.tip![1]}: ${r.offset > 0 ? "+" : ""}${r.offset} px (${Math.abs(r.offset) < 1 ? "straight" : r.offset > 0 ? "forward" : "back"})`;
       return {

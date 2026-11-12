@@ -69,6 +69,8 @@ export interface SpriteInfo {
   colorMode: "rgb" | "indexed" | "grayscale";
   /** The pixel spec's JSON stored by the concept tools (#79; sprite property aseprite-agent "concept.spec"). */
   pixelSpec?: string;
+  /** The Motion Clip store's JSON (#109; sprite property aseprite-agent "motion"; motion_clip.ts reads it). */
+  motion?: string;
 }
 
 export interface SliceInfo {
@@ -126,6 +128,8 @@ export interface PutImagesOptions {
   fx?: FxInfo & { layer: string };
   /** A pixel spec's JSON to store on the sprite (#79); "" removes it. */
   spec?: string;
+  /** The Motion Clip store's JSON to store on the sprite (#109); "" removes it. */
+  motion?: string;
   /** Image layers (ids or names) whose cels are all deleted first, in the same undo step (#97). */
   clear?: string[];
 }
@@ -371,6 +375,7 @@ export function parseState(state: any): SpriteInfo {
     })),
     colorMode: s.colorMode ?? "rgb",
     ...(typeof s.pixelSpec === "string" && s.pixelSpec ? { pixelSpec: s.pixelSpec } : {}),
+    ...(typeof s.motion === "string" && s.motion ? { motion: s.motion } : {}),
     hits: parseHits(s.fxHits),
   };
 }
@@ -432,7 +437,7 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       const hit = o.hit && hitWire(o.hit);
       return write("put_images", {
         images, frames: o.frames, duration: o.duration, label: o.label, prompt: o.prompt, palette: o.palette,
-        insert, durations: o.durations, hit, fx: o.fx && { layer: o.fx.layer, ...recordWire(o.fx) }, spec: o.spec, clear: o.clear,
+        insert, durations: o.durations, hit, fx: o.fx && { layer: o.fx.layer, ...recordWire(o.fx) }, spec: o.spec, motion: o.motion, clear: o.clear,
       });
     },
     async createSprite(img, o = {}) {

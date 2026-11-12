@@ -223,7 +223,7 @@ test("walk_check finds 'near arm'/'near leg' layers, stores the limbs, and rerun
   assert.match(t, /near arm: layer "near arm"; near leg: layer "near leg" \(stored on the sprite\)/);
   assert.match(t, /frame 1 \(contact\): the near arm and the near leg both swing back/);
   const st = (await fake.request("get_state")).result;
-  assert.equal(JSON.parse(st.activeSprite.pixelSpec).walk.nearArm.layer, "near arm");
+  assert.equal(JSON.parse(st.activeSprite.motion).clips.walk.walk.nearArm.layer, "near arm");
   const again = await runTool(findTool("walk_check"), {}, fake);
   assert.doesNotMatch(again.content[0].text, /stored on the sprite/);
   const noTag = await runTool(findTool("walk_check"), { tag: "run" }, fake);
@@ -246,6 +246,7 @@ function walkFake(shiftPassing = false) {
     ],
   });
 }
+const rgbaOf = (c) => ({ width: c.width, height: c.height, rgba: Buffer.from(c.data).toString("base64"), x: 0, y: 0 });
 const scripted = (reply) => {
   const asked = [];
   return { asked, open: () => ({ ask: async (message, images) => { asked.push({ message, images }); return reply; }, close() {} }) };
@@ -321,38 +322,91 @@ test("walk_check: a near leg not clearly lighter than the far leg is an error (#
   assert.equal(legLightness(asciiImage(RUN6[1].map(() => ".".repeat(24))), new Array(24 * 32).fill(false)), undefined);
 });
 
-test("motion_stage: keys, then advance only with every key drawn and walk_check ok, then done (#99)", async () => {
+test("motion_clip plan: a walk's keys stage, then advance only with every key drawn and walk_check ok (#99, #109)", async () => {
   const fake = walkFake(true);
-  const run = (input) => runTool(findTool("motion_stage"), input, fake);
-  assert.match((await run({})).content[0].text, /No motion stage/);
-  const start = await run({ action: "keys" });
-  assert.match(start.content[0].text, /draw the key frames 1, 3, 4, 6 now. Edits to frames 2, 5 are undone until motion_stage advance \(walk_check must say ok first\)/);
-  const spec = async () => JSON.parse((await fake.request("get_state")).result.activeSprite.pixelSpec);
-  assert.deepEqual((await spec()).motion, { tag: "walk", keys: [1, 3, 4, 6], stage: "keys", walk: true });
+  const run = (input) => runTool(findTool("motion_clip"), input, fake);
+  assert.match((await run({})).content[0].text, /No motion clip or rig/);
+  const start = await run({ action: "plan" });
+  assert.match(start.content[0].text, /Clip "walk" \(frames 1-6, 600 ms, loops\): walk, facing right; stage "keys"/);
+  assert.match(start.content[0].text, /keys 1, 3, 4, 6; contacts 1, 4/);
+  assert.match(start.content[0].text, /Draw the key frames 1, 3, 4, 6 now. Edits to frames 2, 5 are undone until motion_clip advance \(walk_check must say ok on the contacts first\)/);
+  const store = async () => JSON.parse((await fake.request("get_state")).result.activeSprite.motion);
+  const clip = (await store()).clips.walk;
+  assert.deepEqual(clip.keys, [{ at: 1 }, { at: 3 }, { at: 4 }, { at: 6 }]);
+  assert.equal(clip.stage, "keys");
   // The run-6 contacts: same-side swing, so advance is refused.
   const refused = await run({ action: "advance" });
   assert.equal(refused.isError, true);
   assert.match(refused.content[0].text, /Not yet: walk_check says errors/);
-  assert.equal((await spec()).motion.stage, "keys");
-  assert.match((await run({ action: "keys", tag: "run" })).content[0].text, /No tag "run"/);
+  assert.equal((await store()).clips.walk.stage, "keys");
+  assert.match((await run({ action: "plan", tag: "run" })).content[0].text, /No tag "run"/);
 });
 
-test("motion_stage advance: refuses an empty key; moves on when the walk checks out (#99)", async () => {
+test("motion_clip advance and done: empty keys, holds, and every frame drawn and distinct (#109)", async () => {
   const empty = fakeDocument({ width: 8, height: 8, frames: 6, tags: [{ name: "walk", from: 1, to: 6 }], layers: [{ name: "Art", frames: [] }] });
-  await runTool(findTool("motion_stage"), { action: "keys" }, empty);
-  const r = await runTool(findTool("motion_stage"), { action: "advance" }, empty);
+  await runTool(findTool("motion_clip"), { action: "plan" }, empty);
+  const r = await runTool(findTool("motion_clip"), { action: "advance" }, empty);
   assert.match(r.content[0].text, /Key frames 1, 3, 4, 6 have no art yet/);
 
-  // A non-walk (an idle): advance needs only drawn, distinct keys.
+  // An idle on frames 2-5 (frame 1 is a base pose outside the tag): keys tag-relative, same pose twice only as a hold.
   const dot = (x) => { const d = new Uint8Array(8 * 8 * 4); d.set([255, 0, 0, 255], (2 * 8 + x) * 4); return { x: 0, y: 0, width: 8, height: 8, data: d }; };
-  const idle = fakeDocument({ width: 8, height: 8, frames: 4, tags: [{ name: "idle", from: 1, to: 4 }], layers: [{ name: "Art", frames: [dot(1), undefined, dot(3), undefined] }] });
-  const s = await runTool(findTool("motion_stage"), { action: "keys", tag: "idle" }, idle);
-  assert.match(s.content[0].text, /key frames 1, 3 now/);
+  const idle = fakeDocument({ width: 8, height: 8, frames: 5, tags: [{ name: "idle", from: 2, to: 5 }],
+    layers: [{ name: "Art", frames: [dot(0), dot(1), undefined, dot(1), undefined] }] });
+  const run = (input) => runTool(findTool("motion_clip"), input, idle);
+  const s = await run({ action: "plan", tag: "idle" });
+  assert.match(s.content[0].text, /idle, facing right; stage "keys"/);
+  assert.match(s.content[0].text, /Draw the key frames 2, 4 now/);
   assert.doesNotMatch(s.content[0].text, /walk_check/);
-  const a = await runTool(findTool("motion_stage"), { action: "advance" }, idle);
+  assert.match((await run({ action: "advance" })).content[0].text, /Key frame 4 repeats the key before: draw a different pose, or plan it with hold: true/);
+  await run({ action: "plan", tag: "idle", keys: [2, { frame: 4, pose: "breath held", hold: true }] });
+  const a = await run({ action: "advance" });
   assert.equal(a.isError, undefined, a.content[0].text);
-  assert.match(a.content[0].text, /Motion stage "inbetweens"/);
-  assert.match((await runTool(findTool("motion_stage"), { action: "done" }, idle)).content[0].text, /done for "idle"/);
+  assert.match(a.content[0].text, /Clip "idle" is in stage "inbetweens"/);
+  assert.match((await run({ action: "done" })).content[0].text, /Not done: frames 3, 5 of "idle" have no art/);
+  await idle.request("put_images", { images: [3, 5].map((f) => ({ ...rgbaOf(dot(f === 3 ? 1 : 3)), frame: f, layer: "Art" })) });
+  assert.match((await run({ action: "done" })).content[0].text, /Not done: frames 3, 4 repeat the frame before. A held pose is one frame with a longer duration/);
+  await idle.request("put_images", { images: [{ ...rgbaOf(dot(2)), frame: 3, layer: "Art" }] });
+  assert.match((await run({ action: "done" })).content[0].text, /Clip "idle" is done/);
+  const shown = (await run({})).content[0].text;
+  assert.match(shown, /keys 2, 4 \(breath held\) hold/);
+  assert.match(shown, /stage "done"/);
+});
+
+test("motion_clip rig: parents from names, joints suggested from pixels and marked derived (#109)", async () => {
+  const img = (pts) => { const d = new Uint8Array(12 * 12 * 4); for (const [x, y] of pts) d.set([200, 0, 0, 255], (y * 12 + x) * 4); return { x: 0, y: 0, width: 12, height: 12, data: d }; };
+  const torso = []; for (let y = 2; y <= 7; y++) for (let x = 4; x <= 6; x++) torso.push([x, y]);
+  const arm = [[7, 3], [8, 4], [9, 5], [10, 6]];
+  const fake = fakeDocument({ width: 12, height: 12, frames: 1, layers: [{ name: "torso", frames: [img(torso)] }, { name: "near arm", frames: [img(arm)] }] });
+  const r = await runTool(findTool("motion_clip"), { action: "rig", character: "Knight", parts: [{ layer: "torso" }, { layer: "near arm" }] }, fake);
+  const t = r.content[0].text;
+  assert.match(t, /Rig "Knight" \(base frame 1\)/);
+  assert.match(t, /near arm <- torso: joint 7,3, end 10,6, length 4.2 \[derived\]/);
+  assert.match(t, /check them on a snapshot of the base frame/);
+  const set = await runTool(findTool("motion_clip"), { action: "rig", character: "Knight", parts: [{ layer: "torso" }, { layer: "near arm", joint: [7, 2], end: [10, 6] }] }, fake);
+  assert.match(set.content[0].text, /near arm <- torso: joint 7,2, end 10,6, length 5 \[set\]/);
+  assert.match((await runTool(findTool("motion_clip"), { action: "rig", parts: [{ layer: "cape" }] }, fake)).content[0].text, /No image layer "cape"/);
+});
+
+test("motion store: migrates the pixel spec's motion and walk, rejects a newer version, keeps frames tag-relative (#109)", async () => {
+  const { MotionStore, parseMotion, defaultKeys } = await import("../dist/motion_clip.js");
+  const { documentOf } = await import("../dist/document.js");
+  assert.deepEqual(defaultKeys("walk", 6), [1, 3, 4, 6]);
+  assert.deepEqual(defaultKeys("walk", 8), [1, 3, 5, 7]);
+  assert.deepEqual(defaultKeys("action", 5), [1, 3]);
+  assert.throws(() => parseMotion(JSON.stringify({ version: 2, rigs: {}, clips: {} })), /version 2; this bridge reads version 1/);
+  assert.throws(() => parseMotion(JSON.stringify({ version: 1, rigs: {}, clips: { walk: { kind: "fly" } } })), /malformed: clips.walk/);
+  const fake = fakeDocument({ width: 8, height: 8, frames: 8, tags: [{ name: "walk", from: 3, to: 8 }], layers: [{ name: "Art", frames: [] }] });
+  await fake.request("put_images", { images: [],
+    spec: JSON.stringify({ motion: { tag: "walk", keys: [3, 5, 6, 8], stage: "inbetweens", walk: true }, walk: { tag: "walk", facing: "left", contacts: [3, 6], nearArm: { layer: "A" }, nearLeg: { layer: "L" } } }) });
+  const store = await MotionStore.load(documentOf(fake));
+  const v = store.view("walk");
+  assert.deepEqual(v.clip.keys.map((k) => k.at), [1, 3, 4, 6]);
+  assert.deepEqual(v.keys, [3, 5, 6, 8]);
+  assert.deepEqual(v.contacts, [3, 6]);
+  assert.equal(v.clip.stage, "inbetweens");
+  assert.deepEqual(store.walkContract("walk"), { tag: "walk", facing: "left", contacts: [3, 6], nearArm: { layer: "A" }, nearLeg: { layer: "L" } });
+  assert.equal(await store.save("migrate"), true);
+  assert.equal(JSON.parse((await fake.request("get_state")).result.activeSprite.motion).clips.walk.keys[0].at, 1);
 });
 
 test("judgeCycle: a walk needs a bob that is low on the contacts, and near limbs that keep their size", () => {

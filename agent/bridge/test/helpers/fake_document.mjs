@@ -349,6 +349,7 @@ export function fakeDocument({
           ...(s.selection ? { selection: { ...s.selection } } : {}),
           ...(s.hits?.length ? { fxHits: s.hits.map((h) => ({ ...h })) } : {}),
           ...(s.spec ? { pixelSpec: s.spec } : {}),
+          ...(s.motion ? { motion: s.motion } : {}),
         },
       };
     },
@@ -527,7 +528,7 @@ export function fakeDocument({
       }
       const inserted = inserts.reduce((n, x) => n + x.durations.length, 0);
       if (!p.images.length && !inserts.length && p.durations === undefined && p.hit === undefined && p.fx === undefined && p.spec === undefined
-        && p.clear === undefined) throw new Error("No images");
+        && p.motion === undefined && p.clear === undefined) throw new Error("No images");
       // clear (#97): image layers whose cels are all deleted first.
       if (p.clear !== undefined && !Array.isArray(p.clear)) throw new Error("clear: expected a list of layers");
       const clearLayers = (p.clear ?? []).map((ref) => {
@@ -536,6 +537,7 @@ export function fakeDocument({
         return l;
       });
       if (p.spec !== undefined && (typeof p.spec !== "string" || p.spec.length > 65536)) throw new Error("spec must be text of at most 65536 characters");
+      if (p.motion !== undefined && (typeof p.motion !== "string" || p.motion.length > 65536)) throw new Error("motion must be text of at most 65536 characters");
       const fx = p.fx !== undefined ? checkFx(p.fx, true) : undefined;
       const count = Math.max(s.durations.length + inserted, p.frames ?? 0);
       if (p.duration !== undefined && p.duration < 1) throw new Error("duration must be at least 1 ms");
@@ -630,6 +632,7 @@ export function fakeDocument({
       for (const l of locked) l.editable = false;
       if (locked.length && wasActive && wasActive.editable !== false) active.layer = wasActive;
       if (p.spec !== undefined) s.spec = p.spec || undefined;
+      if (p.motion !== undefined) s.motion = p.motion || undefined;
       return { layers, frames: s.durations.length, added, inserted, ...(paletteAdd ? { paletteAdded: paletteAdd.length } : {}) };
     },
     create_sprite: (p) => {

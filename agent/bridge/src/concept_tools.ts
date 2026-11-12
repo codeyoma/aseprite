@@ -15,6 +15,7 @@ import { parseHex, quantize } from "./color.js";
 import type { Aspect, Job } from "./image_gen.js";
 import { DEFAULT_LAYERS, alignToMaster, generateLayered, gridFor, shifted, type LayeredResult, type PartLayer } from "./layered.js";
 import { hex } from "./color.js";
+import { MotionStore, defaultContacts, defaultKeys, guessParent, kindOf } from "./motion_clip.js";
 import { NOT_PNG_SHEET } from "./sheet_tools.js";
 import { failure, text, type Tool } from "./tool.js";
 import { framesInput } from "./tool_inputs.js";
@@ -181,16 +182,33 @@ async function applyLayered(ctx: any, r: LayeredResult, m: LayeredMeta): Promise
     reference: refName, palette: palette.map((c) => hex(c)), layers: [...all],
     base: known.base ?? frames[0], masters: [...(known.masters ?? []), { frames, path: r.master.path }],
   } };
-  if (all.has("near arm") && all.has("near leg")) {
-    spec.walk = { ...(spec.walk ?? {}), nearArm: { layer: "near arm" }, nearLeg: { layer: "near leg" } };
-  }
   let stage = "";
   const tag = m.tag ? info.tags.find((t) => t.name.toLowerCase() === m.tag!.toLowerCase()) : undefined;
-  if (tag && frames.length > 1 && !m.inbetweens) {
-    spec.motion = { tag: tag.name, keys: frames, stage: "keys", walk: /walk|run/i.test(tag.name) };
-    spec.walk = { ...spec.walk, tag: tag.name };
-    stage = ` Motion stage "keys" for "${tag.name}" (keys ${frames.join(", ")}): check it, then motion_stage advance for the in-betweens.`;
+  const motion = await MotionStore.load(doc);
+  // The character's rig (#109): its part layers, parents guessed from names; joints come later (motion_clip rig).
+  const rigged = motion.rig(m.character);
+  const names = [...all].filter((n) => !effects.has(n));
+  if (!rigged || names.some((n) => !rigged.parts.some((p) => p.layer === n))) {
+    const keep = new Map((rigged?.parts ?? []).map((p) => [p.layer, p]));
+    motion.setRig(m.character, { base: rigged?.base ?? known.base ?? frames[0],
+      parts: names.map((n) => keep.get(n) ?? { layer: n, parent: guessParent(n, names) }), ...(rigged?.source ? { source: rigged.source } : {}) });
   }
+  if (tag) {
+    const v = motion.view(tag.name);
+    const n = tag.to - tag.from + 1;
+    const kind = v?.clip.kind ?? kindOf(tag.name);
+    const near = all.has("near arm") && all.has("near leg") ? { walk: { nearArm: { layer: "near arm" }, nearLeg: { layer: "near leg" } } } : {};
+    const keys = frames.length > 1 && !m.inbetweens ? frames.filter((f) => f >= tag.from && f <= tag.to).map((f) => ({ at: f - tag.from + 1 })) : undefined;
+    const contacts = v?.clip.contacts ?? defaultContacts(kind, n);
+    motion.setClip(tag, {
+      ...(v?.clip ?? {}), kind, facing: v?.clip.facing ?? "right", loop: v?.clip.loop ?? kind !== "action", character: m.character,
+      keys: keys ?? v?.clip.keys ?? defaultKeys(kind, n).map((at) => ({ at })),
+      ...(contacts ? { contacts } : {}), ...(v?.clip.walk ? { walk: v.clip.walk } : near),
+      stage: keys ? "keys" : v?.clip.stage ?? "none",
+    });
+    if (keys) stage = ` Motion clip "${tag.name}" is in its keys stage (keys ${frames.join(", ")}): check them, then motion_clip advance for the in-betweens.`;
+  }
+  await motion.save("Layered character motion");
   await doc.putImages([], { spec: JSON.stringify(spec), label: "Layered character spec" });
   return `${opened}Put "${m.character}" on frames ${frames.join(", ")}: the master in "${refName}" (hidden, locked), ` +
     `${placed.length} part layer${placed.length === 1 ? "" : "s"} in the group "${group}" (${placed.join(", ")}` +
@@ -280,9 +298,9 @@ export const CONCEPT_TOOLS: Tool[] = [
       let frames = input.frames;
       if (!frames) {
         const info = await documentOf(ctx).infoOrNone();
-        let motion: any;
-        try { motion = info?.pixelSpec ? JSON.parse(info.pixelSpec).motion : undefined; } catch { motion = undefined; }
-        if (motion?.keys?.length === input.poses.length) frames = motion.keys;
+        let keys: number[] | undefined;
+        try { keys = info ? (await MotionStore.load(documentOf(ctx))).active()?.keys : undefined; } catch { keys = undefined; }
+        if (keys?.length === input.poses.length) frames = keys;
       }
       if (frames && frames.length !== input.poses.length) return failure(`frames lists ${frames.length} frames for ${input.poses.length} poses.`);
       const count = layers.length + 1;

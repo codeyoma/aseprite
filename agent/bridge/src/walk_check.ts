@@ -228,21 +228,19 @@ export interface WalkMeasure {
   /** Every frame of the tag: head row and near limb sizes (judgeCycle). */
   cycle: CycleReading[];
   verdict: WalkVerdict;
-  /** The pixel spec with this contract in it, when it differs from the stored one (to store). */
-  newSpec?: string;
+  /** The contract differs from the stored one (the caller stores it on the clip, MotionStore.setWalkContract). */
+  changed: boolean;
 }
 
 const hasSel = (l?: LimbSelector) => !!l && (!!l.layer || !!l.colors?.length);
 
 /**
- * The walk's contract (the input, else the one stored in the pixel spec, else layers named like "near arm" and
- * "near leg") and its measurement on the contacts. Throws with a message for the agent when something is missing.
+ * The walk's contract (the input, else the one stored on the tag's Motion Clip, else layers named like "near arm" and
+ * "near leg") and its measurement on the contacts, plus, unless `contactsOnly` (the keys stage, #109), the whole
+ * cycle. Throws with a message for the agent when something is missing.
  */
-export async function measureWalk(doc: Document, input: WalkInput): Promise<WalkMeasure> {
+export async function measureWalk(doc: Document, input: WalkInput, stored: Partial<WalkContract> = {}, o: { contactsOnly?: boolean } = {}): Promise<WalkMeasure> {
   const info = await doc.info();
-  let spec: Record<string, any> = {};
-  try { spec = info.pixelSpec ? JSON.parse(info.pixelSpec) : {}; } catch { spec = {}; }
-  const stored: Partial<WalkContract> = spec.walk ?? {};
   const tagName = input.tag ?? stored.tag ?? "walk";
   const tag = info.tags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
   if (!tag) throw new Error(`No tag "${tagName}": tag the walk's frames first, or pass tag.`);
@@ -275,7 +273,7 @@ export async function measureWalk(doc: Document, input: WalkInput): Promise<Walk
     });
   }
   const cycle: CycleReading[] = [];
-  for (let frame = tag.from; frame <= tag.to; frame++) {
+  for (let frame = tag.from; frame <= (o.contactsOnly ? tag.from - 1 : tag.to); frame++) {
     const whole = await doc.pixels(undefined, frame);
     let top: number | undefined;
     for (let i = 3; i < whole.data.length; i += 4) if (whole.data[i] >= 128) { top = Math.floor((i - 3) / 4 / whole.width); break; }
@@ -286,8 +284,10 @@ export async function measureWalk(doc: Document, input: WalkInput): Promise<Walk
     cycle.push({ frame, top, arm: await size(contract.nearArm), leg: await size(contract.nearLeg) });
   }
   const verdict = judgeWalk(readings);
-  const more = judgeCycle(cycle, contract.contacts).errors;
+  const more = o.contactsOnly ? [] : judgeCycle(cycle, contract.contacts).errors;
   if (more.length) { verdict.errors.push(...more); verdict.status = "errors"; }
-  const changed = JSON.stringify(spec.walk) !== JSON.stringify(contract);
-  return { contract, readings, cycle, verdict, ...(changed ? { newSpec: JSON.stringify({ ...spec, walk: contract }) } : {}) };
+  const same = (a: unknown, b: unknown) => JSON.stringify(a ?? {}) === JSON.stringify(b ?? {});
+  const changed = stored.tag?.toLowerCase() !== contract.tag.toLowerCase() || stored.facing !== contract.facing ||
+    !same(stored.contacts, contract.contacts) || !same(stored.nearArm, contract.nearArm) || !same(stored.nearLeg, contract.nearLeg);
+  return { contract, readings, cycle, verdict, changed };
 }

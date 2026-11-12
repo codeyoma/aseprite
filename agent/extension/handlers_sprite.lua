@@ -307,6 +307,8 @@ return function(handlers, D)
   -- A pixel spec (#79): JSON text in the sprite property aseprite-agent "concept.spec" (get_state's pixelSpec).
   local SPEC_KEY = "concept.spec"
   local SPEC_MAX = 65536
+  -- The Motion Clip store (#109): JSON text in the sprite property aseprite-agent "motion" (get_state's motion).
+  local MOTION_KEY = "motion"
   local function isInt(v) return math.type(v) == "integer" end
 
   -- params.insert checked, sorted by `after`, layers resolved. Returns the list and the frame count it adds.
@@ -398,7 +400,7 @@ return function(handlers, D)
     local sprite = site().sprite
     local images = params.images or {}
     local inserts, inserted = checkInserts(sprite, params.insert)
-    if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil and params.fx == nil and params.spec == nil
+    if #images == 0 and #inserts == 0 and params.durations == nil and params.hit == nil and params.fx == nil and params.spec == nil and params.motion == nil
         and params.clear == nil then
       error("No images")
     end
@@ -414,6 +416,9 @@ return function(handlers, D)
     end
     if params.spec ~= nil and (type(params.spec) ~= "string" or #params.spec > SPEC_MAX) then
       error("spec must be text of at most " .. SPEC_MAX .. " characters")
+    end
+    if params.motion ~= nil and (type(params.motion) ~= "string" or #params.motion > SPEC_MAX) then
+      error("motion must be text of at most " .. SPEC_MAX .. " characters")
     end
     local fx = params.fx ~= nil and checkFx(params.fx, true) or nil
     local count = math.max(#sprite.frames + inserted, params.frames or 0)
@@ -561,6 +566,7 @@ return function(handlers, D)
       -- locked (#79): the layer is locked last, after every frame is written.
       for _, l in ipairs(locked) do l.isEditable = false end
       if params.spec ~= nil then sprite.properties(variations.KEY)[SPEC_KEY] = params.spec ~= "" and params.spec or nil end
+      if params.motion ~= nil then sprite.properties(variations.KEY)[MOTION_KEY] = params.motion ~= "" and params.motion or nil end
     end)
     -- A locked layer never becomes the active one: the layer that was active stays (when there was one).
     D.select(s, activeFrame, (#locked > 0 and activeLayer and activeLayer.isEditable) and activeLayer or nil)

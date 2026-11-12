@@ -263,6 +263,9 @@ function M.new(opts)
     -- A pixel spec stored by the concept tools (#79): the sprite property aseprite-agent "concept.spec".
     local spec = sprite.properties("aseprite-agent")["concept.spec"]
     if type(spec) == "string" and spec ~= "" then info.pixelSpec = spec end
+    -- The Motion Clip store (#109): the sprite property aseprite-agent "motion".
+    local motion = sprite.properties("aseprite-agent")["motion"]
+    if type(motion) == "string" and motion ~= "" then info.motion = motion end
 
     local sel = sprite.selection
     if sel and not sel.isEmpty then
