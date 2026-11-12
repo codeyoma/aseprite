@@ -280,18 +280,13 @@ export function analyzeTracks(tracks: PartTrack[], images: Rgba[], o: {
  * in every frame of the tag.
  */
 export async function trackClip(doc: Document, v: ClipView, parts: string[]): Promise<MotionReport> {
-  const images: Rgba[] = [];
-  const whole: PartTrack = { part: "", frames: [] };
-  for (const f of v.frames) {
-    const img = await doc.pixels(undefined, f);
-    images.push(img);
-    whole.frames.push(silhouette(img, f));
-  }
+  // One request per part (#114): every frame of the tag at once.
+  const images = await doc.pixelsMany(undefined, v.frames);
+  const whole: PartTrack = { part: "", frames: images.map((img, i) => silhouette(img, v.frames[i])) };
   const tracks = [whole];
   for (const p of parts) {
-    const t: PartTrack = { part: p, frames: [] };
-    for (const f of v.frames) t.frames.push(silhouette(await doc.pixels(p, f), f));
-    tracks.push(t);
+    const imgs = await doc.pixelsMany(p, v.frames);
+    tracks.push({ part: p, frames: imgs.map((img, i) => silhouette(img, v.frames[i])) });
   }
   const durations = v.frames.map((f, i) => (i + 1 < v.startMs.length ? v.startMs[i + 1] - v.startMs[i] : v.lengthMs - v.startMs[i]));
   return analyzeTracks(tracks, images, {

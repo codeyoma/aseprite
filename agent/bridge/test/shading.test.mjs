@@ -62,25 +62,27 @@ test("outlines: selout is a darker shade of the neighbor; inner; 4 vs 8 connecti
   assert.equal(hex(darker(parseHex("#3caa50"), pal)), "#1e6e3c", "selout snaps to a darker palette color");
 });
 
-test("shade_sprite and outline_sprite write through put_image", async () => {
+test("shade_sprite and outline_sprite read every frame in one request and write in one put_images (#114)", async () => {
   const img = circle();
   const calls = [];
   const fake = {
     async request(m, p) {
       calls.push({ m, p });
       if (m === "get_state") return { result: { activeFrame: 1, activeLayerId: "L1", activeSprite: { filename: "Sprite", width: 24, height: 24, frames: [100, 100].map((durationMs) => ({ durationMs })), layers: [{ id: "L1", name: "Body" }], tags: [], palette: { colors: ["#181425", "#3caa50"] } } } };
-      if (m === "snapshot") return { result: { width: 24, height: 24 }, binary: Buffer.from(img.data) };
+      if (m === "snapshot") return { result: { width: 24, height: 24 }, binary: Buffer.concat((p.frames ?? [1]).map(() => Buffer.from(img.data))) };
       return { result: { layer: "L9", name: "AI: x" } };
     },
   };
   const r = await runTool(findTool("shade_sprite"), { frames: "1-2", bands: 3 }, fake);
-  const puts = calls.filter((c) => c.m === "put_image");
-  assert.equal(puts.length, 2);
-  assert.deepEqual([puts[0].p.new_layer, puts[0].p.above, puts[0].p.hide_source, puts[1].p.frame], ["shaded Body", "Body", true, 2]);
+  assert.deepEqual(calls.filter((c) => c.m === "snapshot").map((c) => c.p.frames), [[1, 2]], "one read for both frames");
+  const puts = calls.filter((c) => c.m === "put_images");
+  assert.equal(puts.length, 1, "one write, one undo step");
+  const items = puts[0].p.images;
+  assert.deepEqual([items[0].new_layer, items[0].above, items[0].hide_source, items[1].frame], ["shaded Body", "Body", true, 2]);
   assert.match(r.content[0].text, /Shaded Body in 2 frame\(s\) from top-left with 3 bands/);
   calls.length = 0;
   const o = await runTool(findTool("outline_sprite"), { color: "selout" }, fake);
-  assert.equal(calls.filter((c) => c.m === "put_image")[0].p.new_layer, "outline");
+  assert.equal(calls.filter((c) => c.m === "put_images")[0].p.images[0].new_layer, "outline");
   assert.match(o.content[0].text, /outer selout outline \(\d+ px over 1 frame\(s\)\)/);
 });
 

@@ -354,7 +354,18 @@ export function fakeDocument({
       };
     },
     snapshot: (p) => {
+      if (p.frames !== undefined) {
+        // Several frames in one reply (#114).
+        if (!Array.isArray(p.frames) || !p.frames.length || p.frames.length > 64) throw new Error("frames must list 1 to 64 frame numbers");
+        const parts = p.frames.map((f) => handlers.snapshot({ layer: p.layer, frame: f })[1]);
+        const all = new Uint8Array(parts.reduce((n, x) => n + x.length, 0));
+        let o = 0;
+        for (const x of parts) { all.set(x, o); o += x.length; }
+        return [{ width: active.sprite.width, height: active.sprite.height, frames: [...p.frames], layer: p.layer }, all];
+      }
       const s = active.sprite, f = p.frame;
+      const n = s.durations.length;
+      if (f !== undefined && (f < 1 || f > n)) throw new Error(`Frame ${f} is out of range (1-${n})`);
       let data;
       if (p.layer !== undefined) {
         const l = byRef(p.layer);

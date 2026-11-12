@@ -786,6 +786,74 @@ int Image_histogram(lua_State* L)
   return 1;
 }
 
+// Image:diff(other [, makeImage]) -> changed, bounds | nil [, image]: the pixels
+// that differ between two RGB images of the same size (fully transparent
+// pixels are equal whatever their color), their bounds as { x, y, width,
+// height }, and with makeImage an RGB image of the change: changed pixels in
+// red over this image faded to a third of its alpha. Fork-only (aseprite-agent
+// #114): step capture measures every agent write with it instead of a
+// per-pixel walk in Lua.
+int Image_diff(lua_State* L)
+{
+  const auto obj = get_obj<ImageObj>(L, 1);
+  const doc::Image* a = obj->image(L);
+  const auto otherObj = get_obj<ImageObj>(L, 2);
+  const doc::Image* b = otherObj->image(L);
+  const bool makeImage = lua_toboolean(L, 3);
+  if (a->pixelFormat() != doc::IMAGE_RGB || b->pixelFormat() != doc::IMAGE_RGB)
+    return luaL_error(L, "diff compares two RGB images");
+  if (a->width() != b->width() || a->height() != b->height())
+    return luaL_error(L, "diff compares images of the same size");
+  const int w = a->width(), h = a->height();
+  doc::Image* out = nullptr;
+  if (makeImage) {
+    out = doc::Image::create(doc::IMAGE_RGB, w, h);
+    out->clear(0);
+  }
+  lua_Integer changed = 0;
+  int minX = w, minY = h, maxX = -1, maxY = -1;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const doc::color_t ca = doc::get_pixel_fast<doc::RgbTraits>(a, x, y);
+      const doc::color_t cb = doc::get_pixel_fast<doc::RgbTraits>(b, x, y);
+      const bool differs = ca != cb && !(doc::rgba_geta(ca) == 0 && doc::rgba_geta(cb) == 0);
+      if (differs) {
+        ++changed;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+        if (out)
+          doc::put_pixel_fast<doc::RgbTraits>(out, x, y, doc::rgba(255, 0, 0, 255));
+      }
+      else if (out && doc::rgba_geta(ca) > 0) {
+        doc::put_pixel_fast<doc::RgbTraits>(
+          out, x, y,
+          doc::rgba(doc::rgba_getr(ca), doc::rgba_getg(ca), doc::rgba_getb(ca), doc::rgba_geta(ca) / 3));
+      }
+    }
+  }
+  lua_pushinteger(L, changed);
+  if (changed) {
+    lua_createtable(L, 0, 4);
+    lua_pushinteger(L, minX);
+    lua_setfield(L, -2, "x");
+    lua_pushinteger(L, minY);
+    lua_setfield(L, -2, "y");
+    lua_pushinteger(L, maxX - minX + 1);
+    lua_setfield(L, -2, "width");
+    lua_pushinteger(L, maxY - minY + 1);
+    lua_setfield(L, -2, "height");
+  }
+  else
+    lua_pushnil(L);
+  if (out) {
+    push_new<ImageObj>(L, out);
+    return 3;
+  }
+  return 2;
+}
+
 // Image:isolatedPixels([limit]) -> count, { { x, y }, ... }: the pixels that
 // draw something and have no 8-neighbor of the same raw value (orphan
 // pixels), counted, with the first `limit` (default all) listed row by row.
@@ -873,6 +941,7 @@ const luaL_Reg Image_methods[] = {
   { "flip",         Image_flip         },
   { "histogram",      Image_histogram      },
   { "isolatedPixels", Image_isolatedPixels },
+  { "diff",           Image_diff           },
   { "__gc",         Image_gc           },
   { "__eq",         Image_eq           },
   { nullptr,        nullptr            }

@@ -2,7 +2,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import * as z from "zod/v4";
-import { documentOf } from "./document.js";
+import { documentOf, type PutImagesItem } from "./document.js";
 import { emissionMask, specularMask } from "./masks.js";
 import { light, normalMap } from "./normals.js";
 import { blank, writePng, type Rgba } from "./image.js";
@@ -65,15 +65,19 @@ export const NORMAL_TOOLS: Tool[] = [
       const info = await doc.info();
       const layer = input.layer ?? info.layer;
       const frames = await doc.frames(input.frames ?? "all");
-      for (const f of frames) {
-        const img = await doc.pixels(layer, f);
-        const height = input.height_layer ? await doc.pixels(input.height_layer, f) : undefined;
+      const imgs = await doc.pixelsMany(layer, frames);
+      const heights = input.height_layer ? await doc.pixelsMany(input.height_layer, frames) : undefined;
+      const items: PutImagesItem[] = [];
+      for (const [i, f] of frames.entries()) {
+        const img = imgs[i];
+        const height = heights?.[i];
         const n = normalMap(img, {
           source: input.source ?? (height ? "height" : "bevel"), height, bevel: input.bevel, strength: input.strength,
           levels: input.levels, convention: input.convention,
         });
-        await doc.putImage(n, { newLayer: `normal ${layer}`, above: layer, hide: true, frame: f });
+        items.push({ image: n, newLayer: `normal ${layer}`, above: layer, hide: true, frame: f });
       }
+      await doc.putImages(items, { label: "Normal map" });
       return { content: [text(`Made a ${input.convention ?? "opengl"} normal map of ${layer} (${input.source ?? "bevel"}) for ${frames.length} frame(s) on the hidden layer 'AI: normal ${layer}'. Preview it with light_preview.`)] };
     },
   },
@@ -119,8 +123,10 @@ export const NORMAL_TOOLS: Tool[] = [
       const kinds = !input.kind || input.kind === "both" ? ["emission", "specular"] as const : [input.kind];
       const e = input.emission ?? {}, s = input.specular ?? {};
       const lit: Record<string, number> = { emission: 0, specular: 0 };
-      for (const f of frames) {
-        const img = await doc.pixels(layer, f);
+      const imgs = await doc.pixelsMany(layer, frames);
+      const items: PutImagesItem[] = [];
+      for (const [fi, f] of frames.entries()) {
+        const img = imgs[fi];
         for (const k of kinds) {
           const paintedLayer = k === "emission" ? e.layer : s.layer;
           const painted = paintedLayer ? await doc.pixels(paintedLayer, f) : undefined;
@@ -128,9 +134,10 @@ export const NORMAL_TOOLS: Tool[] = [
             ? emissionMask(img, { colors: e.colors, tolerance: e.tolerance, minLightness: e.min_lightness, minChroma: e.min_chroma, painted, keepColor: e.keep_color })
             : specularMask(img, { colors: s.colors, tolerance: s.tolerance, value: s.value, values: s.values, minLightness: s.min_lightness, levels: s.levels, painted });
           for (let i = 0; i < mask.data.length; i += 4) if (mask.data[i + 3] && (mask.data[i] || mask.data[i + 1] || mask.data[i + 2])) lit[k]++;
-          await doc.putImage(mask, { newLayer: `${k} ${layer}`, above: layer, hide: true, frame: f });
+          items.push({ image: mask, newLayer: `${k} ${layer}`, above: layer, hide: true, frame: f });
         }
       }
+      await doc.putImages(items, { label: "Masks" });
       const said = kinds.map((k) => `'AI: ${k} ${layer}' (${lit[k]} ${k === "emission" ? "glowing" : "shiny"} px)`).join(" and ");
       const none = kinds.filter((k) => !lit[k]);
       return { content: [text(`Made ${said} for ${frames.length} frame(s), hidden. ` +

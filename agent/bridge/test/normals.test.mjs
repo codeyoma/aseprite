@@ -53,13 +53,17 @@ test("normal_map writes a hidden layer per frame; export writes matching sheets"
     async request(m, p) {
       calls.push({ m, p });
       if (m === "get_state") return { result: { activeFrame: 1, activeLayerId: "L1", activeSprite: { filename: "Sprite", width: W, height: W, frames: [{ durationMs: 100 }, { durationMs: 100 }], layers: [{ id: "L1", name: "Ball" }], tags: [], palette: { colors: [] } } } };
-      if (m === "snapshot") return { result: { width: W, height: W }, binary: Buffer.from(p.layer === "AI: normal Ball" ? normalMap(img).data : img.data) };
+      if (m === "snapshot") {
+        const one = Buffer.from(p.layer === "AI: normal Ball" ? normalMap(img).data : img.data);
+        return { result: { width: W, height: W }, binary: Buffer.concat((p.frames ?? [1]).map(() => one)) };
+      }
       return { result: {} };
     },
   };
   await runTool(findTool("normal_map"), {}, fake);
-  const puts = calls.filter((c) => c.m === "put_image");
-  assert.deepEqual(puts.map((p) => [p.p.new_layer, p.p.hide, p.p.frame]), [["normal Ball", true, 1], ["normal Ball", true, 2]]);
+  const puts = calls.filter((c) => c.m === "put_images");
+  assert.equal(puts.length, 1, "one write for both frames (#114)");
+  assert.deepEqual(puts[0].p.images.map((i) => [i.new_layer, i.hide, i.frame]), [["normal Ball", true, 1], ["normal Ball", true, 2]]);
   const prev = await runTool(findTool("light_preview"), { light: { from: "right" } }, fake);
   assert.equal(prev.content[0].type, "image");
   const dir = mkdtempSync(join(tmpdir(), "nrm-"));

@@ -2,7 +2,7 @@
 // document and go back onto new 'AI:' layers.
 import * as z from "zod/v4";
 import { hex, parseHex, toOklch } from "./color.js";
-import { documentOf } from "./document.js";
+import { documentOf, type PutImagesItem } from "./document.js";
 import type { Rgba } from "./image.js";
 import { heightField } from "./normals.js";
 import { ambientOcclusion, antiAlias, applyOcclusion, makeRamp, outline, shadeFlat, type LightDir } from "./shading.js";
@@ -71,16 +71,20 @@ export const SHADING_TOOLS: Tool[] = [
       const layer = input.layer ?? info.layer;
       const frames = await doc.frames(input.frames);
       let ramps = 0;
-      for (const f of frames) {
-        const img = await doc.pixels(layer, f);
+      // Every frame read in one request and written in one undo step (#114).
+      const imgs = await doc.pixelsMany(layer, frames);
+      const items: PutImagesItem[] = [];
+      for (const [i, f] of frames.entries()) {
+        const img = imgs[i];
         const keep = findOutline(img).colors;
         const { image, ramps: r } = shadeFlat(img, {
           light: input.light as LightDir | undefined, bands: input.bands, rim: input.rim, perColor: !input.whole_shape, keep,
           palette: input.snap_to_palette ? info.palette : undefined,
         });
         ramps = Math.max(ramps, r.size);
-        await doc.putImage(image, { newLayer: `shaded ${layer}`, above: layer, hideSource: true, frame: f });
+        items.push({ image, newLayer: `shaded ${layer}`, above: layer, hideSource: true, frame: f });
       }
+      await doc.putImages(items, { label: "Shade" });
       return { content: [text(`Shaded ${layer} in ${frames.length} frame(s) from ${input.light ?? "top-left"} with ${input.bands ?? 3} bands ` +
         `(${ramps} color ramps) on 'AI: shaded ${layer}'; the original is hidden.`)] };
     },
@@ -107,13 +111,16 @@ export const SHADING_TOOLS: Tool[] = [
       const layer = input.layer ?? info.layer;
       const frames = await doc.frames(input.frames);
       let pixels = 0;
-      for (const f of frames) {
-        const img = await doc.pixels(layer, f);
+      const imgs = await doc.pixelsMany(layer, frames);
+      const items: PutImagesItem[] = [];
+      for (const [i, f] of frames.entries()) {
+        const img = imgs[i];
         const out = outline(img, { mode: input.mode, connectivity: input.connectivity, color: input.color ?? "darkest", palette: info.palette });
         const only = changedOnly(img, out);
-        for (let i = 3; i < only.data.length; i += 4) if (only.data[i]) pixels++;
-        await doc.putImage(only, { newLayer: "outline", above: layer, frame: f });
+        for (let k = 3; k < only.data.length; k += 4) if (only.data[k]) pixels++;
+        items.push({ image: only, newLayer: "outline", above: layer, frame: f });
       }
+      await doc.putImages(items, { label: "Outline" });
       return { content: [text(`Drew a ${input.mode ?? "outer"} ${input.color ?? "darkest"} outline (${pixels} px over ${frames.length} frame(s)) on 'AI: outline' above ${layer}.`)] };
     },
   },
@@ -140,11 +147,14 @@ export const SHADING_TOOLS: Tool[] = [
       const frames = await doc.frames(input.frames);
       const palette = input.snap_to_palette === false || !info.palette.length ? undefined : info.palette;
       let changed = 0;
-      for (const f of frames) {
-        const r = antiAlias(await doc.pixels(layer, f), { palette, strength: input.strength });
+      const imgs = await doc.pixelsMany(layer, frames);
+      const items: PutImagesItem[] = [];
+      for (const [i, f] of frames.entries()) {
+        const r = antiAlias(imgs[i], { palette, strength: input.strength });
         changed += r.changed;
-        if (r.changed) await doc.putImage(r.image, { newLayer: `anti-alias ${layer}`, above: layer, frame: f });
+        if (r.changed) items.push({ image: r.image, newLayer: `anti-alias ${layer}`, above: layer, frame: f });
       }
+      if (items.length) await doc.putImages(items, { label: "Anti-alias" });
       if (!changed) return { content: [text(`No jagged steps between colors in ${layer}: nothing to anti-alias.`)] };
       return { content: [text(`Softened ${changed} step corner(s) in ${frames.length} frame(s) of ${layer} on 'AI: anti-alias ${layer}'${palette ? " with palette colors" : ""}.`)] };
     },
@@ -175,9 +185,12 @@ export const SHADING_TOOLS: Tool[] = [
       const layer = input.layer ?? info.layer;
       const frames = await doc.frames(input.frames);
       let shaded = 0;
-      for (const f of frames) {
-        const img = await doc.pixels(layer, f);
-        const hl = input.height_layer ? await doc.pixels(input.height_layer, f) : undefined;
+      const imgs = await doc.pixelsMany(layer, frames);
+      const heights = input.height_layer ? await doc.pixelsMany(input.height_layer, frames) : undefined;
+      const items: PutImagesItem[] = [];
+      for (const [i, f] of frames.entries()) {
+        const img = imgs[i];
+        const hl = heights?.[i];
         const height = heightField(img, hl ? { source: "height", height: hl } : { source: input.source ?? "bevel" });
         const occ = ambientOcclusion(img, height, { radius: input.radius, levels: input.levels, strength: input.strength });
         for (const v of occ) if (v) shaded++;
@@ -189,11 +202,12 @@ export const SHADING_TOOLS: Tool[] = [
             const g = Math.round(255 * (1 - occ[i] / levels));
             mask.set([g, g, g, 255], i * 4);
           }
-          await doc.putImage({ width: img.width, height: img.height, data: mask }, { newLayer: `ao mask ${layer}`, above: layer, hide: true, frame: f });
+          items.push({ image: { width: img.width, height: img.height, data: mask }, newLayer: `ao mask ${layer}`, above: layer, hide: true, frame: f });
         } else {
-          await doc.putImage(applyOcclusion(img, occ, info.palette.length ? info.palette : undefined), { newLayer: `ao ${layer}`, above: layer, hideSource: true, frame: f });
+          items.push({ image: applyOcclusion(img, occ, info.palette.length ? info.palette : undefined), newLayer: `ao ${layer}`, above: layer, hideSource: true, frame: f });
         }
       }
+      await doc.putImages(items, { label: "Ambient occlusion" });
       const where = input.as_mask ? `a mask on the hidden layer 'AI: ao mask ${layer}' (white = open, darker = occluded)` : `'AI: ao ${layer}' (the original is hidden)`;
       return { content: [text(`Occluded ${shaded} px over ${frames.length} frame(s) of ${layer}: ${where}.`)] };
     },

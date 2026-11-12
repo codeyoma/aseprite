@@ -48,7 +48,21 @@ end
 -- How many pixels changed between two RGB images, and their bounds (#91).
 -- Rows are compared as byte strings first, so only changed rows are walked
 -- pixel by pixel. Fully transparent pixels are equal whatever their color.
+-- This fork's Image:diff (#114) does it natively; stock Aseprite walks the rows in Lua.
+local function nativeDiff(before, after, makeImage)
+  if not (before and after and before.width == after.width and before.height == after.height) then return nil end
+  if type(after.diff) ~= "function" then return nil end
+  local changed, b, img = after:diff(before, makeImage)
+  return { changed = changed, bounds = b and Rectangle(b.x, b.y, b.width, b.height) or nil, image = img, sizeChanged = false }
+end
+M.nativeDiff = nativeDiff
+
 function M.measure(before, after)
+  return nativeDiff(before, after, false) or M.measureLua(before, after)
+end
+
+-- The Lua walk (stock Aseprite, or images of different sizes).
+function M.measureLua(before, after)
   local w, h = after.width, after.height
   local sameSize = before and before.width == w and before.height == h
   local ab = after.bytes
@@ -90,6 +104,10 @@ end
 -- Changed pixels between two RGB images: a diff image (faded "after" with
 -- changed pixels in red), the bounds of the change and the count.
 function M.diff(before, after)
+  return nativeDiff(before, after, true) or M.diffLua(before, after)
+end
+
+function M.diffLua(before, after)
   local pc = app.pixelColor
   local w, h = after.width, after.height
   local out = Image(w, h, ColorMode.RGB)

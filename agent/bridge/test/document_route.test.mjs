@@ -21,8 +21,12 @@ import { fakeDocument, rect } from "./helpers/fake_document.mjs";
 const ASEPRITE = process.env.ASEPRITE;
 const extensionDir = fileURLToPath(new URL("../../extension", import.meta.url));
 
+test("protocol 44: snapshot reads several frames in one reply (#114)", () => {
+  assert.equal(PROTOCOL.version, 44);
+  assert.equal(PROTOCOL.requests.snapshot.params.frames, "array?");
+});
+
 test("protocol 43: the motion store travels in put_images and get_state (#109)", () => {
-  assert.equal(PROTOCOL.version, 43);
   assert.equal(PROTOCOL.requests.put_images.params.motion, "string?");
   assert.equal(PROTOCOL.shapes.Sprite.motion, "string?");
 });

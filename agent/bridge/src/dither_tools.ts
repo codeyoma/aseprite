@@ -89,10 +89,11 @@ export const DITHER_TOOLS: Tool[] = [
         : await resolvePalette(input.palette ?? "sprite", doc);
       if (!palette?.length) return failure(`No palette${input.palette ? ` named ${input.palette}` : ""}.`);
       const frames = await doc.frames(input.frames);
-      for (const f of frames) {
-        const out = ditherToPalette(await doc.pixels(layer, f), palette, (input.pattern ?? "bayer4") as Pattern, input.strength ?? 1);
-        await doc.putImage(out, { newLayer: `dithered ${layer}`, above: layer, hideSource: true, frame: f });
-      }
+      const imgs = await doc.pixelsMany(layer, frames);
+      await doc.putImages(frames.map((f, i) => ({
+        image: ditherToPalette(imgs[i], palette, (input.pattern ?? "bayer4") as Pattern, input.strength ?? 1),
+        newLayer: `dithered ${layer}`, above: layer, hideSource: true, frame: f,
+      })), { label: "Dither to palette" });
       return { content: [text(`Dithered ${layer} to ${palette.length} colors (${input.pattern ?? "bayer4"}) in ${frames.length} frame(s) on 'AI: dithered ${layer}'; the original is hidden.`)] };
     },
   },

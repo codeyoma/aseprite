@@ -200,4 +200,27 @@ do
   si:close()
 end
 
+-- #114: Image:diff against the Lua walk (step capture's measure and diff image).
+do
+  local a, b = Image(9, 7, ColorMode.RGB), Image(9, 7, ColorMode.RGB)
+  for y = 0, 6 do for x = 0, 8 do a:drawPixel(x, y, pc.rgba(x * 20, y * 30, 90, (x + y) % 3 == 0 and 0 or 255)) end end
+  b:drawImage(a)
+  b:drawPixel(2, 1, pc.rgba(255, 255, 255, 255))
+  b:drawPixel(7, 5, pc.rgba(0, 0, 0, 255))
+  b:drawPixel(0, 0, pc.rgba(1, 2, 3, 0)) -- transparent in both: equal
+  local changed, bounds, img = b:diff(a, true)
+  check("diff: count", changed == 2, changed)
+  check("diff: bounds", bounds and bounds.x == 2 and bounds.y == 1 and bounds.width == 6 and bounds.height == 5, bounds and json.encode(bounds))
+  check("diff: red at a change, faded elsewhere", pc.rgbaR(img:getPixel(2, 1)) == 255 and pc.rgbaA(img:getPixel(2, 1)) == 255
+    and pc.rgbaA(img:getPixel(1, 0)) == 255 // 3)
+  check("diff: equal images", (a:diff(a)) == 0 and select(2, a:diff(a)) == nil)
+  check("diff: sizes must match", fails(function() a:diff(Image(2, 2, ColorMode.RGB)) end, "same size"))
+  -- The Lua walk (stock Aseprite) agrees with the native one.
+  local native, lua, luaDiff = StepCapture.measure(a, b), StepCapture.measureLua(a, b), StepCapture.diffLua(a, b)
+  check("measure: native and Lua agree", native.changed == lua.changed and lua.changed == luaDiff.changed
+    and native.bounds.x == lua.bounds.x and native.bounds.width == lua.bounds.width and native.bounds.height == luaDiff.bounds.height,
+    native.changed .. " vs " .. lua.changed)
+  check("diff image: native and Lua agree", StepCapture.diff(a, b).image:isEqual(luaDiff.image))
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

@@ -9,6 +9,7 @@
 // op grammar lives in the description: a full JSON Schema union of 16 ops
 // would triple the tool's size in every model call. run() checks the strict
 // schema below, so mistakes are still caught before anything is sent.
+import { documentOf } from "./document.js";
 import * as z from "zod/v4";
 import { checkContent, snapshotContent } from "./core_tools.js";
 import { failure, text, type Tool, type ToolResult } from "./tool.js";
@@ -115,8 +116,8 @@ export const APPLY_TOOLS: Tool[] = [
     async run({ ops, dry_run, label, look, check }, ctx) {
       const problems = checkOps(ops);
       if (problems.length) return failure(`Nothing changed. Fix these ops:\n${problems.map((p) => `- ${p}`).join("\n")}`);
-      const { result } = await ctx.request("apply", { ops, dry_run: !!dry_run, label }, 120_000);
-      const out = formatApply(result);
+      // Through the Document module (#114), so its cached state is refreshed after the change.
+      const out = formatApply(await documentOf(ctx).apply(ops, { dryRun: !!dry_run, label }));
       if (out.isError || dry_run) return out;
       if (look) out.content.push(...(await snapshotContent(ctx, look === "filmstrip" ? { view: "filmstrip" } : {})).content);
       if (check) out.content.push(...(await checkContent(ctx, {})).content);

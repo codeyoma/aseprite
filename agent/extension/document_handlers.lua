@@ -529,6 +529,21 @@ function M.new(opts)
   end
 
   handlers.snapshot = function(params)
+    -- Several frames in one reply (#114): their RGBA one after another in one binary frame.
+    if params.frames ~= nil then
+      if type(params.frames) ~= "table" or #params.frames == 0 or #params.frames > 64 then
+        error("frames must list 1 to 64 frame numbers")
+      end
+      local parts, header, list = {}, nil, {}
+      for i, f in ipairs(params.frames) do
+        if math.type(f) ~= "integer" then error("frames[" .. i .. "] must be a whole frame number") end
+        local h, bytes = snapshot{ layer = params.layer, frame = f }
+        header = header or h
+        parts[#parts + 1] = bytes
+        list[#list + 1] = f
+      end
+      return { width = header.width, height = header.height, frames = list, layer = params.layer }, table.concat(parts)
+    end
     return snapshot(params)   -- header, raw RGBA bytes
   end
 

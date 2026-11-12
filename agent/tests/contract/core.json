@@ -56,7 +56,10 @@
         { "request": "snapshot", "params": { "frame": 1 }, "result": { "width": 3, "height": 1, "frame": 1 } },
         { "request": "snapshot", "params": { "layer": "HG" }, "error": "Snapshot of a group layer is not supported" },
         { "request": "snapshot", "params": { "frame": 2 }, "error": "Frame 2 is out of range (1-1)" },
-        { "request": "snapshot", "params": { "layer": "Nope" }, "error": "Layer not found: Nope" }
+        { "request": "snapshot", "params": { "layer": "Nope" }, "error": "Layer not found: Nope" },
+        { "request": "snapshot", "params": { "frames": [1, 1] }, "result": { "width": 3, "height": 1, "frames": [1, 1] } },
+        { "request": "snapshot", "params": { "frames": [] }, "error": "frames must list 1 to 64 frame numbers" },
+        { "request": "snapshot", "params": { "frames": [1, 2] }, "error": "Frame 2 is out of range (1-1)" }
       ]
     },
     {

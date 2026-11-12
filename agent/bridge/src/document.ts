@@ -221,6 +221,8 @@ export interface Document {
   frames(spec?: unknown): Promise<number[]>;
   /** A layer's pixels at sprite size (or the whole sprite when no layer). */
   pixels(layer: string | undefined, frame?: number): Promise<Rgba>;
+  /** The same for several frames in one request per 64 frames (#114), in the order given. */
+  pixelsMany(layer: string | undefined, frames: number[]): Promise<Rgba[]>;
   putImage(img: Rgba, o?: PutImage): Promise<{ layer: string; name: string }>;
   /**
    * Several images and timeline edits in one undo step (PutImagesOptions): palette, inserts, frames at the
@@ -387,9 +389,9 @@ export function documentOf(aseprite: AsepriteRequester): Document {
     cached = undefined;
   };
   /** A write request: the cached info is stale after it (even when it failed halfway). */
-  const write = async (method: string, params: Record<string, unknown>) => {
+  const write = async (method: string, params: Record<string, unknown>, timeoutMs?: number) => {
     try {
-      return (await aseprite.request(method, params)).result;
+      return (await aseprite.request(method, params, timeoutMs)).result;
     } finally {
       wrote();
     }
@@ -406,6 +408,23 @@ export function documentOf(aseprite: AsepriteRequester): Document {
     async frames(spec) {
       const i = await info();
       return resolveFrames(spec, i.durations.length, i.frame);
+    },
+    async pixelsMany(layer, frames) {
+      // Several frames in one request (#114), at most 64 per request; one image each, in order.
+      const out: Rgba[] = [];
+      for (let i = 0; i < frames.length; i += 64) {
+        const chunk = frames.slice(i, i + 64);
+        const { result, binary } = await aseprite.request("snapshot", { layer, frames: chunk });
+        if (!binary) throw new Error("Aseprite sent no pixel data");
+        const size = result.width * result.height * 4;
+        if (binary.length !== size * chunk.length) throw new Error(`Aseprite sent ${binary.length} bytes for ${chunk.length} frames of ${result.width}x${result.height}`);
+        for (let k = 0; k < chunk.length; k++) {
+          const img = { width: result.width, height: result.height, data: new Uint8Array(binary.subarray(k * size, (k + 1) * size)) };
+          checkSize(img, "snapshot");
+          out.push(img);
+        }
+      }
+      return out;
     },
     async pixels(layer, frame) {
       const { result, binary } = await aseprite.request("snapshot", { layer, frame });
@@ -500,7 +519,7 @@ export function documentOf(aseprite: AsepriteRequester): Document {
       return write("set_slice", { name: o.name, x: o.x ?? 0, y: o.y ?? 0, w: o.w ?? size!.width, h: o.h ?? size!.height, center: o.center });
     },
     async apply(ops, o = {}) {
-      const r = await write("apply", { ops, dry_run: !!o.dryRun, label: o.label });
+      const r = await write("apply", { ops, dry_run: !!o.dryRun, label: o.label }, 120_000);
       return { ...r, errors: r.errors ?? [], changes: r.changes ?? [], layers: r.layers ?? [] };
     },
     drawSwatches(colors, o = {}) {

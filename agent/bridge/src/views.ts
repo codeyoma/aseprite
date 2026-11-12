@@ -265,8 +265,7 @@ async function filmstrip(doc: ReturnType<typeof documentOf>, info: SpriteInfo, f
   const { width: w, height: h } = info;
   const layout = filmstripLayout(frames.length, w, h, input.scale);
   const picked = frames.slice(0, layout.shown);
-  const images = [];
-  for (const f of picked) images.push(await doc.pixels(input.layer, f));
+  const images = await doc.pixelsMany(input.layer, picked);
   const durations = picked.map((f) => info.durations[f - 1]);
   // Mixed timing (holds, hit-stops, fast smears) is part of the motion, so each frame shows its ms then.
   const mixed = durations.some((d) => d !== durations[0]);
@@ -326,8 +325,7 @@ async function trails(doc: ReturnType<typeof documentOf>, info: SpriteInfo, inpu
   const report = await trackClip(doc, v, parts);
   const { width: w, height: h } = info;
   const s = Math.max(2, Math.min(input.scale ?? Math.floor(VIEW_TARGET / Math.max(w, h)), Math.floor(VIEW_MAX / Math.max(w, h))));
-  const frames = [];
-  for (const f of v.frames) frames.push(await doc.pixels(input.layer, f));
+  const frames = await doc.pixelsMany(input.layer, v.frames);
   const layers = frames.slice(1).map((img) => ({ image: ghost(img, { r: 140, g: 140, b: 170, a: 255 }, 255), opacity: 70 }));
   const art = composeNormal([...layers, { image: frames[0], opacity: 255 }], w, h);
   const big = scale(flatten(art, SHEET_BACKDROP), s);

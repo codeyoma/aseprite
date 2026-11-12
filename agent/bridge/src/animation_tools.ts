@@ -143,16 +143,14 @@ export const ANIMATION_TOOLS: Tool[] = [
       }
       const v = store.view(tag.name);
       if (!v) return failure(`No clip for "${tag.name}": plan one first (motion_clip action 'plan').`);
+      // Every frame of the tag in one request (#114): "" for an empty frame, else its bytes as a key.
       const images = new Map<number, string>();
-      const art = async (f: number) => {
-        if (!images.has(f)) {
-          const img = await doc.pixels(undefined, f);
-          let opaque = 0;
-          for (let i = 3; i < img.data.length; i += 4) if (img.data[i] >= 128) opaque++;
-          images.set(f, opaque ? Buffer.from(img.data).toString("base64") : "");
-        }
-        return images.get(f)!;
-      };
+      (await doc.pixelsMany(undefined, v.frames)).forEach((img, i) => {
+        let opaque = 0;
+        for (let k = 3; k < img.data.length; k += 4) if (img.data[k] >= 128) opaque++;
+        images.set(v.frames[i], opaque ? Buffer.from(img.data).toString("base64") : "");
+      });
+      const art = async (f: number) => images.get(f) ?? "";
       const walk = v.clip.kind === "walk" || v.clip.kind === "run";
       const walkProblems = async (contactsOnly: boolean): Promise<string | undefined> => {
         if (!walk) return undefined;

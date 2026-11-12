@@ -274,14 +274,16 @@ export async function measureWalk(doc: Document, input: WalkInput, stored: Parti
     });
   }
   const cycle: CycleReading[] = [];
-  for (let frame = tag.from; frame <= (o.contactsOnly ? tag.from - 1 : tag.to); frame++) {
-    const whole = await doc.pixels(undefined, frame);
-    const top = silhouette(whole, frame).bounds?.[1];
-    const size = async (l: LimbSelector) => {
-      const img = l.layer ? await doc.pixels(l.layer, frame) : whole;
-      return fromTop(limbMask(img, l), img.width).filter(Boolean).length;
-    };
-    cycle.push({ frame, top, arm: await size(contract.nearArm), leg: await size(contract.nearLeg) });
+  // The whole cycle, each source in one request (#114).
+  const cycleFrames = o.contactsOnly ? [] : Array.from({ length: tag.to - tag.from + 1 }, (_, i) => tag.from + i);
+  if (cycleFrames.length) {
+    const wholes = await doc.pixelsMany(undefined, cycleFrames);
+    const of = async (l: LimbSelector) => (l.layer ? await doc.pixelsMany(l.layer, cycleFrames) : wholes);
+    const arms = await of(contract.nearArm), legs = await of(contract.nearLeg);
+    const size = (img: Rgba, l: LimbSelector) => fromTop(limbMask(img, l), img.width).filter(Boolean).length;
+    cycleFrames.forEach((frame, i) => cycle.push({
+      frame, top: silhouette(wholes[i], frame).bounds?.[1], arm: size(arms[i], contract.nearArm), leg: size(legs[i], contract.nearLeg),
+    }));
   }
   const verdict = judgeWalk(readings);
   const more = o.contactsOnly ? [] : judgeCycle(cycle, contract.contacts).errors;
