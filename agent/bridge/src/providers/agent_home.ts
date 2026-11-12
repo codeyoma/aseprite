@@ -12,20 +12,29 @@ import { sessionDir } from "../session.js";
 export const CODEX_KEPT_KEYS = ["model", "model_provider", "model_context_window", "model_auto_compact_token_limit",
   "model_reasoning_effort", "model_reasoning_summary", "service_tier", "model_verbosity"];
 
+/** Reasoning efforts at or below the agent's default, which a user's config keeps; higher ones are capped. */
+const CODEX_EFFORTS_KEPT = ["none", "minimal", "low", "medium"];
+/** The agent's default effort: an Aseprite turn makes 20-40 tool calls, and xhigh made a 6-frame walk take over 10 minutes. */
+export const CODEX_AGENT_EFFORT = "medium";
+
 /**
  * The agent's Codex config: the kept top-level keys of the user's config.toml
  * (everything before the first [table]), nothing else: no MCP servers,
- * plugins, notify hooks or marketplaces. ASEPRITE_AGENT_CODEX_EFFORT overrides
- * the reasoning effort (an xhigh default makes every turn slow).
+ * plugins, notify hooks or marketplaces. The reasoning effort is the user's when it is at most medium, else medium
+ * (a coding default of xhigh makes every turn slow); ASEPRITE_AGENT_CODEX_EFFORT sets it outright.
  */
 export function leanCodexConfig(userToml: string, effort = process.env.ASEPRITE_AGENT_CODEX_EFFORT): string {
   const out: string[] = [];
+  let userEffort: string | undefined;
   for (const line of userToml.split("\n")) {
     if (/^\s*\[/.test(line)) break;
-    const m = /^\s*([A-Za-z0-9_]+)\s*=/.exec(line);
-    if (m && CODEX_KEPT_KEYS.includes(m[1]) && !(effort && m[1] === "model_reasoning_effort")) out.push(line.trim());
+    const m = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/.exec(line);
+    if (!m || !CODEX_KEPT_KEYS.includes(m[1])) continue;
+    if (m[1] === "model_reasoning_effort") userEffort = m[2].trim().replace(/^["']|["']$/g, "");
+    else out.push(line.trim());
   }
-  if (effort) out.push(`model_reasoning_effort = ${JSON.stringify(effort)}`);
+  const chosen = effort || (userEffort && CODEX_EFFORTS_KEPT.includes(userEffort) ? userEffort : CODEX_AGENT_EFFORT);
+  out.push(`model_reasoning_effort = ${JSON.stringify(chosen)}`);
   return out.join("\n") + "\n";
 }
 

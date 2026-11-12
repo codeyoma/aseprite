@@ -1,0 +1,131 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: b254a879a
+date: "2026-11-12T01:23:18.485Z"
+seconds: 128
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 93
+    header: "Claude · animate"
+    tools:
+      - tool: Look at the sprite
+        status: failed
+      - tool: "Read guide: anim.timing.walk"
+        status: failed
+      - tool: "Read guide: anim.walk.limbs"
+        status: failed
+      - tool: Inspect pixels
+        status: failed
+      - tool: Look at the sprite
+        status: ok
+      - tool: "Read guide: anim.timing.walk"
+        status: ok
+      - tool: "Read guide: anim.walk.limbs"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw walk cycle parts
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+    reply: "I'll start by looking at the character and reading the walk timing rules.\nRough motion reads. Now I'll measure it:\nwalk_check passes. The only warnings flag the eye pixel, which is on purpose. Last, a fresh critic checks whether the near and far limbs read correctly:\nI made a 6-frame **walk** cycle facing right. Both automated checks pass: `walk_check` says ok, so the arms swing opposite the legs. In a separate review, a reviewer who hadn't seen the request picked out the near and far arms and legs correctly.\n\nYour character had no arms, so I added them. Everything is on part layers in a new group: far arm, far leg, body, near leg and [near arm](aseprite://layer/L98). [Hero](aseprite://layer/L8) is unchanged and hidden.\n\n**Colors:** the near arm is light blue (#8cc8ff) and the near leg kee"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 35
+    header: Claude
+    tools:
+      - tool: Add idle loop
+        status: ok
+      - tool: Read the timeline
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+    reply: "The check says the walk tag may now include frames 7–10, so I'll check the timeline.\nI added a 4-frame idle loop as frames 7–10, tagged **idle**, on the same part layers. The character stands with arms at the sides, legs straight and feet planted.\n\n**Frames:**\n- **7, rest (400 ms):** the neutral standing pose.\n- **8, breathe out (200 ms):** the head drops 1 px.\n- **9, low point (400 ms):** the head and arms are both 1 px down.\n- **10, breathe in (200 ms):** the head comes back up while the arms are still down. It then loops back to frame 7.\n\nOne loop is 1.2 s.\n\nAdding the frames also stretched the walk tag over frames 7–10, so I set it back to 1–6. walk_check still passes, and there are no repeated frames or foot jitter. The check flags frames 7 and 9 for being longer than the others; thos"
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 40
+  scores:
+    readability: 3
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 3
+  overall: 2.2
+  note: "The six walk poses show opposing arm and leg swings, followed by a restrained four-frame breathing bob. Clean pixel clusters preserve the character, but abrupt pose transitions make the walk feel stiff and light on weight."

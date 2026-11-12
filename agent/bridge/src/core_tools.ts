@@ -233,7 +233,8 @@ export const CORE_TOOLS: Tool[] = [
     description:
       "Read a region of the sprite (or one layer) as a text grid, at most 16384 pixels per call. In indexed sprites " +
       "each pixel is its palette index; in RGB sprites each color gets a short key. A legend maps keys to hex. " +
-      "'.' is transparent and '-' is outside the canvas. Rows run top to bottom starting at y.",
+      "'.' is transparent and '-' is outside the canvas. Rows run top to bottom starting at y. To compare poses, " +
+      "read several frames in one call with frames: [1, 4] (the pixel limit is per frame).",
     input: z.object({
       x: z.number().int().optional().describe("Left edge in sprite pixels. Default 0."),
       y: z.number().int().optional().describe("Top edge in sprite pixels. Default 0."),
@@ -241,22 +242,16 @@ export const CORE_TOOLS: Tool[] = [
       height: z.number().int().min(1).optional().describe("Default: to the bottom edge."),
       layer: z.string().optional().describe("Read only this layer. Default: all visible layers composited."),
       frame: z.number().int().min(1).optional().describe("1-based frame. Default: active frame."),
+      frames: z.array(z.number().int().min(1)).min(1).max(12).optional()
+        .describe("Several 1-based frames, each returned as its own grid with its own legend (instead of frame)."),
     }),
     kind: "read",
-    label: () => "Inspect pixels",
-    async run(args, ctx) {
-      const { result } = await ctx.request("read_pixels", args);
-      const legend = Object.entries(result.legend ?? {})
-        .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
-        .map(([k, v]) => `${k}=${v}`)
-        .join("  ");
-      const width = String(result.y + result.rows.length - 1).length;
-      const rows = (result.rows as string[]).map((r, i) => `${String(result.y + i).padStart(width)}| ${r}`);
-      const header =
-        `Region x=${result.x} y=${result.y} ${result.width}x${result.height}, frame ${result.frame}` +
-        (result.layer ? `, layer "${result.layer}"` : "") +
-        `. Keys: ${result.keys}. '.'=transparent '-'=outside canvas.`;
-      return { content: [text([header, `Legend: ${legend || "(none)"}`, ...rows].join("\n"))] };
+    label: (a) => (a.frames?.length > 1 ? `Inspect pixels in ${a.frames.length} frames` : "Inspect pixels"),
+    async run({ frames, ...args }, ctx) {
+      if (!frames?.length) return { content: [text(await readGrid(args, ctx))] };
+      const grids: string[] = [];
+      for (const frame of frames) grids.push(await readGrid({ ...args, frame }, ctx));
+      return { content: [text(grids.join("\n\n"))] };
     },
   },
   {
@@ -345,6 +340,22 @@ export const CORE_TOOLS: Tool[] = [
 
 /** An execute_lua result: output, value or error. */
 /** snapshot's result: one frame as a PNG, or a review view. */
+/** One read_pixels request as text: a header, the legend and the labelled rows. */
+async function readGrid(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+  const { result } = await ctx.request("read_pixels", args);
+  const legend = Object.entries(result.legend ?? {})
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(([k, v]) => `${k}=${v}`)
+    .join("  ");
+  const width = String(result.y + result.rows.length - 1).length;
+  const rows = (result.rows as string[]).map((r, i) => `${String(result.y + i).padStart(width)}| ${r}`);
+  const header =
+    `Region x=${result.x} y=${result.y} ${result.width}x${result.height}, frame ${result.frame}` +
+    (result.layer ? `, layer "${result.layer}"` : "") +
+    `. Keys: ${result.keys}. '.'=transparent '-'=outside canvas.`;
+  return [header, `Legend: ${legend || "(none)"}`, ...rows].join("\n");
+}
+
 export async function snapshotContent(ctx: ToolContext, input: any): Promise<ToolResult> {
   if (input.view) return snapshotView(ctx, input);
   const { frame, layer, scale, background } = input;

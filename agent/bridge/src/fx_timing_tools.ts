@@ -328,7 +328,7 @@ export const FX_TIMING_TOOLS: Tool[] = [
           (plan.offsetMs > 0 ? ` Its first ${plan.offsetMs} ms fall before the range and are not shown.` : ""));
       }
       if (plan.extended) lines.push(`It outlasts the range, so ${plan.extended} frame${plan.extended === 1 ? "" : "s"} of ${stepMs} ms were inserted after it (the character's cels linked to its last frame).`);
-      if (plan.cutMs) lines.push(`It outlasts the range by ${plan.cutMs} ms, which were cut (overflow 'extend' adds frames for them instead).`);
+      if (plan.cutMs) lines.push(`It outlasts the range by ${plan.cutMs} ms, which were cut, so its fade-out is lost (overflow 'extend' adds frames for them, the character holding its last pose).`);
       const grown = tagChanges(info.tags, after.tags);
       if (grown.length) lines.push(`Tags: ${grown.join(", ")}.`);
       lines.push(`Layers: ${res.layers.map((l) => (l.name.endsWith(" glow") ? `${l.name} (Addition)` : l.name)).join(", ")}.${paletteNote} One undo step.`);

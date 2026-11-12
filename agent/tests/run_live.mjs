@@ -37,9 +37,8 @@ const root = join(here, "..", "..");
 // 4-color reference PNG; name:value replaces the plain ones in order. Tests that don't take a provider run once.
 const ARGS = {
   export: ["@tmp", "godot"], masks_cutout: ["@tmp"], model: ["@tmp"], normals: ["@tmp"], recreate: ["@tmp"], concept: ["@tmp"],
-  sheet: ["@tmp"], tileset: ["@tmp"], voxels: ["@tmp"], fx_export: ["@tmp"], color_skills: ["@ref"],
-  export: ["@tmp", "godot"], masks_cutout: ["@tmp"], model: ["@tmp"], normals: ["@tmp"], recreate: ["@tmp"],
-  sheet: ["@tmp"], studio: ["@tmp"], image_attach: ["@tmp"], import_animation: ["@tmp"], tileset: ["@tmp"], voxels: ["@tmp"], fx_export: ["@tmp"], color_skills: ["@ref"],
+  sheet: ["@tmp"], studio: ["@tmp"], image_attach: ["@tmp"], import_animation: ["@tmp"], tileset: ["@tmp"], voxels: ["@tmp"],
+  fx_export: ["@tmp"], color_skills: ["@ref"],
 };
 const NO_PROVIDER = new Set(["permission", "daemon", "eval", "fx_export", "fx_recipe", "check_expect", "lospec"]);
 // Environment some tests need; "@tmp" is a fresh scratch folder.

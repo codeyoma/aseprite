@@ -35,14 +35,18 @@ await lua(attack);
 const before = await info();
 await chat("Add a slash effect from the FX library to the attack, hitting on frame 4, with a 120 ms hit-stop");
 const a = await info();
+// The turn's tool steps and reply, for the soft checks' detail.
+const turn = ((await lua("return AsepriteAgent.entries()")) ?? []).filter((e) => e.kind === "tool" || e.kind === "text").map((e) => (e.text ?? "").slice(0, 200));
 const fxLayer = a.layers.find((n) => /^AI: fx /.test(n));
 check("an AI: fx layer exists", !!fxLayer, a.layers);
 // fx_overlay with the tag cuts or retimes inside it, so only the hit-stop changes the total; extending past the
 // tag (overflow 'extend') would add whole effect frames, which this check allows one of for rounding.
 const grew = a.total - before.total;
 check("the duration grew by at least the 120 ms hit-stop", grew >= 120 - step, { before: before.total, after: a.total });
-// Exactly 120 ms unless the agent also chose to extend or retime the effect.
-soft("the duration grew by 120 ms (within a frame of rounding)", Math.abs(grew - 120) <= step, { before: before.total, after: a.total });
+// 120 ms with the fade cut, or 120 ms plus the frames overflow 'extend' added so the fade finishes (pixel-fx tells
+// the agent to extend a burst that outlasts the tag): then the attack tag grew over them.
+const extended = a.frames > 6 && a.tags.includes(`attack 1-${a.frames}`);
+soft("the duration grew by 120 ms, or more with the fade extended", Math.abs(grew - 120) <= step || (extended && grew > 120), { before: before.total, after: a.total, turn });
 const k = await c.call("check", {});
 check("check finds no errors", /\b0 errors\b/.test(k.content?.[0]?.text ?? ""), (k.content?.[0]?.text ?? "").split("\n")[0]);
 soft("a melee slash effect", /slash|cleave|claw/.test(fxLayer ?? ""), fxLayer);

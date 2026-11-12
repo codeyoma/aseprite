@@ -928,6 +928,7 @@
     "label": "Inspect pixels",
     "input": [
       "frame",
+      "frames",
       "height",
       "layer",
       "width",
@@ -1018,7 +1019,7 @@
     "name": "rotate_layer",
     "title": "Rotate cleanly",
     "kind": "edit",
-    "label": "Rotate  °",
+    "label": "Rotate  \u00b0",
     "input": [
       "angle",
       "frames",

@@ -2,6 +2,17 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Codex at medium effort, read_pixels over frames, fx_overlay's cut note
+- **How:**
+  - `leanCodexConfig` (`bridge/src/providers/agent_home.ts`) keeps the user's `model_reasoning_effort` only when it is at most `medium` (`CODEX_EFFORTS_KEPT`); a higher one, or none, becomes `CODEX_AGENT_EFFORT` (`medium`). `ASEPRITE_AGENT_CODEX_EFFORT` still sets it outright.
+  - `read_pixels` takes `frames: [..]` (up to 12): one grid per frame, each with its own legend, in one tool call (`readGrid` in `core_tools.ts`).
+  - fx_overlay's reply for a cut one-shot now says the fade-out is lost, matching `pixel-fx` (extend a burst that outlasts the tag). `fx_overlay_live` accepts 120 ms or an extended fade, and prints the turn's steps on a soft failure.
+- **Why:**
+  - Codex inherited the user's coding default (`xhigh`). An Aseprite turn makes 20-40 tool calls, so the rules (6-frame walk) and tileset (47 tiles) live tests ran past their 600 s limit; at `medium` both passed in 370 s and 405 s with every check. Codex's second opinion agreed on an agent default with the override kept.
+  - The Codex animate benchmark read pixels 7 times in a row, one frame per call; each model round trip costs far more than the read.
+  - Both providers extended the slash by about 390 ms; that is what the skill asks for, so the test's expectation was wrong, not the agent.
+- **Architecture:** provider config and one tool input; no wire change.
+
 ## Chains run without stopping; the brief is reply text (studio live fix)
 - **How:** `ask_user`'s description no longer gives "how finely to split a character into layers" as its example, and says to take the recommended answer when the user asked for a whole job in one go. `character-motions` step 2 uses 8 rough layers without asking on a studio run or a whole job; `studio` step 5 takes each stage's recommended answer. The chat rules (`CHAT_RULES` in `bridge/src/chat.ts`) say the user never sees thinking, so a brief or chain goes in reply text; `brief` and `studio` say the same. `fx_live` accepts any `AI: fx` layer (the library `hit-spark` is a soft check), and `studio_live` reads the turn from the first user entry.
 - **Why:** after #88 `ask_user` is a core tool that is always listed, and its example primed the layer question, so the studio chain stopped and waited in a one-turn test. Claude wrote the brief only in thinking blocks (mapped to `thought` entries), which the user does not read; skill wording alone did not change that, the system prompt did. A recipe-built hit spark is a valid result of the fx prompt.
@@ -308,7 +319,7 @@ The [research note](sprite-animation-ai-research.md) compares fixed character re
 ## Lean agent sessions (#87)
 - **How:**
   - Claude sessions get `settingSources: []`, `strictMcpConfig: true` and `ENABLE_CLAUDEAI_MCP_SERVERS=false` (`providers/agent_home.ts` `LEAN_CLAUDE_OPTIONS`). So there are no user settings, hooks, plugins, skills, CLAUDE.md, other MCP servers or claude.ai connectors; only the aseprite server the session passes.
-  - Codex runs with a private `CODEX_HOME` (`~/.aseprite-agent/codex-home`). It holds a link to the user's `auth.json` and a `config.toml` with only the user's model keys (`CODEX_KEPT_KEYS`). `ASEPRITE_AGENT_CODEX_EFFORT` overrides the reasoning effort.
+  - Codex runs with a private `CODEX_HOME` (`~/.aseprite-agent/codex-home`). It holds a link to the user's `auth.json` and a `config.toml` with only the user's model keys (`CODEX_KEPT_KEYS`). `ASEPRITE_AGENT_CODEX_EFFORT` overrides the reasoning effort (since the medium-effort entry above, the default is capped at `medium`).
   - Warm start: `chat.warm` (sent when the panel connects and after each turn) has the runtime start the agent process and a spare session for the next new conversation (`AcpRunner.warm`, used by `openSession` without an id).
   - Ask/Plan → Agent: a conversation whose last turn was read-only gets `AGENT_AGAIN_NOTE` once. Codex's approval review had rejected Agent edits because of the earlier Ask note.
 - **Why:**

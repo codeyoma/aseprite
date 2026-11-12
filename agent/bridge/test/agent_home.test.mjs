@@ -20,7 +20,11 @@ model = "not-top-level"
 `;
 
 test("the Codex config keeps the model settings and nothing else", () => {
-  assert.equal(leanCodexConfig(USER, undefined), 'model = "gpt-6.1-sol"\nmodel_reasoning_effort = "xhigh"\nservice_tier = "priority"\n');
+  // The user's xhigh is capped at the agent's medium; a lower effort is kept; the override wins.
+  assert.equal(leanCodexConfig(USER, undefined), 'model = "gpt-6.1-sol"\nservice_tier = "priority"\nmodel_reasoning_effort = "medium"\n');
+  assert.equal(leanCodexConfig(USER.replace('"xhigh"', '"low"'), undefined), 'model = "gpt-6.1-sol"\nservice_tier = "priority"\nmodel_reasoning_effort = "low"\n');
+  assert.equal(leanCodexConfig("", undefined), 'model_reasoning_effort = "medium"\n');
+  assert.equal(leanCodexConfig(USER, "xhigh"), 'model = "gpt-6.1-sol"\nservice_tier = "priority"\nmodel_reasoning_effort = "xhigh"\n');
   assert.equal(leanCodexConfig(USER, "medium"), 'model = "gpt-6.1-sol"\nservice_tier = "priority"\nmodel_reasoning_effort = "medium"\n');
 });
 

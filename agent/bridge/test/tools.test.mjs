@@ -92,6 +92,21 @@ test("read_pixels formats a grid with a legend", async () => {
   assert.deepEqual(lines.slice(2), [" 9| . 0 1", "10| 0 0 ."]);
 });
 
+test("read_pixels reads several frames in one call, one grid each", async () => {
+  const asked = [];
+  const doc = fakeAseprite({
+    read_pixels: (params) => {
+      asked.push(params.frame);
+      return { result: { x: 0, y: 0, width: 1, height: 1, frame: params.frame, keys: "color-key", legend: { "0": "#ff0000" }, rows: ["0"] } };
+    },
+  });
+  const tool = findTool("read_pixels");
+  assert.equal(tool.label({ frames: [1, 4] }), "Inspect pixels in 2 frames");
+  const out = textOf(await runTool(tool, { frames: [1, 4], layer: "Body" }, doc));
+  assert.deepEqual(asked, [1, 4]);
+  assert.match(out, /frame 1[\s\S]*\n\nRegion x=0 y=0 1x1, frame 4/);
+});
+
 test("write_pixels writes back what read_pixels printed, as rows with labels and the Legend line", async () => {
   const { fakeDocument, rect } = await import("./helpers/fake_document.mjs");
   const doc = fakeDocument({ width: 4, height: 3, layers: [{ name: "Body", frames: [rect(4, 3, [1, 1, 2, 1], [255, 0, 0])] }] });
