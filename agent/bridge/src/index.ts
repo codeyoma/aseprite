@@ -19,6 +19,7 @@ import { ChatRunner } from "./chat.js";
 import { spawn } from "node:child_process";
 import { startHttpEndpoint } from "./http.js";
 import { CodexImageGenerator, ImageJobs } from "./image_gen.js";
+import { ComfyImageGenerator, comfyConfig } from "./comfy.js";
 import { SavedCommands } from "./saved_commands.js";
 import { createMcpServer, VERSION } from "./server.js";
 import { homeBelongsToAnother, newToken, pinnedBridge, recordBridge, sessionDir } from "./session.js";
@@ -58,7 +59,9 @@ async function main() {
   let subAgents: SubAgents | undefined;
   // ask needs the chat runner, made after the endpoint it uses.
   let chatRunner: ChatRunner | undefined;
-  const images = new ImageJobs(new CodexImageGenerator());
+  // comfy.json's imageWorkflow (#112) makes generate_image and generate_character run the user's ComfyUI.
+  const comfyImages = comfyConfig().imageWorkflow;
+  const images = new ImageJobs(comfyImages ? new ComfyImageGenerator(comfyImages) : new CodexImageGenerator());
   const endpoint = await startHttpEndpoint(link, newToken(), {
     commands, subAgents: () => subAgents, critic: () => subAgents, images,
     ask: (chatId, kind, title) => chatRunner?.ask(chatId, kind, title) ?? Promise.resolve(false),

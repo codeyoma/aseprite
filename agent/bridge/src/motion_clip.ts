@@ -50,6 +50,8 @@ export const keySchema = z.object({
   pose: z.string().optional(),
   /** A hold: this key may repeat the key before it. */
   hold: z.boolean().optional(),
+  /** Named points of the pose in sprite pixels (#112: from OpenPose keypoints: neck, r_wrist, mid_hip, ...). */
+  landmarks: z.record(z.string(), point).optional(),
 });
 export type ClipKey = z.infer<typeof keySchema>;
 

@@ -155,6 +155,8 @@ export async function liveDocument(c, lua) {
       tags: (a.tags ?? []).map(({ name, from, to, direction }) => ({ name, from, to, direction })),
       slices: a.slices ?? [],
       selection: a.selection,
+      ...(a.pixelSpec ? { spec: a.pixelSpec } : {}),
+      ...(a.motion ? { motion: a.motion } : {}),
       layers,
     };
     sprites.push(sprite);

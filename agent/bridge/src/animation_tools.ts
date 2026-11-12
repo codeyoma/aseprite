@@ -118,7 +118,11 @@ export const ANIMATION_TOOLS: Tool[] = [
         if (keyList?.some((k) => k.frame < tag.from || k.frame > tag.to)) return failure(`Keys must be frames of "${tag.name}" (${tag.from}-${tag.to}).`);
         if (input.contacts?.some((f: number) => f < tag.from || f > tag.to)) return failure(`Contacts must be frames of "${tag.name}" (${tag.from}-${tag.to}).`);
         const keys = keyList
-          ? [...keyList].sort((a, b) => a.frame - b.frame).map((k) => ({ at: rel(k.frame), ...(k.pose ? { pose: k.pose } : {}), ...(k.hold ? { hold: true } : {}) }))
+          ? [...keyList].sort((a, b) => a.frame - b.frame).map((k) => {
+            // A key planned again keeps what an import put on it (its landmarks, #112).
+            const was = old?.keys.find((o) => o.at === rel(k.frame));
+            return { ...(was?.landmarks ? { landmarks: was.landmarks } : {}), at: rel(k.frame), ...(k.pose ? { pose: k.pose } : {}), ...(k.hold ? { hold: true } : {}) };
+          })
           : old && !input.kind ? old.keys : defaultKeys(kind, n).map((at) => ({ at }));
         const contacts = input.contacts?.map(rel) ?? old?.contacts ?? defaultContacts(kind, n);
         const v = store.setClip(tag, {

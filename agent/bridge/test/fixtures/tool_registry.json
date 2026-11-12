@@ -151,6 +151,24 @@
     ]
   },
   {
+    "name": "comfy_run",
+    "title": "Run a ComfyUI workflow",
+    "kind": "read",
+    "label": "Run ComfyUI",
+    "input": [
+      "job",
+      "params",
+      "workflow"
+    ]
+  },
+  {
+    "name": "comfy_workflows",
+    "title": "ComfyUI workflows",
+    "kind": "read",
+    "label": "List ComfyUI workflows",
+    "input": []
+  },
+  {
     "name": "concept_spec",
     "title": "Read concept into a pixel spec",
     "kind": "read",
@@ -921,6 +939,25 @@
     "label": "Read pixel spec",
     "input": [
       "spec"
+    ]
+  },
+  {
+    "name": "poses_to_frames",
+    "title": "Poses to frames",
+    "kind": "edit",
+    "label": "Import poses",
+    "input": [
+      "anchor",
+      "character",
+      "colors",
+      "frames",
+      "images",
+      "keypoints",
+      "layer",
+      "masks",
+      "scale",
+      "size",
+      "tag"
     ]
   },
   {

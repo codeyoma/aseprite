@@ -29,6 +29,7 @@ Each skill does one job well. This one picks which skills a request needs, runs 
 | A new character or prop, loosely described | `brief` → `concept` (the image generator, with the user's OK) → new sprite (`recipes`) → draw (`pixel-art`) → `shade-sprite` → `review` |
 | A new animated character | the chain above → `animate` → `review` |
 | A character from part layers, or a new motion for one (attack, guard, run...) | `character-motions` → `review` |
+| Key poses made in ComfyUI (files, or a workflow to run) | `comfyui` → `review` |
 | Art for a game engine | the chains above → `export-game` |
 | An animation of a sprite that exists | `animate` (`parallel-frames` to draw many frames at once) → `retime-animation` if the timing is off → `review` |
 | More facing directions | `make-directions` → `animate` if each direction moves → `review` |

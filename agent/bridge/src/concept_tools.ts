@@ -306,7 +306,7 @@ export const CONCEPT_TOOLS: Tool[] = [
       const count = layers.length + 1;
       const ok = await ctx.ask("image_generator",
         `the image generator for ${count} images (1 master sheet + ${layers.length} layers: ${layers.map((l) => l.name).join(", ")}; ` +
-        `Codex image generation, it uses your Codex plan's limits, several minutes) to make a layered character: ` +
+        `${jobs.generator.describe ?? "Codex image generation, it uses your Codex plan's limits"}, several minutes) to make a layered character: ` +
         (input.subject.length > 200 ? input.subject.slice(0, 200) + "..." : input.subject));
       if (!ok) return failure("The user declined the image generator. Draw the character yourself, and don't ask for it again in this turn.");
       const meta: LayeredMeta = {
@@ -378,7 +378,7 @@ export const CONCEPT_TOOLS: Tool[] = [
       if (running) return imageResult(running.id, await jobs.wait(running, IMAGE_WAIT_MS), running);
       const short = input.prompt.length > 300 ? input.prompt.slice(0, 300) + "..." : input.prompt;
       const ok = await ctx.ask("image_generator",
-        `the image generator (Codex image generation; it uses your Codex plan's limits) to make a rough image for: ${short}`);
+        `the image generator (${jobs.generator.describe ?? "Codex image generation; it uses your Codex plan's limits"}) to make a rough image for: ${short}`);
       if (!ok) return failure("The user declined the image generator. Draw it yourself, and don't ask for it again in this turn.");
       let job;
       try {

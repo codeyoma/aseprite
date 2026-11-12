@@ -44,6 +44,7 @@
     "palette_from_image",
     "palette_swap",
     "pixel_spec",
+    "poses_to_frames",
     "recreate_from_reference",
     "redo",
     "remap_to_palette",

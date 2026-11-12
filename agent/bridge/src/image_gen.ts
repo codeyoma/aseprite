@@ -21,6 +21,8 @@ export interface GeneratedImage {
 
 /** Makes one image for a prompt; rejects with a message for the agent. */
 export interface ImageGenerator {
+  /** Who makes the images, for the consent prompt ("the ComfyUI workflow ..."); default Codex's image generation. */
+  readonly describe?: string;
   /** refs: images the model sees as the reference (a master sheet a layer must match). */
   generate(prompt: string, aspect: Aspect, signal: AbortSignal, refs?: string[]): Promise<GeneratedImage>;
 }
