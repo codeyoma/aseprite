@@ -97,8 +97,29 @@ export function prepare() {
   }
   log("building the bridge");
   const bridgeDir = join(STABLE.src, "agent", "bridge");
-  run("npm", ["ci", "--no-audit", "--no-fund"], bridgeDir);
-  run("npm", ["run", "build"], bridgeDir);
+  // npm ci deletes node_modules first, which Windows refuses while the running bridge's agent (claude.exe) comes from
+  // it (and a refused one leaves node_modules half deleted): only when the dependencies changed or the build fails.
+  const npmCi = () => {
+    try {
+      run("npm", ["ci", "--no-audit", "--no-fund"], bridgeDir);
+    } catch (e) {
+      if (IS_WINDOWS) throw new Error(`${e.message}. Close Aseprite, wait a minute for its bridge to exit, and update again`);
+      throw e;
+    }
+  };
+  const lockChanged = !c.installed || !existsSync(join(bridgeDir, "node_modules")) ||
+    spawnSync("git", ["diff", "--quiet", c.installed, c.available, "--", "agent/bridge/package-lock.json"],
+      { cwd: STABLE.src, windowsHide: true }).status !== 0;
+  if (lockChanged) npmCi();
+  else log("bridge dependencies unchanged");
+  try {
+    run("npm", ["run", "build"], bridgeDir);
+  } catch (e) {
+    if (lockChanged) throw e;
+    log("the bridge build failed: installing its dependencies again");
+    npmCi();
+    run("npm", ["run", "build"], bridgeDir);
+  }
   const prepared = { commit: c.available, needsBuild: c.needsBuild, notes: c.notes, at: new Date().toISOString() };
   writeFileSync(preparedFile, JSON.stringify(prepared, null, 2));
   return { ...c, prepared: true };
