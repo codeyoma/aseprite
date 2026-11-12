@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## main stays official; a workflow syncs it and merges it into agent
+- **How:** `.github/workflows/sync-upstream.yml` (on `agent`, the default branch, so its schedule runs) runs every 6 hours and by hand. It fast-forwards `main` to `aseprite/aseprite` main (never anything else), then merges `main` into `agent` when `agent` lacks it. A conflict, or a refused push, pushes nothing and opens one issue with the local steps. An optional `SYNC_TOKEN` secret (a token with the workflow scope) lets the merge carry upstream workflow changes and starts the agent CI on the merge commit; `GITHUB_TOKEN` can do neither.
+- **Why:** `main` had been pushed to `agent`'s tip by mistake and was restored to the official commit. Keeping `main` a pure mirror keeps upstream updates a plain fast-forward, and the merge brings them to the agent layer without anyone remembering to.
+- **Architecture:** repository automation only; `AGENTS.md` says where agent work goes.
+
 ## Benchmarks can allow the image generator (animate-imagegen, #99)
 - **How:** a benchmark's `allowImageGenerator: true` makes `run_bench.mjs` answer the image generator's consent prompt with Allow (`AsepriteAgent.setPermissionAnswer`, matching "image generator" in the prompt); without it the hook is cleared and the prompt times out as a decline. `animate-imagegen.json` is the Animate benchmark with that flag and "Get the key poses from the image generator" in its first prompt.
 - **Why:** every earlier Animate run drew the keys by hand because nothing answered the prompt, so the generate_character path was never measured. Measured: three runs (Claude x2, Codex) all used it and passed 9/9, in 311-493 s against 128-186 s for Claude by hand, with no gain on motion (2, 2, 1). The base pose that character-motions keeps as frame 1 makes 11 frames, which the judge reads as a mismatch (fit 1-2).

@@ -1,0 +1,97 @@
+# Keeps the fork in step with official Aseprite:
+# - main mirrors upstream (aseprite/aseprite main) and only ever fast-forwards;
+# - agent, where the AI agent layer lives, merges main whenever main moves.
+# It runs on a schedule and by hand (Actions > sync-upstream > Run workflow). If the merge conflicts,
+# or the push is refused, nothing is pushed to agent and an issue explains how to finish the sync locally.
+name: sync-upstream
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      # SYNC_TOKEN (a token with the workflow scope) lets the merge carry upstream changes to .github/workflows and
+      # starts the agent workflow on the merge; without it, GITHUB_TOKEN is used.
+      - uses: actions/checkout@v4
+        with:
+          ref: agent
+          fetch-depth: 0
+          submodules: false
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
+
+      - name: Fetch upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/aseprite/aseprite.git
+          git fetch --no-tags upstream main
+          git fetch --no-tags origin main agent
+
+      - name: Fast-forward main to upstream
+        run: |
+          if git merge-base --is-ancestor origin/main upstream/main; then
+            if [ "$(git rev-parse origin/main)" != "$(git rev-parse upstream/main)" ]; then
+              git push origin upstream/main:refs/heads/main
+              echo "main: $(git rev-parse --short origin/main) -> $(git rev-parse --short upstream/main)" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "main has commits that are not upstream; it is left as it is." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          git fetch --no-tags origin main
+
+      - name: Merge main into agent
+        id: merge
+        run: |
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "agent already contains main ($(git rev-parse --short origin/main))." >> "$GITHUB_STEP_SUMMARY"
+            echo "result=current" >> "$GITHUB_OUTPUT"
+          elif git merge --no-edit -m "Merge official Aseprite main ($(git rev-parse --short origin/main)) into agent" origin/main; then
+            echo "result=merged" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push agent
+        id: push
+        if: steps.merge.outputs.result == 'merged'
+        run: |
+          if git push origin HEAD:refs/heads/agent; then
+            echo "agent: merged main $(git rev-parse --short origin/main) as $(git rev-parse --short HEAD)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "refused=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Report a sync that needs a hand
+        if: steps.merge.outputs.result == 'conflict' || steps.push.outputs.refused == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WHY: ${{ steps.merge.outputs.result == 'conflict' && 'the merge has conflicts' || 'the push was refused (upstream changed .github/workflows, which needs a SYNC_TOKEN secret with the workflow scope)' }}
+        run: |
+          title="Sync: merge official main into agent by hand"
+          if [ -z "$(gh issue list --state open --search "in:title \"$title\"" --json number -q '.[].number')" ]; then
+            gh issue create --title "$title" --body "The scheduled sync could not merge main ($(git rev-parse --short origin/main)) into agent: $WHY.
+
+          Finish it locally:
+
+              git fetch origin
+              git switch agent
+              git merge origin/main
+              # resolve, test (cd agent/bridge && npm test), then
+              git push origin agent
+
+          Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          fi
+          exit 1
