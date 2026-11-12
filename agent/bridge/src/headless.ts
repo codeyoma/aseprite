@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { resolve } from "node:path";
 import type { Reply } from "./aseprite.js";
+import { HIDDEN } from "./platform.js";
 import type { RequestRoute } from "./tool.js";
 import { base64Bytes, checkResult, isRequest, PROTOCOL } from "./protocol.js";
 import { sessionFile } from "./session.js";
@@ -112,7 +113,7 @@ export class HeadlessLink {
   async start(): Promise<void> {
     const { bin, extensionDir } = this.opts;
     const script = resolve(extensionDir, "headless_runner.lua");
-    const child = spawn(bin, ["-b", "--script-param", `ext=${extensionDir}`, "--script", script], { stdio: "pipe" });
+    const child = spawn(bin, ["-b", "--script-param", `ext=${extensionDir}`, "--script", script], { ...HIDDEN, stdio: "pipe" });
     this.child = child;
     child.stderr.on("data", (d) => this.stderr.push(d.toString()));
     let hello: (h: NonNullable<HeadlessReply["hello"]>) => void = () => {};

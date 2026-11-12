@@ -65,8 +65,9 @@ local function typeName(v)
 end
 M.typeName = typeName
 
+-- RFC 3986 unreserved characters by range: %w follows the C locale, which on Windows counts bytes of UTF-8 characters.
 local function urlEncode(s)
-  return (tostring(s):gsub("[^%w%-%._~]", function(c) return string.format("%%%02X", c:byte()) end))
+  return (tostring(s):gsub("[^A-Za-z0-9%-%._~]", function(c) return string.format("%%%02X", c:byte()) end))
 end
 local function urlDecode(s)
   return (tostring(s):gsub("%%(%x%x)", function(h) return string.char(tonumber(h, 16)) end))

@@ -2,20 +2,26 @@
 // sending a prompt from the panel must start `node dist/index.js --daemon`,
 // run the agent, and apply the change.
 // Run with Aseprite open:  node agent/tests/daemon_live.mjs
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { startBridge, textOf, waitForAseprite } from "./mcp_client.mjs";
 
-const dir = join(homedir(), ".aseprite-agent");
+// The instance's agent home (run_live.mjs passes the dev one).
+const dir = process.env.ASEPRITE_AGENT_HOME ?? join(homedir(), ".aseprite-agent");
 const sessionFile = join(dir, "session.json");
 const logFile = join(dir, "daemon.log");
+// The log is appended to across runs: only what this run adds counts.
+const logStart = existsSync(logFile) ? statSync(logFile).size : 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const prompt = "Add a new layer named Shadow directly under the bottom layer, with 50% opacity.";
 
-// 0. Stop background bridges left from earlier runs; they would take the chat.
-import { spawnSync } from "node:child_process";
-spawnSync("pkill", ["-f", "dist/index.js --daemon"]);
+// 0. Stop this home's background bridge left from an earlier run (its session file names it); it would take the
+// chat. Only this one: another instance's daemon is not ours to stop.
+try {
+  const s = JSON.parse(readFileSync(sessionFile, "utf8"));
+  if (s.mode === "daemon") process.kill(s.pid);
+} catch {}
 await sleep(500);
 
 // 1. Schedule a chat 4 s from now, then stop this bridge so none is running.
@@ -48,7 +54,8 @@ if (!daemonPid) process.exit(1);
 let finished = false;
 for (let i = 0; i < 120 && !finished; i++) {
   await sleep(2000);
-  finished = existsSync(logFile) && /chat: claude finished/.test(readFileSync(logFile, "utf8"));
+  // The ACP runtime logs "turn ended"; the stream-json fallback "finished with code".
+  finished = existsSync(logFile) && /chat: claude (\(\w+\) turn ended|finished)/.test(readFileSync(logFile).subarray(logStart).toString("utf8"));
 }
 console.log(finished ? "OK   agent finished in daemon" : "FAIL agent did not finish");
 

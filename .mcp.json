@@ -2,7 +2,7 @@
   "mcpServers": {
     "aseprite": {
       "command": "node",
-      "args": ["agent/bridge/dist/index.js"]
+      "args": ["agent/bridge/dist/index.js", "--dev"]
     }
   }
 }

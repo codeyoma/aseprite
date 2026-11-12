@@ -9,6 +9,7 @@
 #pragma once
 
 #include "os/surface.h"
+#include "text/fwd.h"
 #include "ui/cursor_type.h"
 #include "ui/widget.h"
 
@@ -59,7 +60,16 @@ private:
   void onResize(ui::ResizeEvent& ev) override;
   void onPaint(ui::PaintEvent& ev) override;
 
+  os::SurfaceRef makeSurface(int w, int h, const os::ColorSpaceRef& cs);
+  text::FontRef paintFont();
+
   os::SurfaceRef m_surface;
+  // m_surface knows the screen's subpixel order (Windows ClearType), so text
+  // is drawn with an LCD-edged copy of the font (m_lcdFont, made from
+  // m_lcdFontSource).
+  bool m_lcdText = false;
+  text::FontRef m_lcdFont;
+  text::Font* m_lcdFontSource = nullptr;
   ui::CursorType m_cursorType = ui::kArrowCursor;
 
   // Flag used to indicate that the canvas will scale all the drawing operations

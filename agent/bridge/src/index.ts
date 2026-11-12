@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { join } from "node:path";
 import { AsepriteLink, log, logToFile } from "./aseprite.js";
+import { BACKGROUND, IS_WINDOWS } from "./platform.js";
 import { bridgeMethods } from "./bridge_methods.js";
 import { ChatRunner } from "./chat.js";
 import { spawn } from "node:child_process";
@@ -27,6 +28,14 @@ const DAEMON_IDLE_EXIT_MS = 120_000;
 
 async function main() {
   const daemon = process.argv.includes("--daemon");
+  // Windows: Aseprite starts the daemon with `start "" /B node`, in the console window cmd opened; that window would
+  // stay as long as the daemon runs. Start again in a hidden console and let this one, and the window, close.
+  const hidden = process.env.ASEPRITE_AGENT_HIDDEN === "1";
+  delete process.env.ASEPRITE_AGENT_HIDDEN; // not for the processes this one starts (Aseprite, after an update)
+  if (daemon && IS_WINDOWS && !hidden) {
+    spawn(process.execPath, process.argv.slice(1), { ...BACKGROUND, stdio: "ignore", env: { ...process.env, ASEPRITE_AGENT_HIDDEN: "1" } }).unref();
+    process.exit(0);
+  }
   if (daemon) logToFile(join(sessionDir, "daemon.log"));
   const link = new AsepriteLink();
   link.sessionExtra = { bridgePath: fileURLToPath(import.meta.url), version: VERSION, mode: daemon ? "daemon" : "stdio" };
@@ -38,7 +47,7 @@ async function main() {
     // Aseprite asked for its daemon but started this bridge (a path it remembered): start the pinned one instead.
     const pinned = pinnedBridge()!;
     log(`${sessionDir} belongs to ${pinned}; starting that bridge instead`);
-    spawn(process.execPath, [pinned, "--daemon"], { detached: true, stdio: "ignore", env: process.env }).unref();
+    spawn(process.execPath, [pinned, "--daemon"], { ...BACKGROUND, stdio: "ignore", env: { ...process.env, ASEPRITE_AGENT_HIDDEN: "1" } }).unref();
     process.exit(0);
   }
   if (foreign) log(`${sessionDir} belongs to ${pinnedBridge()}; not publishing this bridge there (set ASEPRITE_AGENT_HOME for your own)`);

@@ -29,14 +29,17 @@ node agent\tools\stable.mjs launcher
 ## The agent's dev instance
 
 ```bat
-build.cmd --auto --norun
+.\build.cmd --auto --norun
 cd agent\bridge && npm ci && npm test && cd ..\..
 node agent\tests\run_lua_tests.mjs
 node agent\tools\dev.mjs restart
 node agent\tests\run_live.mjs --providers claude eval chat
 ```
 
-`dev.mjs` uses its own user folder (`%USERPROFILE%\.aseprite-agent-dev\aseprite`) and agent home; it copies the extension (Windows needs admin rights for file links), so run `node agent\tools\dev.mjs install` after changing `agent\extension`.
+- `.\build.cmd`: cmd skips the current folder when `NoDefaultCurrentDirectoryInExePath` is set (some shells and agent sessions set it).
+- `npm test` runs `agent\tools\gen_commands.py` through the `py` launcher or `python` (Windows' `python3` is often only the Microsoft Store stub).
+- `dev.mjs` uses its own user folder (`%USERPROFILE%\.aseprite-agent-dev\aseprite`) and agent home; it copies the extension (Windows needs admin rights for file links), so run `node agent\tools\dev.mjs install` after changing `agent\extension`.
+- Live tests in a fresh dev user folder ask for trust twice: for `agent.lua` on the first start, and for `agent_exec.lua` (the agent's Lua) the first time a test saves a file. Tick "Give full trust" in both, on the dev instance only.
 
 ## What to check, and report back
 
@@ -46,4 +49,15 @@ node agent\tests\run_live.mjs --providers claude eval chat
 4. AI Agent menu > Check for Updates... says up to date (or offers the newest release) and, after an update, restarts Aseprite.
 5. The dev instance and the stable one run at the same time without seeing each other's chats.
 
-Known differences: the bridge starts with `start "" /B node ...`; Codex's login file is copied into the agent's Codex home instead of linked, so it is refreshed each time the agent process starts.
+Sharp chat text: Edit > Preferences > General, Screen Scaling 100% and UI Elements Scaling 200% (the same size on
+screen). With Screen Scaling 200%, upstream's default on a large screen, Aseprite draws at half resolution and the
+chat panel's text looks blocky. A new user folder starts that way on this fork; an older one keeps its setting.
+
+Known differences:
+- The panel starts the bridge with `start "" /B node ... --daemon`; the daemon starts itself again without a console, so cmd's window only flashes. Every console program the bridge starts is hidden (`platform.ts`), or each would open a window.
+- Codex's login file is linked into the agent's Codex home: a symlink with Developer Mode or admin rights, else a hard link (same drive), else a copy (then a login refresh stays in the agent's copy).
+- Aseprite sets the `en-US` locale, which only Windows accepts: Lua's `%w`, `%a` and string `<` follow it there. Build names with ASCII ranges (`[A-Za-z0-9]`) and sort by numbers or ranks.
+
+## Checked on Windows (2026-11-12, #108)
+
+Windows 11 Pro 10.0.26300, Visual Studio Community 2022 17.14 (MSVC 14.44), CMake and Ninja from Visual Studio, Node 24.19, Claude Code 2.1.296, Codex CLI 0.162.1. The dev instance: the build (with `Image:histogram()` and `Image:isolatedPixels()`), `npm test`, `run_lua_tests.mjs`, `native_bench.mjs`, and the live tests `chat` (Claude and Codex), `daemon`, `juice`, `smear`, `fluid`, `pipeline`, `memory` (a folder with a space on `D:\`, a Korean sprite name), `image_gen` and the evals (all but `character-motions`, whose fixture needs the chat panel on every platform), and a Korean chat in the panel. The stable instance: `stable.mjs update` (stable-2026-11-11-14), `launcher` and `start` work, and the first start asks for trust; checks 2 to 5 wait for a release that has the Windows fixes.

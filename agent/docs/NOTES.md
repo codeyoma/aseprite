@@ -2,6 +2,38 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Windows draws at the screen's resolution: Screen Scaling 100%, UI Elements 200%
+- **How:** on Windows the fork's first run (`create_main_window`, `scale == 0`) keeps the window at scale 1 and puts the factor upstream would use as Screen Scaling into UI Elements Scaling (`general.ui_scale`): the same size on screen. An existing install changes it in Edit > Preferences > General (or `[general] screen_scale = 1`, `ui_scale = 2` while Aseprite is closed). LCD text (previous entry) is only used when the canvas reaches the screen 1:1 (`display->scale() == 1`).
+- **Why:** upstream's first run picks Screen Scaling 200% on a large screen, which draws the whole window at half resolution and lets the window double every pixel. Pixel art is fine with that, but the chat panel's system-font text was rasterized at about 7 px and shown doubled, so it looked low-res however it was antialiased (and LCD colors were doubled with it).
+- **Architecture:** the UI keeps Aseprite's pixel look (its fonts and icons scale by UI Elements Scaling); only what is drawn in device pixels (system-font text, the canvas) gains resolution. macOS is unchanged (not checked there).
+
+## The repository's MCP bridge uses the dev home (`--dev`)
+- **How:** `.mcp.json` starts `agent/bridge/dist/index.js --dev`. With no `ASEPRITE_AGENT_HOME`, `--dev` sets it to the dev instance's home (`ASEPRITE_AGENT_DEV_HOME` or `~/.aseprite-agent-dev`, as `tools/instances.mjs`) in `session.ts`, so what the bridge starts agrees.
+- **Why:** a Claude Code session in this checkout started its bridge in the default home. On the Windows PC that session began before `stable.mjs update` pinned the home, so its stdio bridge (protocol 39, from before a pull) stayed in the stable home's `session.json`. The newly installed stable Aseprite (protocol 42) connected to it and stopped with "Update the bridge so both come from the same release"; it never started its own daemon while that bridge answered.
+- **Architecture:** a coding session drives the dev instance, like the live tests. The stable instance is reached through its own pinned bridge: its panel's daemon, or a user-scope MCP entry for `~/.aseprite-agent-stable/src/agent/bridge/dist/index.js`.
+
+## Sharp chat text on Windows; Korean no longer crashes the panel
+- **How:**
+  - The `font = "system"` text of script dialogs (the chat log canvas, its labels, the prompt box) is laid out at subpixel positions with slight hinting (`dialog_class.cpp`); fallback fonts (Korean) are copies of that SkFont.
+  - A full-resolution canvas (`autoscaling = false`) on Windows with ClearType on gets LCD text: laf's `SkiaSurface::setPixelGeometry` gives the bitmap's SkCanvas the screen's subpixel order (`SPI_GETFONTSMOOTHINGORIENTATION`), and the canvas paints with an LCD-edged copy of its font (`Canvas::paintFont`). Labels and the prompt box are drawn on the window surface and stay grayscale.
+  - `main.cpp` sets `LC_CTYPE` and `LC_COLLATE` back to "C" after `setlocale(LC_ALL, "en-US")`; numbers keep en-US.
+  - Extension (also for stock Aseprite): text that is wrapped, collapsed or trimmed uses ASCII whitespace classes instead of `%s`/`%S` (chat log wrap, alert wrap, rewind question, recap, `/command` prompt, style memory), and truncation keeps whole UTF-8 characters (rewind question, style memory).
+- **Why:**
+  - With Skia's defaults (normal hinting, whole-pixel positions) DirectWrite crowded and spread letters ("drewa green"), and grayscale edges looked soft next to the rest of Windows.
+  - "en-US" is a locale name only on Windows, so only there Lua's `%s` used code page 1252, where byte 0xA0 is a space. Many Korean characters contain it ("레" = EB A0 88), so the chat log split them and Skia's shaper aborted on the invalid UTF-8 (`ud2` in SkShaper): a Korean reply with "레이어" closed Aseprite. The same locale made `"~" < "Color"` true.
+- **Architecture:** Windows now has the byte-wise C character classes and collation that macOS and Linux already had, so Lua scripts behave the same everywhere. LCD text needs an opaque surface shown 1:1, which only the full-resolution canvas has. Limit: one subpixel order for all monitors (a portrait monitor shows color fringes).
+
+## Windows: the first run on a PC (#108)
+- **How:**
+  - Panel bridge start: the extension still runs `start "" /B node ... --daemon`; on Windows the daemon starts itself again detached (`platform.ts` `BACKGROUND`) and exits, so cmd's console window closes. Every console program the bridge starts passes `windowsHide` (`HIDDEN`); that hidden console is inherited by the agents' own children.
+  - A dead bridge is found: the reconnect timer pings the bridge every 2 s (on Windows a killed peer shows only when the socket sends), and `ensureBridge` starts a daemon when the session file's port refuses the connection (a killed bridge leaves its `session.json`).
+  - `stable.mjs`: `runningStable()` lists `aseprite.exe` by path through CIM; `waitUnlocked()` opens the program for writing (Windows renames a running program, so the old rename probe passed at once); `.\build.cmd`.
+  - Lua patterns that build names use ASCII ranges, not `%w` (checkpoint folders, new skill files, document URIs); the composer sorts commands last by rank, not by a `"~"` key.
+  - C++: `FontInfo::getFromPreferences()` uses Aseprite's font by name when there is no main window, instead of dereferencing it (batch `PasteText`/`render_text` with no saved text-tool font crashed).
+  - Tests: `npm test` and `run_lua_tests.mjs` use throwaway agent homes and user folders; `gen.mjs` finds Python through `py`/`python`; `gen_commands.py` writes LF; the Codex auth falls back to a hard link before a copy.
+- **Why:** on Windows the panel's daemon kept a console window open; after a bridge was killed the panel never started a new one; an update could start deleting `app\` while Aseprite still ran. Aseprite sets the `en-US` locale (a valid name only on Windows), so Lua's `%w` and string `<` follow Windows collation there: Korean titles gave invalid UTF-8 folder names and `"~"` sorted first. A fresh user folder (no text-tool font) exposed the upstream batch crash.
+- **Architecture:** process options per platform live in `platform.ts`; the extension decides "no bridge" from the socket, not from the session file alone.
+
 ## main stays official; a workflow syncs it and merges it into agent
 - **How:** `.github/workflows/sync-upstream.yml` (on `agent`, the default branch, so its schedule runs) runs every 6 hours and by hand. It fast-forwards `main` to `aseprite/aseprite` main (never anything else), then merges `main` into `agent` when `agent` lacks it. A conflict, or a refused push, pushes nothing and opens one issue with the local steps. An optional `SYNC_TOKEN` secret (a token with the workflow scope) lets the merge carry upstream workflow changes and starts the agent CI on the merge commit; `GITHUB_TOKEN` can do neither.
 - **Why:** `main` had been pushed to `agent`'s tip by mistake and was restored to the official commit. Keeping `main` a pure mirror keeps upstream updates a plain fast-forward, and the merge brings them to the agent layer without anyone remembering to.

@@ -45,10 +45,11 @@ export function withMemory(text: string, memory: MemoryEntry[] = []): string | u
   return text.slice(0, a + MEMORY_START.length) + "\n" + memoryLines(memory) + "\n" + text.slice(b);
 }
 
-/** Folders a chat never starts in, even with a sprite saved there. */
+/** Folders a chat never starts in, even with a sprite saved there. Windows paths compare without case. */
 function tooBroad(dir: string): boolean {
-  const d = resolve(dir);
-  return d === resolve(homedir()) || d === dirname(d);
+  const norm = (p: string) => (process.platform === "win32" ? resolve(p).toLowerCase() : resolve(p));
+  const d = norm(dir);
+  return d === norm(homedir()) || d === norm(dirname(d));
 }
 
 /**

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join, relative, isAbsolute } from "node:path";
 import { decodePng } from "./image.js";
 import { agentCodexHome } from "./providers/agent_home.js";
-import { which } from "./platform.js";
+import { HIDDEN, which } from "./platform.js";
 import { sessionDir } from "./session.js";
 
 export type Aspect = "square" | "portrait" | "landscape";
@@ -94,7 +94,7 @@ export class CodexImageGenerator implements ImageGenerator {
       const reply = await new Promise<string>((resolve, reject) => {
         const args = ["exec", "--json", "--skip-git-repo-check", "-s", "read-only", "-C", work, "--output-schema", schema,
           ...(refs.length ? ["--image", refs.join(",")] : []), "--", codexInstruction(prompt, aspect, refs.length)];
-        const proc = spawn(bin, args, { cwd: work, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CODEX_HOME: home } });
+        const proc = spawn(bin, args, { ...HIDDEN, cwd: work, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, CODEX_HOME: home } });
         let last = "", err = "", buf = "";
         thread = "";
         proc.stdout.on("data", (d: Buffer) => {

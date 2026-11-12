@@ -8,6 +8,7 @@
 // The folder is a git repository: each save, delete, enable/disable and
 // revert is a commit, so any version can be restored.
 import { spawnSync } from "node:child_process";
+import { HIDDEN } from "./platform.js";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { sessionDir } from "./session.js";
@@ -42,7 +43,7 @@ export class SavedCommands {
   }
 
   private git(...args: string[]): { ok: boolean; out: string } {
-    const r = spawnSync("git", args, { cwd: this.dir, encoding: "utf8" });
+    const r = spawnSync("git", args, { ...HIDDEN, cwd: this.dir, encoding: "utf8" });
     return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
   }
 

@@ -41,11 +41,14 @@ function M.new(opts)
 local ws = nil
 local session = nil      -- { port = n, token = s }
 local connected = false
+local refused = false    -- the socket failed before the bridge's welcome (no bridge on the session's port)
 local reconnectTimer = nil
 -- The agent's folder: the same rule as agent.lua agentHome().
 local function agentHome()
   return os.getenv("ASEPRITE_AGENT_HOME")
-    or app.fs.joinPath(os.getenv("HOME") or os.getenv("USERPROFILE") or app.fs.userConfigPath, ".aseprite-agent")
+    -- Windows: USERPROFILE first, like Node's os.homedir(), even when HOME is set (Git, Emacs).
+    or app.fs.joinPath((app.os.windows and os.getenv("USERPROFILE")) or os.getenv("HOME") or os.getenv("USERPROFILE")
+      or app.fs.userConfigPath, ".aseprite-agent")
 end
 
 local function sessionPath()
@@ -137,6 +140,8 @@ local function startReconnectTimer()
   reconnectTimer = Timer{
     interval = 2.0,
     ontick = function()
+      -- A ping finds a bridge that is gone: on Windows the socket reports a killed bridge only when it sends.
+      if connected and ws then pcall(ws.sendPing, ws, "") end
       -- The newest bridge owns the session file. Follow it even while
       -- connected, so a new agent session takes over Aseprite.
       local s = readSession()
@@ -232,6 +237,8 @@ local function onReceive(mt, data, err)
       cb(msg.result, msg.error)
     end
   elseif mt == WebSocketMessageType.CLOSE or mt == WebSocketMessageType.ERROR then
+    -- An error before the welcome: nothing listens on the session file's port.
+    if mt == WebSocketMessageType.ERROR and not connected then refused = true end
     awaiting = nil
     if connected then
       app.tip("AI Agent disconnected")
@@ -263,6 +270,7 @@ connect = function(quiet)
     return
   end
 
+  refused = false
   ws = openSocket{
     url = "ws://127.0.0.1:" .. session.port,
     onreceive = onReceive,
@@ -278,31 +286,40 @@ local function shellQuote(s)
   return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
 end
 
--- Make sure a bridge is connected; start a background bridge if none runs.
+-- Starts the instance's bridge in the background; returns an error message when there is none to start.
+local function startDaemon()
+  -- The instance's own bridge: <agent home>/bridge.json (the stable
+  -- installer writes it; every bridge records itself there), else the
+  -- last one seen in a session file.
+  local bridgePath
+  local recorded = readFile(app.fs.joinPath(agentHome(), "bridge.json"))
+  local okJson, info = pcall(json.decode, recorded or "")
+  -- json.decode gives a userdata object, not a table.
+  if okJson and info ~= nil and type(info) ~= "string" and info.bridgePath and app.fs.isFile(tostring(info.bridgePath)) then bridgePath = tostring(info.bridgePath) end
+  bridgePath = bridgePath or preferences.bridgePath
+  if not bridgePath or not app.fs.isFile(bridgePath) then
+    return "No bridge found. Run `claude` (or Codex) once with the aseprite MCP server so Aseprite learns where the bridge is."
+  end
+  -- The daemon writes <agent home>/daemon.log itself.
+  if app.os.windows then
+    -- cmd.exe, with Aseprite's PATH; the daemon moves itself to a hidden console, so cmd's window closes (index.ts).
+    runShell('start "" /B node "' .. bridgePath:gsub('"', '') .. '" --daemon')
+  else
+    -- A login shell gives the bridge the user's PATH (node, claude, codex).
+    runShell("/bin/zsh -lc " .. shellQuote("nohup node " .. shellQuote(bridgePath) .. " --daemon > /dev/null 2>&1 &"))
+  end
+end
+
+-- Make sure a bridge is connected; start a background bridge if none runs: no session file, or one whose bridge
+-- refuses the connection (it ended without removing the file, as a process killed on Windows does).
 local function ensureBridge(callback)
   if connected then return callback(true) end
 
+  local started = false
   if not readSession() then
-    -- The instance's own bridge: <agent home>/bridge.json (the stable
-    -- installer writes it; every bridge records itself there), else the
-    -- last one seen in a session file.
-    local bridgePath
-    local recorded = readFile(app.fs.joinPath(agentHome(), "bridge.json"))
-    local okJson, info = pcall(json.decode, recorded or "")
-    -- json.decode gives a userdata object, not a table.
-    if okJson and info ~= nil and type(info) ~= "string" and info.bridgePath and app.fs.isFile(tostring(info.bridgePath)) then bridgePath = tostring(info.bridgePath) end
-    bridgePath = bridgePath or preferences.bridgePath
-    if not bridgePath or not app.fs.isFile(bridgePath) then
-      return callback(false, "No bridge found. Run `claude` (or Codex) once with the aseprite MCP server so Aseprite learns where the bridge is.")
-    end
-    -- The daemon writes <agent home>/daemon.log itself.
-    if app.os.windows then
-      -- cmd.exe: start detached, without a console window, with Aseprite's PATH.
-      runShell('start "" /B node "' .. bridgePath:gsub('"', '') .. '" --daemon')
-    else
-      -- A login shell gives the bridge the user's PATH (node, claude, codex).
-      runShell("/bin/zsh -lc " .. shellQuote("nohup node " .. shellQuote(bridgePath) .. " --daemon > /dev/null 2>&1 &"))
-    end
+    local err = startDaemon()
+    if err then return callback(false, err) end
+    started = true
   end
   connect(true)
 
@@ -315,6 +332,14 @@ local function ensureBridge(callback)
       if connected then
         timer:stop()
         callback(true)
+      elseif refused and not started then
+        -- The new daemon rewrites the session file; the reconnect timer follows it.
+        started = true
+        local err = startDaemon()
+        if err then
+          timer:stop()
+          callback(false, err)
+        end
       elseif waited >= 15 then
         timer:stop()
         callback(false, "The bridge did not start. See " .. app.fs.joinPath(agentHome(), "daemon.log"))

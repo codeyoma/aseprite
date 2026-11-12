@@ -31,6 +31,15 @@ test("a home pinned to the stable bridge keeps its bridge.json; an unpinned home
   assert.equal(JSON.parse(readFileSync(join(open, "bridge.json"), "utf8")).bridgePath, dev, "no pin: the newest bridge records itself");
 });
 
+test("--dev picks the dev instance's home and sets it for what the bridge starts; ASEPRITE_AGENT_HOME still wins", () => {
+  const dev = mkdtempSync(join(tmpdir(), "agent-dev-home-")), own = mkdtempSync(join(tmpdir(), "agent-home-"));
+  const homes = (env) => JSON.parse(execFileSync(process.execPath, ["--input-type=module", "-e",
+    `const s = await import(${JSON.stringify(dist)}); console.log(JSON.stringify([s.sessionDir, process.env.ASEPRITE_AGENT_HOME ?? null]))`,
+    "--", "--dev"], { env: { ...process.env, ASEPRITE_AGENT_DEV_HOME: dev, ...env }, encoding: "utf8" }));
+  assert.deepEqual(homes({ ASEPRITE_AGENT_HOME: undefined }), [dev, dev]);
+  assert.deepEqual(homes({ ASEPRITE_AGENT_HOME: own }), [own, own]);
+});
+
 test("a --daemon started in a home pinned to another bridge starts that bridge and exits", async () => {
   const home = mkdtempSync(join(tmpdir(), "agent-home-"));
   const stable = join(home, "stable.js");

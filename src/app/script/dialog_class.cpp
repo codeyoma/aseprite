@@ -56,6 +56,12 @@
 #include "ui/textedit.h"
 #include "ui/view.h"
 
+#if LAF_SKIA
+  #include "include/core/SkFont.h"
+  #include "include/core/SkFontTypes.h"
+  #include "text/skia_font.h"
+#endif
+
 #include <functional>
 #include <limits>
 #include <map>
@@ -693,6 +699,16 @@ void set_widget_flags(lua_State* L, int idx, Widget* widget)
     lua_pop(L, 1);
     if (auto* theme = skin::SkinTheme::instance()) {
       if (auto font = theme->fontMgr()->defaultFont(size * ui::guiscale())) {
+#if LAF_SKIA
+        // Glyphs at subpixel positions with slight hinting, so text keeps
+        // the shaper's spacing. Skia's defaults (normal hinting, whole-pixel
+        // positions) crowd and spread letters with Windows' DirectWrite.
+        // Fallback fonts (Korean, ...) are copies of this SkFont.
+        if (auto* skiaFont = dynamic_cast<text::SkiaFont*>(font.get())) {
+          skiaFont->skFont().setSubpixel(true);
+          skiaFont->skFont().setHinting(SkFontHinting::kSlight);
+        }
+#endif
         widget->setFont(font);
         // A text box is wrapped in a view; the font belongs to the box.
         if (auto* view = dynamic_cast<ui::View*>(widget)) {

@@ -1,7 +1,7 @@
 // Lean agent sessions (#87): only the aseprite MCP server and the user's model choice.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, readlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentCodexHome, leanCodexConfig, LEAN_CLAUDE_OPTIONS } from "../dist/providers/agent_home.js";
@@ -33,7 +33,11 @@ test("the Codex home links the user's auth and writes the lean config", () => {
   writeFileSync(join(user, "auth.json"), "{}");
   writeFileSync(join(user, "config.toml"), USER);
   assert.equal(agentCodexHome(user, home), home);
-  assert.equal(readlinkSync(join(home, "auth.json")), join(user, "auth.json"));
+  // A symlink, or a hard link where symlinks need admin rights (Windows): a login refresh on either side is shared.
+  writeFileSync(join(user, "auth.json"), '{"refreshed":1}');
+  assert.equal(readFileSync(join(home, "auth.json"), "utf8"), '{"refreshed":1}');
+  writeFileSync(join(home, "auth.json"), '{"refreshed":2}');
+  assert.equal(readFileSync(join(user, "auth.json"), "utf8"), '{"refreshed":2}');
   assert.doesNotMatch(readFileSync(join(home, "config.toml"), "utf8"), /mcp_servers|plugins|notify/);
   agentCodexHome(user, home); // again: the link is replaced, not duplicated
 });

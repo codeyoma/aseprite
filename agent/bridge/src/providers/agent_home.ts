@@ -3,7 +3,7 @@
 // plugins, hooks, skills, project memory) would otherwise ride along on every
 // model call: measured at 503 tools and ~350k tokens per call, 81 of the
 // tools being Aseprite's.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { sessionDir } from "../session.js";
@@ -47,11 +47,16 @@ export function agentCodexHome(userHome = process.env.CODEX_HOME ?? join(homedir
   const auth = join(userHome, "auth.json"), link = join(dir, "auth.json");
   rmSync(link, { force: true });
   if (existsSync(auth)) {
-    // A link keeps a login refresh shared; Windows needs admin rights for one, so it gets a copy.
+    // A link keeps a login refresh shared. Windows needs admin rights or Developer Mode for a symlink, but not for a
+    // hard link (same volume); a copy is the last resort, and its refreshes stay in the agent's home.
     try {
       symlinkSync(auth, link);
     } catch {
-      copyFileSync(auth, link);
+      try {
+        linkSync(auth, link);
+      } catch {
+        copyFileSync(auth, link);
+      }
     }
   }
   const userConfig = join(userHome, "config.toml");

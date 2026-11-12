@@ -34,7 +34,7 @@ function Prompter.wrap(text, width, maxLines)
     if (len(para) or #para) <= width then push(para)
     else
       local line = ""
-      for word in para:gmatch("%S+") do
+      for word in para:gmatch("[^ \t\r\n\f\v]+") do   -- ASCII spaces: %S follows the locale
         while (len(word) or #word) > width do
           if line ~= "" then push(line); line = "" end
           local cut = utf8.offset(word, width + 1) or (width + 1)
@@ -149,8 +149,9 @@ end
 -- at (os.time of the checkpoint), warnings = { ... }, running, busy }.
 Prompter.REWIND_CHOICES = { "sprite", "conversation", "both", "branch" }
 function Prompter.rewindQuestion(info)
-  local text = tostring(info.text or ""):gsub("%s+", " ")
-  if #text > 60 then text = text:sub(1, utf8.offset(text, 58) or 58) .. "…" end
+  -- ASCII spaces (%s follows the locale) and whole characters: a split UTF-8 character crashes the alert.
+  local text = tostring(info.text or ""):gsub("[ \t\r\n\f\v]+", " ")
+  if (utf8.len(text) or #text) > 60 then text = text:sub(1, (utf8.offset(text, 58) or 58) - 1) .. "…" end
   local lines = { "Go back to before: \"" .. text .. "\"" }
   if info.plan == "undo" then
     lines[#lines + 1] = "Restore sprite: back through the undo history (Edit > Redo brings the later work back)."

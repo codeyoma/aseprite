@@ -90,7 +90,8 @@ function home(port) {
     mkdirSync(join(dir, ".aseprite-agent"));
     writeFileSync(join(dir, ".aseprite-agent", "session.json"), JSON.stringify({ port, token: "t", pid: 1 }));
   }
-  return { HOME: dir, USERPROFILE: dir };
+  // No ASEPRITE_AGENT_HOME (npm test sets one): the hook must find the home from HOME.
+  return { HOME: dir, USERPROFILE: dir, ASEPRITE_AGENT_HOME: undefined };
 }
 
 async function listen(server) {

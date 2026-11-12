@@ -27,7 +27,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DEV, installExtension, instanceEnv, launch, stop as stopInstance } from "../tools/instances.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -71,7 +71,7 @@ function refPng() {
   const file = join(mkdtempSync(join(tmpdir(), "live-ref-")), "ref4.png");
   const out = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import { writeFileSync } from "node:fs";
-    import { PNG } from ${JSON.stringify(join(here, "..", "bridge", "node_modules", "pngjs", "lib", "png.js"))};
+    import { PNG } from ${JSON.stringify(pathToFileURL(join(here, "..", "bridge", "node_modules", "pngjs", "lib", "png.js")).href)};
     const p = new PNG({ width: 8, height: 8 });
     const c = [[0x1d,0x2b,0x53],[0x7e,0x25,0x53],[0xff,0xa3,0x00],[0x29,0xad,0xff]];
     for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) p.data.set([...c[(x >> 2) + 2 * (y >> 2)], 255], (y * 8 + x) * 4);

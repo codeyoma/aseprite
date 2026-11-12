@@ -71,7 +71,7 @@ function Composer:matches(query)
     end
   end
   local words = {}
-  for w in (query or ""):lower():gmatch("%S+") do words[#words + 1] = w end
+  for w in (query or ""):lower():gmatch("[^ \t\r\n\f\v]+") do words[#words + 1] = w end
   local out = {}
   for _, it in ipairs(items) do
     local head = (it.name .. " " .. it.title):lower()
@@ -83,9 +83,12 @@ function Composer:matches(query)
     end
     if ok then out[#out + 1] = { it = it, score = score } end
   end
-  local function group(it) return it.kind == "command" and "~" or (it.category or "Other") end
+  -- Commands last by rank: Lua compares strings with the locale's collation, and Windows' sorts a "~" key first.
+  local function rank(it) return it.kind == "command" and 1 or 0 end
   table.sort(out, function(a, b)
-    if #words == 0 and group(a.it) ~= group(b.it) then return group(a.it) < group(b.it) end
+    if #words == 0 and rank(a.it) ~= rank(b.it) then return rank(a.it) < rank(b.it) end
+    local ga, gb = a.it.category or "Other", b.it.category or "Other"
+    if #words == 0 and ga ~= gb then return ga < gb end
     if a.score ~= b.score then return a.score > b.score end
     return a.it.title < b.it.title
   end)
@@ -216,7 +219,8 @@ function Composer:decide(ctx)
     return { kind = "none" }
   end
   -- A Saved Command's exact name runs it, even while the picker shows it.
-  local name, rest = prompt:match("^%s*/([%w%-]+)%s*(.-)%s*$")
+  -- ASCII spaces at the end: %s follows the locale and would take the last byte of a UTF-8 character on Windows.
+  local name, rest = prompt:match("^%s*/([%w%-]+)%s*(.-)[ \t\r\n\f\v]*$")
   if name then
     for _, c in ipairs(self.commands() or {}) do
       if c.name == name then

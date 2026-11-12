@@ -11,8 +11,10 @@ import { live } from "./live.mjs";
 const provider = process.argv[2] ?? "claude";
 const { lua, chat, check, soft, done } = await live({ provider });
 
-const dir = mkdtempSync(join(tmpdir(), "memory-live-"));
-const file = join(dir, "slime.aseprite");
+// A space in the folder and a non-ASCII title (checkpoint folder names, the agent's cwd); MEMORY_LIVE_DIR picks
+// where (another drive on Windows).
+const dir = mkdtempSync(join(process.env.MEMORY_LIVE_DIR ?? tmpdir(), "memory live-"));
+const file = join(dir, "slime 슬라임.aseprite");
 await lua(`local s = Sprite(32, 32, ColorMode.RGB) s.layers[1].name = "Slime"
   local img = Image(32, 32, ColorMode.RGB)
   for y = 16, 28 do for x = 8, 23 do img:drawPixel(x, y, Color(60, 200, 90)) end end

@@ -165,7 +165,9 @@ return function(deps)
     local lines = {}
     for paragraph in (text .. "\n"):gmatch("(.-)\n") do
       local line = ""
-      for word in paragraph:gmatch("%S+") do
+      -- ASCII spaces only: %S follows the C locale, and Windows' (en-US) counts byte 0xA0 inside UTF-8
+      -- characters (the "레" of 레이어) as a space; a split character crashes text shaping.
+      for word in paragraph:gmatch("[^ \t\r\n\f\v]+") do
         local candidate = line == "" and word or (line .. " " .. word)
         if gc:measureText(candidate).width <= maxWidth then
           line = candidate

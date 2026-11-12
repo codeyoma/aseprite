@@ -314,7 +314,7 @@ end
 local RECAP_TEXT = 1200   -- longest reply or message kept whole in a recap
 
 local function short(text, max)
-  text = tostring(text or ""):gsub("%s+$", "")
+  text = tostring(text or ""):gsub("[ \t\r\n\f\v]+$", "")   -- ASCII: %s takes a UTF-8 byte on Windows
   if #text <= max then return text end
   local cut = utf8.offset(text, max) or max
   return text:sub(1, cut - 1) .. " [...]"

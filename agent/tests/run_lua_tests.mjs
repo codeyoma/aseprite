@@ -30,7 +30,8 @@ try {
     const r = spawnSync(bin, ["-b",
       "--script-param", `ext=${join(root, "agent", "extension")}`, "--script-param", `fixtures=${join(here, "fixtures")}`,
       "--script-param", `guide=${join(root, "agent", "guide")}`, "--script-param", `tmp=${tmp}`, "--script", script,
-    ], { encoding: "utf8" });
+      // A throwaway user folder: not the user's (stable) settings, recent files and crash dumps.
+    ], { encoding: "utf8", env: { ...process.env, ASEPRITE_USER_FOLDER: join(tmp, "user") } });
     const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
     const bad = /^FAIL|stack traceback|^\S*\.lua:\d+:/m.test(out) || !/^ALL .*PASS/m.test(out);
     if (bad) {

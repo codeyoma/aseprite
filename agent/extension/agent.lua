@@ -25,7 +25,9 @@ end
 -- same rule, and a daemon bridge started from here inherits the variable.
 local function agentHome()
   return os.getenv("ASEPRITE_AGENT_HOME")
-    or app.fs.joinPath(os.getenv("HOME") or os.getenv("USERPROFILE") or app.fs.userConfigPath, ".aseprite-agent")
+    -- Windows: USERPROFILE first, like Node's os.homedir(), even when HOME is set (Git, Emacs).
+    or app.fs.joinPath((app.os.windows and os.getenv("USERPROFILE")) or os.getenv("HOME") or os.getenv("USERPROFILE")
+      or app.fs.userConfigPath, ".aseprite-agent")
 end
 local relaunchDir = app.fs.joinPath(agentHome(), "relaunch")
 
@@ -393,7 +395,8 @@ function init(plugin)
       d:button{ id = "ok", text = "&Create" }
       d:button{ id = "cancel", text = "&Cancel" }
       d:show()
-      local name = (d.data.name or ""):lower():gsub("[^%w%-]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
+      -- ASCII by range (%w follows the locale; /skill:<name> takes ASCII words).
+      local name = (d.data.name or ""):lower():gsub("[^a-z0-9%-]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
       if not d.data.ok or name == "" then return end
       app.fs.makeAllDirectories(skillsDir)
       local path = app.fs.joinPath(skillsDir, name .. ".md")

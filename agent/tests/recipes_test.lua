@@ -37,7 +37,8 @@ local noTransaction = { pixelate = true, ["export-sheet"] = true, ["export-gif"]
 local failures = 0
 local function run(name)
   local code = recipes[name]
-  for k, v in pairs(subst) do code = code:gsub(k:gsub("%p", "%%%0"), v) end
+  -- The paths go inside "..." literals: backslashes (Windows) escaped, then % escaped for gsub.
+  for k, v in pairs(subst) do code = code:gsub(k:gsub("%p", "%%%0"), (v:gsub("\\", "\\\\"):gsub("%%", "%%%%"))) end
   local r = A.executeLua{ code = code, transaction = not noTransaction[name] }
   if r.ok then print("PASS " .. name .. " -> " .. (type(r.value) == "table" and json.encode(r.value) or tostring(r.value)))
   else failures = failures + 1; print("FAIL " .. name .. ": " .. tostring(r.error)) end

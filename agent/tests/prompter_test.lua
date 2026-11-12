@@ -87,5 +87,20 @@ do
   check("wrap: at most maxLines, then an ellipsis", #many == 5 and many[5] == "…", #many)
 end
 
+-- Korean under Windows' en-US character classes (stock Aseprite sets that locale; %s then matches byte 0xA0,
+-- which "레" = EB A0 88 contains): lines stay valid UTF-8. Elsewhere "en-US" is no locale name and this is "C".
+do
+  local before = os.setlocale(nil, "ctype")
+  local windows = os.setlocale("en-US", "ctype") ~= nil
+  local text = string.rep("레이어 이름을 바꿨어요. ", 8)
+  local valid = true
+  for _, l in ipairs(Prompter.wrap(text, 20)) do valid = valid and utf8.len(l) ~= nil end
+  check("wrap: korean stays valid utf-8" .. (windows and " (en-US ctype)" or ""), valid)
+  local q = Prompter.rewindQuestion{ text = string.rep("레이어 ", 30), plan = "undo" }
+  local qText = type(q.text) == "table" and table.concat(q.text, "\n") or tostring(q.text)
+  check("rewind question: korean stays valid utf-8", utf8.len(qText) ~= nil)
+  os.setlocale(before, "ctype")
+end
+
 print(failures == 0 and "ALL PROMPTER TESTS PASS" or (failures .. " FAILED"))
 if failures > 0 then error(failures .. " prompter tests failed") end

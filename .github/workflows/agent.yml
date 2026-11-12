@@ -36,7 +36,8 @@ jobs:
         run: npm ci
 
       - name: Lua for the syntax check
-        run: sudo apt-get install -y lua5.4
+        # A fresh package index first: the image's own can name versions the mirrors no longer serve.
+        run: sudo apt-get update && sudo apt-get install -y lua5.4
 
       # The same command as locally: build, generated files up to date (plugin
       # copies and hooks, commands.json), extension checks (file access, Lua

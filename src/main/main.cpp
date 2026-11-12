@@ -93,6 +93,14 @@ int app_main(int argc, char* argv[])
   std::setlocale(LC_ALL, "en-US");
   ASSERT(std::strtod("10.32", nullptr) == 10.32);
 
+  // Byte-wise character classes and collation, as on macOS and Linux
+  // (where "en-US" is not a locale name and everything stays "C"). Windows'
+  // en-US is code page 1252: a script's %s matched byte 0xA0 inside UTF-8
+  // text (splitting Korean characters, which crashed text shaping) and Lua
+  // string comparisons followed Windows collation.
+  std::setlocale(LC_CTYPE, "C");
+  std::setlocale(LC_COLLATE, "C");
+
   // Initialize the random seed.
   std::srand(static_cast<unsigned int>(std::time(nullptr)));
 

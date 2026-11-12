@@ -16,8 +16,13 @@ export interface Session {
 /**
  * The agent's folder (bridge session, chats' workspace, attachments, commands, Codex home). ASEPRITE_AGENT_HOME
  * gives an instance its own (the dev instance uses ~/.aseprite-agent-dev), so a test bridge never takes over the
- * user's Aseprite.
+ * user's Aseprite. `--dev` without it picks the dev instance's home (tools/instances.mjs), as this repository's
+ * .mcp.json does: a coding session's bridge then never claims the stable instance's home. It sets the variable, so
+ * what the bridge starts agrees.
  */
+if (!process.env.ASEPRITE_AGENT_HOME && process.argv.includes("--dev")) {
+  process.env.ASEPRITE_AGENT_HOME = process.env.ASEPRITE_AGENT_DEV_HOME ?? join(homedir(), ".aseprite-agent-dev");
+}
 export const sessionDir = process.env.ASEPRITE_AGENT_HOME ?? join(homedir(), ".aseprite-agent");
 export const sessionFile = join(sessionDir, "session.json");
 

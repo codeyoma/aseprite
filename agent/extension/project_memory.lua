@@ -25,8 +25,9 @@ M.MAX_TEXT = 300
 local ORDER = { palette = 1, outline = 2, scale = 3, note = 4 }
 
 local function clean(text)
-  text = tostring(text or ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
-  if #text > M.MAX_TEXT then text = text:sub(1, M.MAX_TEXT) end
+  -- ASCII spaces (%s follows the locale) and whole UTF-8 characters: the text is drawn in the panel.
+  text = tostring(text or ""):gsub("[ \t\r\n\f\v]+", " "):match("^ ?(.-) ?$")
+  if #text > M.MAX_TEXT then text = text:sub(1, (utf8.offset(text, M.MAX_TEXT + 1) or (M.MAX_TEXT + 1)) - 1) end
   return text
 end
 

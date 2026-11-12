@@ -33,8 +33,10 @@ local function hash(s)
 end
 Checkpoints.hash = hash
 
+-- ASCII letters and digits by range: %w follows the C locale, and Windows' (Aseprite sets en-US) counts some bytes
+-- of a UTF-8 character as letters, which left broken characters in the folder name.
 local function slug(s)
-  s = tostring(s or ""):gsub("%.[%w]+$", ""):gsub("[^%w%-_]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
+  s = tostring(s or ""):gsub("%.[%w]+$", ""):gsub("[^A-Za-z0-9_%-]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
   if s == "" then s = "sprite" end
   return s:sub(1, 40)
 end

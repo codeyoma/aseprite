@@ -6,6 +6,16 @@ import { delimiter, join } from "node:path";
 
 export const IS_WINDOWS = process.platform === "win32";
 
+/**
+ * Spawn options for a background process that outlives its parent (on Windows, Node ends the children it didn't
+ * detach when it exits). A detached process has no console there, so it must start every console program with
+ * windowsHide (HIDDEN), or each one opens a console window; a hidden console is inherited by that program's children.
+ */
+export const BACKGROUND = { detached: true, windowsHide: true } as const;
+
+/** For every console program the bridge starts (git, node, codex, the agents): no window when the bridge has no console. */
+export const HIDDEN = { windowsHide: true } as const;
+
 /** A program's file name on this platform ("aseprite" -> "aseprite.exe" on Windows). */
 export const exe = (name: string) => (IS_WINDOWS ? `${name}.exe` : name);
 

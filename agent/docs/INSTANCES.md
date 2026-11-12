@@ -38,3 +38,6 @@ Xcode, CMake and Ninja on macOS; Visual Studio 2022, CMake and Ninja on Windows 
   `node agent/tools/stable.mjs launcher` makes `/Applications/Aseprite AI.app` (with the agent's logo as its icon).
 - Dev: `node agent/tools/dev.mjs restart`. On the first start Aseprite asks whether `agent.lua` may read files and
   open sockets: tick "Give full trust to this script". The answer is kept in the dev user folder.
+- Claude Code in this repository: `.mcp.json` starts the bridge with `--dev`, so the session's tools drive the dev
+  instance. Restart a session that was already running when the stable instance was installed: its bridge may hold
+  the stable home's `session.json`.

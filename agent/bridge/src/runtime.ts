@@ -68,7 +68,7 @@ export interface Runtime {
 const stamp = () => new Date().toISOString().replace(/[:.]/g, "-");
 
 export { which } from "./platform.js";
-import { which } from "./platform.js";
+import { HIDDEN, which } from "./platform.js";
 
 /** ACP: one long-lived agent per conversation key, prompted per turn. */
 /** A runner per chat and conversation key. */
@@ -206,7 +206,7 @@ export class StreamRuntime implements Runtime {
     });
     const parse = turn.provider.parser();
     const record = this.recordDir ? join(this.recordDir, `${turn.provider.id}-${stamp()}.jsonl`) : undefined;
-    const proc = spawn(bin, args, { cwd: turn.cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env });
+    const proc = spawn(bin, args, { ...HIDDEN, cwd: turn.cwd, stdio: ["ignore", "pipe", "pipe"], env: process.env });
     this.proc = proc;
     let conversationId = turn.conversationId;
 

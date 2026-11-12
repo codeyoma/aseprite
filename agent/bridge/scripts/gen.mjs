@@ -17,6 +17,13 @@ const repo = join(bridge, "..", "..");
 const check = process.argv.includes("--check");
 const stale = [];
 
+// The Python 3 interpreter. Windows usually has no python3 (or only the Microsoft Store stub, which exits with an
+// error), but the py launcher or python.
+function python() {
+  const candidates = process.platform === "win32" ? [["py", ["-3"]], ["python", []], ["python3", []]] : [["python3", []]];
+  return candidates.find(([cmd, args]) => spawnSync(cmd, [...args, "-c", ""], { stdio: "ignore" }).status === 0) ?? candidates[0];
+}
+
 // Plugin copies.
 stale.push(...syncPlugin({ check }));
 
@@ -28,7 +35,8 @@ if (!existsSync(join(repo, "src", "app", "commands"))) {
   console.log("skipped commands.json: no src/app/commands (not a full Aseprite checkout)");
 } else {
   const before = existsSync(commandsJson) ? readFileSync(commandsJson, "utf8") : undefined;
-  const r = spawnSync("python3", [generator], { cwd: repo, encoding: "utf8" });
+  const [py, pyArgs] = python();
+  const r = spawnSync(py, [...pyArgs, generator], { cwd: repo, encoding: "utf8" });
   if (r.error || r.status !== 0) {
     if (before !== undefined) writeFileSync(commandsJson, before);
     console.error(`gen_commands.py failed: ${r.error?.message ?? r.stderr}`);

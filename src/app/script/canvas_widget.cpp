@@ -10,13 +10,43 @@
 #include "app/script/graphics_context.h"
 #include "app/ui/skin/skin_theme.h"
 #include "os/system.h"
+#include "ui/display.h"
 #include "ui/message.h"
 #include "ui/paint_event.h"
 #include "ui/resize_event.h"
 #include "ui/size_hint_event.h"
 #include "ui/system.h"
 
+#if LAF_SKIA
+  #include "include/core/SkFont.h"
+  #include "include/core/SkSurfaceProps.h"
+  #include "os/skia/skia_surface.h"
+  #include "text/skia_font.h"
+#endif
+
+#if LAF_WINDOWS
+  #include <windows.h>
+#endif
+
 namespace app { namespace script {
+
+#if LAF_SKIA
+// The subpixel order Windows draws ClearType text with, or unknown when the
+// user turned ClearType off (and on other platforms: macOS has no LCD text).
+static SkPixelGeometry lcd_geometry()
+{
+  #if LAF_WINDOWS
+  UINT type = 0, orientation = FE_FONTSMOOTHINGORIENTATIONRGB;
+  if (!SystemParametersInfoW(SPI_GETFONTSMOOTHINGTYPE, 0, &type, 0) || type != FE_FONTSMOOTHINGCLEARTYPE)
+    return kUnknown_SkPixelGeometry;
+  SystemParametersInfoW(SPI_GETFONTSMOOTHINGORIENTATION, 0, &orientation, 0);
+  return (orientation == FE_FONTSMOOTHINGORIENTATIONBGR ? kBGR_H_SkPixelGeometry :
+                                                          kRGB_H_SkPixelGeometry);
+  #else
+  return kUnknown_SkPixelGeometry;
+  #endif
+}
+#endif
 
 // static
 ui::WidgetType Canvas::Type()
@@ -64,9 +94,56 @@ void Canvas::callPaint()
     gc.font(theme->getUnscaledFont(font()));
   }
   else
-    gc.font(font());
+    gc.font(paintFont());
 
   Paint(gc);
+}
+
+// A full-resolution canvas surface. With Windows ClearType it is opaque and
+// knows the screen's subpixel order, so text gets LCD antialiasing like the
+// rest of Windows (Skia falls back to grayscale without the order). Only
+// when the surface reaches the screen 1:1: with Screen Scaling above 100%
+// the window doubles each pixel, and with it each subpixel color.
+os::SurfaceRef Canvas::makeSurface(int w, int h, const os::ColorSpaceRef& cs)
+{
+  os::SurfaceRef surface = os::System::instance()->makeSurface(w, h, cs);
+  m_lcdText = false;
+#if LAF_SKIA
+  const ui::Display* display = this->display();
+  const bool oneToOne = (!m_autoScaling && display && display->scale() == 1);
+  const SkPixelGeometry geometry = (oneToOne ? lcd_geometry() : kUnknown_SkPixelGeometry);
+  if (geometry != kUnknown_SkPixelGeometry) {
+    if (auto* skiaSurface = dynamic_cast<os::SkiaSurface*>(surface.get())) {
+      skiaSurface->setPixelGeometry(geometry);
+      m_lcdText = true;
+    }
+  }
+#endif
+  return surface;
+}
+
+// The font text is painted with: the widget's own, or on an LCD surface a
+// copy of it with LCD edging (the widget's font is shared with labels, which
+// are drawn elsewhere).
+text::FontRef Canvas::paintFont()
+{
+  text::FontRef font = this->font();
+#if LAF_SKIA
+  if (m_lcdText) {
+    if (m_lcdFontSource != font.get()) {
+      m_lcdFontSource = font.get();
+      m_lcdFont = nullptr;
+      if (auto* skiaFont = dynamic_cast<text::SkiaFont*>(font.get())) {
+        SkFont lcd = skiaFont->skFont();
+        lcd.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+        m_lcdFont = base::make_ref<text::SkiaFont>(lcd);
+      }
+    }
+    if (m_lcdFont)
+      return m_lcdFont;
+  }
+#endif
+  return font;
 }
 
 void Canvas::onInitTheme(ui::InitThemeEvent& ev)
@@ -202,7 +279,7 @@ void Canvas::onResize(ui::ResizeEvent& ev)
     if (!m_surface || m_surface->width() != w || m_surface->height() != h) {
       ui::Display* display = this->display();
       os::ColorSpaceRef cs = (display ? display->colorSpace() : nullptr);
-      m_surface = system->makeSurface(w, h, cs);
+      m_surface = makeSurface(w, h, cs);
       callPaint();
     }
   }

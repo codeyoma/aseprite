@@ -3,7 +3,7 @@
 // worktree of its own on a branch dev/<date>-<slug>; Apply brings the work
 // into the user's checkout, and the panel rebuilds and relaunches Aseprite.
 import { sessionDir } from "./session.js";
-import { exe } from "./platform.js";
+import { exe, HIDDEN } from "./platform.js";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -25,7 +25,7 @@ Your working directory is a git worktree of your own on a dev/ branch; the user'
 When you are done, say what you changed and whether it needs a rebuild (C++) or only a relaunch (Lua). The user applies it with Rebuild & Relaunch in the panel. You also have the aseprite MCP tools to look at the running app.`;
 
 function git(root: string, ...args: string[]): { ok: boolean; out: string } {
-  const r = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const r = spawnSync("git", args, { ...HIDDEN, cwd: root, encoding: "utf8" });
   return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
 }
 
@@ -138,7 +138,7 @@ export function devStatus(root: string): DevStatus {
   // "--" ends the revisions: a branch may share its name with a folder (agent/).
   const committed = git(root, "diff", "--name-only", `${st.baseSha}..${st.branch}`, "--").out.split("\n").filter(Boolean);
   // Porcelain lines are "XY path"; read them untrimmed (X may be a space).
-  const porcelain = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: st.worktree, encoding: "utf8" }).stdout ?? "";
+  const porcelain = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { ...HIDDEN, cwd: st.worktree, encoding: "utf8" }).stdout ?? "";
   const uncommitted = porcelain.split("\n").filter(Boolean).map((l) => l.slice(3).replace(/^.* -> /, ""));
   const files = [...new Set([...committed, ...uncommitted])].sort();
   const needsBuild = files.some((f) => /^(src|laf|third_party)\//.test(f) || /\.(cpp|h|cmake|txt)$/.test(f));
@@ -215,7 +215,7 @@ export function build(root: string, onLine: (line: string) => void): Promise<{ o
       resolveBuild({ ok: false, tail: `No build folder at ${dir}. Configure the build first (agent/docs/BUILD-macos.md).` });
       return;
     }
-    const proc = spawn("ninja", ["aseprite"], { cwd: dir });
+    const proc = spawn("ninja", ["aseprite"], { ...HIDDEN, cwd: dir });
     const lines: string[] = [];
     let partial = "";
     const take = (chunk: Buffer) => {

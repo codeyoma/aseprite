@@ -158,8 +158,19 @@ static bool create_main_window(bool gpuAccel, bool& maximized, std::string& last
   if (main_window) {
     // Change the scale value only in the first run (this will be
     // saved when the program is closed).
-    if (scale == 0)
+    if (scale == 0) {
+#if LAF_WINDOWS
+      // Windows: draw at the screen's real resolution and scale the UI
+      // elements instead, the same size on screen. With Screen Scaling
+      // above 100% the window doubles every pixel, so text in a system
+      // font (the AI Agent panel) was drawn at half resolution.
+      if (main_window->scale() > 1) {
+        Preferences::instance().general.uiScale(main_window->scale());
+        main_window->setScale(1);
+      }
+#endif
       Preferences::instance().general.screenScale(main_window->scale());
+    }
 
     main_window->setGpuAcceleration(gpuAccel);
 

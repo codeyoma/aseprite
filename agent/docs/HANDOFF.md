@@ -65,5 +65,5 @@ Aseprite (C++ fork)  ──  Lua extension (agent/extension)  ──WebSocket JS
 - **Known gaps**:
   - Every tool, including agent-written Lua, acts on the *active* sprite; parallel chats swap it per request (#90), so document-scoped handlers remain open.
   - `generate_image` (#102) spends the user's Codex plan limits; it asks first and runs one job at a time.
-  - Windows passes unit tests in CI but has not run the app yet (`docs/BUILD-windows.md`).
+  - Windows: the dev instance builds and passes unit, Lua and live tests (2026-11-12, #108); the stable instance (update, launcher, Check for Updates) is not checked there yet (`docs/BUILD-windows.md`).
 - Two instances (user's stable, agent's dev) are described in `docs/INSTANCES.md`; tests only touch dev.

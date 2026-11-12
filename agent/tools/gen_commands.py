@@ -86,6 +86,7 @@ for cid in ids:
     title = titles.get(cid, "")
     commands.append({"name": cid, "title": re.sub(r"\{\d\}", "…", title), "params": params})
 
-OUT.write_text(json.dumps(commands, indent=1) + "\n")
+# Bytes, so Windows also gets LF (write_text's newline= needs Python 3.10).
+OUT.write_bytes((json.dumps(commands, indent=1) + "\n").encode("utf-8"))
 with_params = sum(1 for c in commands if c["params"])
 print(f"{len(commands)} commands, {with_params} with known params -> {OUT.relative_to(ROOT)}")

@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import { client, ndJsonStream } from "@agentclientprotocol/sdk";
 import { log } from "./aseprite.js";
+import { HIDDEN } from "./platform.js";
 import { MCP_SERVER_NAME, type AgentProvider } from "./providers/agent_provider.js";
 import { AcpMapper, type AcpEvent } from "./providers/acp_mapper.js";
 import type { ImageBlock } from "./attachments.js";
@@ -105,6 +106,7 @@ export class AcpRunner {
     if (!cmd) throw new Error(`${this.provider.acp?.package ?? this.provider.id} is not installed`);
 
     const proc = spawn(cmd.command, cmd.args, {
+      ...HIDDEN,
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, ...this.provider.acp!.env(this.systemPrompt, this.mode) },

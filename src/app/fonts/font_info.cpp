@@ -121,9 +121,14 @@ FontInfo FontInfo::getFromPreferences()
   }
 
   if (!fontInfo.isValid()) {
-    // No valid settings found, use the default widget font
-    fontInfo = static_cast<app::skin::SkinTheme*>(App::instance()->mainWindow()->theme())
-                 ->getDefaultFontInfo();
+    // No valid settings found, use the default widget font. Batch mode
+    // has no main window (and no theme): Aseprite's own font by name.
+    if (auto* mainWindow = App::instance()->mainWindow()) {
+      fontInfo = static_cast<app::skin::SkinTheme*>(mainWindow->theme())->getDefaultFontInfo();
+    }
+    else {
+      fontInfo = FontInfo(FontInfo::Type::Name, "Aseprite");
+    }
   }
 
   return fontInfo;

@@ -18,7 +18,7 @@
 // the `stable` commit, with its build/ inside), app/ (the installed binary and
 // data, a copy, so a build never touches the running program), installed.json.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { accessSync, constants, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { accessSync, closeSync, constants, cpSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { installExtension, IS_WINDOWS, REPO, STABLE } from "./instances.mjs";
@@ -71,8 +71,9 @@ export function prepare() {
   if (c.needsBuild) {
     log("building Aseprite (the first build takes a while)");
     if (existsSync(join(STABLE.src, "build", "build.ninja"))) run("cmake", ["--build", "build"], STABLE.src);
-    // build.cmd loads Visual Studio's environment and ends with `pause`: answer it.
-    else if (IS_WINDOWS) run("cmd", ["/c", "echo.| build.cmd --auto --norun"], STABLE.src);
+    // build.cmd loads Visual Studio's environment and ends with `pause`: answer it. `.\`: cmd skips the current
+    // folder when NoDefaultCurrentDirectoryInExePath is set.
+    else if (IS_WINDOWS) run("cmd", ["/c", "echo.| .\\build.cmd --auto --norun"], STABLE.src);
     else run("./build.sh", ["--auto", "--norun"], STABLE.src);
   }
   log("building the bridge");
@@ -105,11 +106,18 @@ export function install() {
 
 /**
  * Pids of the running stable Aseprite processes, found by executable path (the pid file goes stale when the app is
- * opened another way). Windows: none (install waits for the program file to unlock instead).
+ * opened another way). Windows: CIM's Win32_Process (wmic is gone from recent Windows), paths compared without case.
  */
 export function runningStable() {
-  if (IS_WINDOWS) return [];
   try {
+    if (IS_WINDOWS) {
+      const ps = `Get-CimInstance Win32_Process -Filter "Name = 'aseprite.exe'" | ForEach-Object { "$($_.ProcessId) $($_.ExecutablePath)" }`;
+      return execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", windowsHide: true })
+        .split(/\r?\n/).flatMap((line) => {
+          const m = line.trim().match(/^(\d+)\s+(.+)$/);
+          return m && m[2].toLowerCase() === appBin.toLowerCase() ? [Number(m[1])] : [];
+        });
+    }
     return execFileSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).split("\n").flatMap((line) => {
       const m = line.trim().match(/^(\d+)\s+(.*)$/);
       return m && (m[2] === appBin || m[2].startsWith(appBin + " ")) ? [Number(m[1])] : [];
@@ -192,12 +200,14 @@ function windowsShortcut() {
   return lnk;
 }
 
-/** Windows: a running program can't be renamed; waits until the installed one can (it was started without a pid file). */
+/**
+ * Windows: a running program can't be opened for writing (EBUSY); waits until the installed one can. Renaming is no
+ * test: Windows renames a running program.
+ */
 async function waitUnlocked(file) {
   for (;;) {
     try {
-      renameSync(file, file + ".probe");
-      renameSync(file + ".probe", file);
+      closeSync(openSync(file, "r+"));
       return;
     } catch (e) {
       if (e.code === "ENOENT") return;
@@ -228,10 +238,11 @@ if (process.argv[1] && process.argv[1].endsWith("stable.mjs")) {
     else if (cmd === "prepare") console.log(JSON.stringify(prepare(), null, 2));
     else if (cmd === "install" || cmd === "update") {
       if (cmd === "update") prepare();
-      if (rest.includes("--wait") && !wait && IS_WINDOWS && existsSync(appBin)) await waitUnlocked(appBin);
-      else if (wait || rest.includes("--wait")) {
+      if (wait || rest.includes("--wait")) {
         // Every running stable Aseprite, not only the pid file's (it is stale when the app was opened another way).
         for (const pid of new Set([...(wait ? [wait] : []), ...runningStable()])) await waitFor(pid);
+        // Windows: and until the program file can be replaced (a process found by no path still holds it).
+        if (IS_WINDOWS && existsSync(appBin)) await waitUnlocked(appBin);
       }
       if (existsSync(preparedFile)) console.log(JSON.stringify(install(), null, 2));
       if (thenStart) start();

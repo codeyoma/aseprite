@@ -116,7 +116,7 @@ Produced by [demos/run_demos.mjs](demos/run_demos.mjs), which calls the same MCP
      ```
      /plugin install aseprite --marketplace codeyoma/aseprite
      ```
-   - **Claude Code, this repository:** the repository root has a `.mcp.json` that starts the bridge. Run `claude` from the repository root and approve the `aseprite` server. Or add it by hand:
+   - **Claude Code, this repository:** the repository root has a `.mcp.json` that starts the bridge with `--dev`, for the agent's dev Aseprite (`node agent/tools/dev.mjs start`, see `docs/INSTANCES.md`): a coding session never takes the stable Aseprite's bridge. Run `claude` from the repository root and approve the `aseprite` server. To drive your own Aseprite from Claude Code, add its bridge by hand:
      ```bash
      claude mcp add aseprite -- node /path/to/aseprite/agent/bridge/dist/index.js
      ```
