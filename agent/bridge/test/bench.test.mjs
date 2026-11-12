@@ -11,14 +11,14 @@ import {
 
 const IDENTITY = /claude|codex|anthropic|openai|gpt|opus|sonnet|haiku|gemini/i;
 
-test("at least 5 benchmarks, each valid and for a different skill", () => {
+test("at least 5 benchmarks, each valid and for a different skill (or the same skill with the image generator)", () => {
   const names = benchNames();
   assert.ok(names.length >= 5, `benchmarks: ${names.join(", ")}`);
   const skills = new Set();
   for (const n of names) {
     const b = loadBench(n); // throws with every problem
     assert.ok(b.criteria.some((c) => c.type === "check" || c.type === "check_fx"), `${n}: checks the result with check or check_fx`);
-    skills.add(b.skill);
+    skills.add(`${b.skill}${b.allowImageGenerator ? "+image-generator" : ""}`);
   }
   assert.equal(skills.size, names.length);
 });
