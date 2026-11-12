@@ -84,17 +84,20 @@ do
   s:close()
 end
 
--- frame-duration outliers within a tag
+-- frame-duration (#111): accidental durations and flat timing; a held key is fine
 do
   local s = newSprite(4, 4, { black })
   for _ = 1, 3 do s:newEmptyFrame() end
   for _, fr in ipairs(s.frames) do fr.duration = 0.1 end
-  s.frames[3].duration = 0.5
+  s.frames[3].duration = 0.001
   s:newTag(1, 4).name = "idle"
   local f = findings(H.check{ rules = { "frame-duration" } }, "frame-duration")
-  check("frame-duration: frame 3", #f == 1 and f[1].frames[1] == 3 and f[1].fix:match("100 ms") ~= nil, f[1] and f[1].fix)
+  check("frame-duration: an accidental 1 ms frame", #f == 1 and f[1].frames[1] == 3 and f[1].fix:match("100 ms") ~= nil, f[1] and f[1].fix)
   s.frames[3].duration = 0.1
-  check("frame-duration: clean", #findings(H.check{ rules = { "frame-duration" } }, "frame-duration") == 0)
+  f = findings(H.check{ rules = { "frame-duration" } }, "frame-duration")
+  check("frame-duration: flat timing", #f == 1 and #f[1].frames == 4 and f[1].fix:match("Every frame of tag idle lasts 100 ms") ~= nil, f[1] and f[1].fix)
+  s.frames[3].duration = 0.3
+  check("frame-duration: a held key is clean", #findings(H.check{ rules = { "frame-duration" } }, "frame-duration") == 0)
   s:close()
 end
 

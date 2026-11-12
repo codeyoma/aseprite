@@ -147,3 +147,13 @@ test("generation.yaml is written as YAML, and the judge block can be replaced", 
   assert.equal(twice.match(/^judge:/gm).length, 1);
   assert.ok(twice.startsWith(y));
 });
+
+test("motion_check criterion: errors fail by default, warnings only with maxWarnings (#111)", async () => {
+  const { evaluate } = await import("../../tests/bench/bench.mjs");
+  const text = (e, w) => [`MOTION CHECK "walk": x`, ...Array(e).fill("error: [volume] grows"), ...Array(w).fill("warning: [spacing] pops"), "spacing (px a frame): figure 1 2"].join("\n");
+  assert.equal(evaluate({ type: "motion_check" }, { text: text(0, 2) }).pass, true);
+  assert.equal(evaluate({ type: "motion_check" }, { text: text(1, 0) }).pass, false);
+  assert.equal(evaluate({ type: "motion_check", maxWarnings: 1 }, { text: text(0, 2) }).pass, false);
+  assert.match(evaluate({ type: "motion_check" }, { text: text(1, 1) }).detail, /^1 errors, 1 warnings; error: \[volume\] grows/);
+  assert.equal(evaluate({ type: "motion_check" }, { text: "No tag \"walk\"." }).pass, false);
+});

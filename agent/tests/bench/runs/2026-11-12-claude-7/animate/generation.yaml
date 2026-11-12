@@ -1,0 +1,170 @@
+benchmark: animate
+skill: animate
+title: Walk cycle and idle loop for a small side-view hero
+provider: claude
+model: null
+commit: "5235c7948"
+date: "2026-11-12T14:37:57.552Z"
+seconds: 253
+passed: 9
+total: 10
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 10
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 1-6
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 7-10
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: motion-measured
+    type: motion_check
+    desc: "motion_check on the walk: no part grows or shrinks, nothing boils, something moves (warnings allowed)"
+    pass: false
+    detail: "1 errors, 0 warnings; error: [flicker] Pixels boil in frame 1 (12 px), 2 (12 px), 3 (11 px), 4 (8 px), 5 (11 px), 6 (16 px): inside the shape they change color and change back in the next frame, so they shimmer in play. Keep the colors of what doesn't move the same as in the frames beside it.; spacing (px a frame): figure 0.4 1.5 1 0.4 1.3; near arm 1.9 2.1 2.9 1.9 2.1; near leg 0.7 1.8 1 0.2 3.3; volume drift: figure 5%; near arm 11%; near leg 15%; flicker (px): 1:12 2:12 3:11 4:8 5:11 6:16"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 10 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs."
+    seconds: 215
+    header: "Claude · animate"
+    tools:
+      - tool: Look at the sprite
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: "Read guide: anim.walk.limbs"
+        status: ok
+      - tool: "Read guide: anim.timing.walk"
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: "Motion clip: plan"
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: "Motion clip: advance"
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Measure the motion of walk
+        status: failed
+      - tool: Check pixel art
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Measure the motion of walk
+        status: failed
+      - tool: "Motion clip: rig"
+        status: ok
+      - tool: Measure the motion of walk
+        status: failed
+      - tool: Run Lua
+        status: ok
+      - tool: "Motion clip: done"
+        status: failed
+    reply: "I'll start by looking at the character and reading the walk timing rules.\nNow the keys (frames 1, 3, 4, 6) on the part layers:\nThe keys read correctly. Now `walk_check` on the contacts:\nNow the in-betweens (frames 2 and 5, the \"down\" poses) from the same part data:\nThe only warnings are for the 1 px eye, which is meant to be there. Final checks:\nThe critic says the far (dark) leg is drawn over the near leg. The layer stacking inside the group must be reversed, so I'll check and fix it:\nFrame 1 reads well now. On frame 4 the dark thigh seems to cross over. Let me look at those pixels:\nLet me find exactly which pixels it counts:\nI made the 6-frame `walk` tag facing right, and the arms swing opposite the legs. `walk_check` says **ok** on both contacts. Two checks still object, though, and the"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 38
+    header: Claude
+    tools:
+      - tool: "Read guide: anim.timing.idle"
+        status: ok
+      - tool: Add idle loop
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Read the timeline
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Adding the frames stretched the `walk` tag to 1–10, so I'll put it back to 1–6:\nI added a 4-frame `idle` loop on frames 7–10, right after the walk.\n\n| Frame | Pose | Duration |\n|---|---|---|\n| 7 | Rest | 300 ms |\n| 8 | In-breath: head and chest up 1 px | 150 ms |\n| 9 | Held up; the arms follow 1 px | 300 ms |\n| 10 | Head and chest back down; the arms still up | 150 ms |\n\n- The loop is 900 ms. The feet stay on row 30, and the shirt stretches by a pixel instead of lifting off the legs.\n- The arms trail the chest by one frame. That keeps every frame different and makes the breath look softer.\n- The walk is unchanged. Adding the frames stretched the `walk` tag to cover frames 1–10, so I set it back to 1–6.\n- The duplicate-frame and foot-jitter checks are clean. The only other warnings are for "
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - trails.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+    - trails.png
+  seconds: 39
+  scores:
+    readability: 2
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 3
+  overall: 2
+  note: "Clean pixel clusters support six readable walk poses with opposing arm swings and a subtle four-frame breathing bob. Stiff limb transitions and arms merging into the torso weaken the motion at 1×."

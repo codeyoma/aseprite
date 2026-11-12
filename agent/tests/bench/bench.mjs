@@ -29,6 +29,7 @@ export const CRITERIA = {
   check: { rules: "optional", maxErrors: "optional", maxWarnings: "optional", tag: "optional" },
   check_fx: { maxErrors: "optional" },
   walk_check: { tag: "optional" },
+  motion_check: { tag: "optional", maxErrors: "optional", maxWarnings: "optional" },
   palette: { colors: "required" },
   sprites: { title: "optional", minFrames: "optional", width: "optional", height: "optional", nineSlice: "optional", tilemap: "optional", min: "optional" },
   lua: { code: "required" },
@@ -179,6 +180,14 @@ export function evaluate(c, facts, { skill } = {}) {
       // walk_check with no arguments: the limbs the agent named (stored on the sprite) or its 'near arm'/'near leg' layers.
       const first = (facts.text ?? "").split("\n")[0];
       return { pass: /^WALK CHECK: ok/.test(first), detail: (facts.text ?? "").split("\n").filter((l) => /^(WALK CHECK|error|unverifiable|Name the)/.test(l)).join("; ").slice(0, 400) };
+    }
+    case "motion_check": {
+      // motion_check (#111): errors (a part's volume, boiling, nothing moving) and warnings (pops, foot slide, seam).
+      const lines = (facts.text ?? "").split("\n");
+      if (!/^MOTION CHECK/.test(lines[0] ?? "")) return { pass: false, detail: (lines[0] ?? "").slice(0, 200) };
+      const errors = lines.filter((l) => l.startsWith("error:")).length, warnings = lines.filter((l) => l.startsWith("warning:")).length;
+      return { pass: errors <= (c.maxErrors ?? 0) && (c.maxWarnings === undefined || warnings <= c.maxWarnings),
+        detail: [`${errors} errors, ${warnings} warnings`, ...lines.filter((l) => /^(error|warning|spacing|volume|flicker):?/.test(l))].join("; ").slice(0, 600) };
     }
     case "palette": {
       const off = list(s.colors).filter((h) => !c.colors.includes(h));

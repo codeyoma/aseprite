@@ -60,6 +60,6 @@ Adapted from aseprite-ai-artist's studio skill (MIT, https://github.com/with-peb
 <skill-tools>
 Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "list_skills", input: { ... } }). Their inputs:
 - list_skills {query?: string}: The skill catalog: built-in skills, guide topics and the user's own skills, with title, category and what each needs.
-- critique {what?: string, frames?: string|integer|[integer], tag?: string, layer?: string, checkpoint?: string}: Have the sprite judged by a fresh critic agent that has not seen this conversation or the brief (read-only tools, the pixel-art rules).
+- critique {what?: string, frames?: string|integer|[integer], tag?: string, layer?: string, checkpoint?: string, motion?: boolean}: Have the sprite judged by a fresh critic agent that has not seen this conversation or the brief (read-only tools, the pixel-art rules).
 - export_for_engine {engine: "godot"|"unity"|"phaser"|"tiled"|"json", dir: string, name?: string, trim?: boolean, padding?: integer 0-16, extrude?: integer 0-8, scale?: integer 1-8, power_of_two?: boolean, columns?: integer 1-64, pivot?: "bottom-center"|"center"|"top-left", glow?: "sheet"|"baked", pixels_per_unit?: integer 1-512}: Export the sprite's frames as a sheet with metadata for an engine: 'godot' (SpriteFrames .tres with an animation per tag), 'unity' (.png.meta with sliced spr…
 </skill-tools>

@@ -14,7 +14,7 @@ You know what you meant to draw, so you see it whether or not it is there. A cri
 
 ## 1. Critique
 1. Run `check` first and fix its errors yourself: a critic should not spend its read on orphan pixels.
-2. `critique` with at most a one-line `what` ("a 32x32 knight walk cycle"). Never pass the brief, the user's words or what you changed: the critic must judge what the picture shows. For an animation pass the `tag` or `frames`.
+2. `critique` with at most a one-line `what` ("a 32x32 knight walk cycle"). Never pass the brief, the user's words or what you changed: the critic must judge what the picture shows. For an animation pass the `tag` (the critic then also gets the trails view and the measured motion) or `frames`.
 3. Read the result: a cold read, a score out of 10, and findings tagged BLOCKING, WORTH FIXING or NOTE, each citing a rule (`read_guide` the rule id when the finding is unclear). A finding marked "unknown rule id" is the critic's own opinion: weigh it yourself.
 4. **Ship** at 7/10 or better with nothing BLOCKING: report the score and the findings you left, and stop. A cold read that does not name your subject is the most important finding: the picture does not say what you think.
 
@@ -22,7 +22,7 @@ You know what you meant to draw, so you see it whether or not it is there. A cri
 Each round:
 1. **Checkpoint:** `diff_visual { save: "review-<n>" }` (the bridge keeps a copy of every layer).
 2. **Fix, don't redraw:** fix the BLOCKING findings, or when none is left the critic's first fix. Nothing else: no general polish. `read_pixels` the region the finding names, change those keys, `write_pixels` them back, in one edit step if you can so one `undo` reverts it. Change at most 25% of any layer's opaque pixels.
-3. **Blind A/B:** `ab_compare { checkpoint: "review-<n>", what: <the same line> }`. It runs the fix guard first: a fix that changed more than 25% of a layer's opaque pixels is refused, so undo it and make a smaller one. Otherwise a fresh critic sees the checkpoint and the canvas as A and B in a random order and picks one; the result says which won.
+3. **Blind A/B:** `ab_compare { checkpoint: "review-<n>", what: <the same line> }`. It runs the fix guard first: a fix that changed more than 25% of a layer's opaque pixels is refused, so undo it and make a smaller one. A motion fix (a part moved, rotated or re-spaced, a frame re-drawn between its neighbors) passes `motion: true`: the guard then accepts a layer that keeps its size in every frame, and the critic sees the whole tag. Otherwise a fresh critic sees the checkpoint and the canvas as A and B in a random order and picks one; the result says which won.
 4. **Keep the winner:** when the fix wins, keep it. When the checkpoint wins or it is a tie, `undo` the fix steps and `diff_visual { checkpoint: "review-<n>" }` to confirm nothing changed since the checkpoint.
 5. `critique` again (with the same `what`) for the next round's findings. Ship as in step 1.4.
 

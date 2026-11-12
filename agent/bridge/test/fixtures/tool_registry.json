@@ -9,6 +9,7 @@
       "b",
       "checkpoint",
       "frames",
+      "motion",
       "what"
     ]
   },
@@ -170,6 +171,7 @@
       "checkpoint",
       "frames",
       "layer",
+      "motion",
       "tag",
       "what"
     ]
@@ -566,6 +568,20 @@
     ]
   },
   {
+    "name": "inbetween",
+    "title": "In-betweens from keys",
+    "kind": "edit",
+    "label": "In-betweens",
+    "input": [
+      "arc",
+      "easing",
+      "from",
+      "parts",
+      "tag",
+      "to"
+    ]
+  },
+  {
     "name": "iso_grid",
     "title": "Isometric grid guide",
     "kind": "edit",
@@ -780,6 +796,16 @@
       "layer",
       "reference",
       "top"
+    ]
+  },
+  {
+    "name": "motion_check",
+    "title": "Motion check",
+    "kind": "read",
+    "label": "Measure the motion",
+    "input": [
+      "parts",
+      "tag"
     ]
   },
   {
@@ -1025,19 +1051,6 @@
     ]
   },
   {
-    "name": "rotate_layer",
-    "title": "Rotate cleanly",
-    "kind": "edit",
-    "label": "Rotate  °",
-    "input": [
-      "angle",
-      "frames",
-      "layer",
-      "pivot_x",
-      "pivot_y"
-    ]
-  },
-  {
     "name": "run_command",
     "title": "Run Aseprite command",
     "kind": "edit",
@@ -1122,19 +1135,6 @@
     ]
   },
   {
-    "name": "smear_frame",
-    "title": "Smear frame",
-    "kind": "edit",
-    "label": "Smear frame",
-    "input": [
-      "frame",
-      "from_frame",
-      "layer",
-      "steps",
-      "to_frame"
-    ]
-  },
-  {
     "name": "snapshot",
     "title": "Snapshot sprite",
     "kind": "read",
@@ -1168,17 +1168,6 @@
     "kind": "edit",
     "label": "Split layer by color",
     "input": [
-      "layer"
-    ]
-  },
-  {
-    "name": "squash_stretch",
-    "title": "Squash and stretch",
-    "kind": "edit",
-    "label": "Stretch",
-    "input": [
-      "amount",
-      "frame",
       "layer"
     ]
   },
@@ -1226,12 +1215,13 @@
   },
   {
     "name": "transform_layer",
-    "title": "In-between a part",
+    "title": "Move a part",
     "kind": "edit",
-    "label": "In-between",
+    "label": "Move a part",
     "input": [
       "arc",
       "easing",
+      "frames",
       "from_frame",
       "layer",
       "move",

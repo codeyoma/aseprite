@@ -5,7 +5,7 @@ description: Build a character as body-part layers from the image generator, the
 category: Animation
 triggers: [character, new character, motion, moves, attack motion, guard motion, add a motion, motion set, move set, sword swing, slash animation]
 intents: [character, motion, swing]
-tools: [ask_user, generate_character, apply_timeline_text, get_timeline_text, motion_clip, walk_check, motion_review, transform_layer, rotate_layer, check, snapshot, read_guide]
+tools: [ask_user, generate_character, apply_timeline_text, get_timeline_text, motion_clip, walk_check, motion_review, inbetween, transform_layer, check, snapshot, read_guide]
 ---
 # Character motions on one sprite
 
@@ -28,7 +28,7 @@ One sprite holds one character: a **base pose**, then one **tag per motion** (id
 3. **Keys first, every motion (#109).** Pick the keys: the extremes and the poses that carry the motion (a walk's contacts and passings, an attack's anticipation, hit and recovery; at most 9, about one in three frames of a long motion). `motion_clip` `action: "plan"` with the tag, the keys and each key's pose, then `generate_character` with the keys' poses, `frames` the keys, `tag` and `name`, and the character's layers plus any the motion needs (a weapon, an effect). Each layer's one image holds that part in every key, and the tool cuts it into the frames. The base pose goes along as the reference.
 4. **Check the keys, then the in-betweens.**
    1. `walk_check` for a walk or run, `motion_review`, a filmstrip; then `motion_clip` `action: "advance"`.
-   2. Make the frames between the keys from the keys on both sides: move and rotate each part layer (`transform_layer`, `rotate_layer`), or for loose parts generate them in rounds of up to 9 with `generate_character` `inbetweens: true`, each pose described as between its two keys ("halfway from key 4 to key 7, the blade at shoulder height").
+   2. Make the frames between the keys from the keys on both sides: `inbetween` solves each part layer's move between the two keys (joints joined, keys untouched); for parts that change shape (it says which), generate them in rounds of up to 9 with `generate_character` `inbetweens: true`, each pose described as between its two keys ("halfway from key 4 to key 7, the blade at shoulder height").
 5. **Clean.** Every part layer is a draft. Join the joints, redraw broken outlines, keep the palette, and remove stray pixels. A missing or misaligned part: redraw it from the reference.
 6. **Check.** `check` with the tag's frames, `snapshot` `view: "filmstrip"` with the tag. A walk or run also needs `walk_check`, then `motion_review`. Then `motion_clip` `action: "done"`.
 7. **Report** the motion's tag and frames, what each frame shows, and the layers that were added.
@@ -38,7 +38,7 @@ One sprite holds one character: a **base pose**, then one **tag per motion** (id
 - Each layer is generated once per round. One image holds all of that layer's frames in the round; never one image per frame.
 - Keys before in-betweens, for every motion: the keys stage of the motion's clip refuses any other frame until it advances.
 - Effects only appear in the frames they belong to, on their own layer above the body.
-- If the user declines the image generator, draw the motion yourself on the same part layers: keys first, then in-betweens by moving and rotating parts (`transform_layer`, `rotate_layer`).
+- If the user declines the image generator, draw the motion yourself on the same part layers: keys first, then in-betweens with `inbetween`.
 
 Then: `review`, then `export-game` for a game.
 
@@ -50,6 +50,6 @@ Tools this skill uses that are not in your tool list: call them with call_tool, 
 - motion_clip {action?: "show"|"plan"|"advance"|"done"|"rig"|"remove", tag?: string, kind?: "walk"|"run"|"idle"|"cycle"|"action", facing?: "right"|"left", loop?: boolean, keys?: [integer|object], contacts?: [integer], root_travel?: number, followers?: [object], character?: string, staged?: boolean, base_frame?: integer, parts?: [object]}: The animation's plan as data on the sprite (#109), one clip per tag: kind, facing, loop, key frames with their poses, contacts, root travel and followers (ha…
 - walk_check {tag?: string, facing?: "right"|"left", contacts?: [integer, integer], near_arm?: object, near_leg?: object}: Check a side-view walk's arms against its legs on the two contact frames: the near arm must swing opposite the near leg, and each must change sides between t…
 - motion_review {tag?: string}: A fresh critic looks at a walk's two contact frames (enlarged, no measurements, no brief) and says which arm it notices, which leg it pairs with that arm, an…
-- transform_layer {layer: string, from_frame: integer, to_frame: integer, move: object, arc?: number, easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out"}: Animate a rigid part (a layer: an arm, a sword, a whole small sprite) from its drawing in from_frame through to_frame: each frame gets the drawing moved/rota…
-- rotate_layer {layer: string, frames: [integer], angle: number, pivot_x?: number, pivot_y?: number}: Rotate a layer's drawing in some frames by an angle around a pivot, RotSprite-style (clean edges, no new colors).
+- inbetween {tag?: string, from?: integer, to?: integer, parts?: [string], easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out", arc?: number}: Make the frames between approved keys (#110): each part layer is solved as a rigid move between its two keys (a turn about its joint, where it meets its pare…
+- transform_layer {layer: string, move: object, frames?: [integer], from_frame?: integer, to_frame?: integer, arc?: number, easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out"}: Move, turn, scale or squash a rigid part (a layer: an arm, a sword, a whole small sprite), RotSprite-style: pixels stay clean and no new colors appear.
 </skill-tools>

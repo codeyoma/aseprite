@@ -14,7 +14,7 @@ export default {
     { tool: "motion_clip", input: { action: "plan", tag: "bounce", kind: "action", keys: [{ frame: 1, pose: "start" }] } },
     { tool: "motion_clip", input: { action: "advance", tag: "bounce" } },
     { tool: "transform_layer", input: { layer: "Ball", from_frame: 1, to_frame: 5, move: { dx: 16 }, easing: "linear" } },
-    { tool: "squash_stretch", input: { layer: "Ball", frame: 5, amount: -0.3 } },
+    { tool: "transform_layer", input: { layer: "Ball", frames: [5], move: { squash: -0.3 } } },
     { tool: "motion_clip", input: { action: "done", tag: "bounce" } },
     { tool: "snapshot", input: { view: "filmstrip", frames: "1-5" } },
   ],

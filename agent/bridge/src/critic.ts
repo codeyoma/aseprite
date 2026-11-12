@@ -63,8 +63,8 @@ Never say "looks good". A finding names a place (coordinates, a part, a frame) a
 Your last message is the JSON object you were asked for, and nothing else.`;
 
 const SEVERITY_TEXT = `Severities:
-- BLOCKING: the sprite fails as it is: the subject does not read, a part floats or is cut off, broken frames, noise that reads as dirt across it, a mechanical error from check.
-- WORTH FIXING: clearly better when fixed: flat or pillow shading, muddy values, stray pixels, uneven lines, near-duplicate colors.
+- BLOCKING: the sprite fails as it is: the subject does not read, a part floats or is cut off, broken frames, noise that reads as dirt across it, a mechanical error from check. In an animation also: a part that grows or shrinks between frames, pixels that boil (blink back and forth), a frame that pops out of the motion.
+- WORTH FIXING: clearly better when fixed: flat or pillow shading, muddy values, stray pixels, uneven lines, near-duplicate colors. In an animation also: even spacing with no ease into the keys, limbs sliding on straight lines instead of arcs, a planted foot that slides, flat timing, a loop that jumps at the seam.
 - NOTE: small or a matter of taste.`;
 
 /** The critique request: the critic's whole view of the work. */
@@ -78,7 +78,7 @@ export function critiqueMessage(o: { what?: string; state: string; images: strin
     "",
     "Procedure:",
     "1. Cold read first: before anything else, write down in one or two sentences what the picture shows to someone never told what it is, and where the eye lands first.",
-    "2. Run check for the mechanical findings. Use snapshot (view 'filmstrip' or 'onion' for animation; a single frame at full zoom for detail) and read_pixels for exact positions.",
+    "2. Run check for the mechanical findings, and motion_check for an animation (spacing, arcs, volume, flicker, foot slide, timing, measured). Use snapshot (view 'filmstrip', 'onion' or 'trails' for animation; a single frame at full zoom for detail) and read_pixels for exact positions.",
     "3. Read the rules you judge against with read_guide (a chapter's Review and Mistakes sections, or one rule id). Every finding cites one rule id from the index below; when no rule fits exactly, cite the closest chapter's review or mistakes id. Never invent an id.",
     "4. Score 0-10: 7 or more means you would ship it in a game as it is. Do not round up.",
     "",
@@ -99,7 +99,7 @@ export function compareMessage(o: { what?: string; layout: string; index: string
     o.what ? `The person who asked says it is: ${o.what}` : "You are not told what it is.",
     "Judge only these two images, as you see them: which is the better pixel art? You are not told which is older or which was changed, and the order is random. " +
       "Do not take a snapshot of the document: it shows only one of them and tells you nothing about the other.",
-    "Look for: a silhouette that reads, parts that float or are cut off, stray pixels and noise, clean lines, shading with a clear light, readable values.",
+    "Look for: a silhouette that reads, parts that float or are cut off, stray pixels and noise, clean lines, shading with a clear light, readable values. With several frames, judge the motion too: frame to frame, does each part keep its size, move on an arc with eased spacing, and flow into the next frame without popping or boiling?",
     "You may read_guide the rules (index below) and cite ids from it.",
     "",
     "Rules index:",
@@ -349,6 +349,12 @@ export function changedPixels(before: Rgba, after: Rgba): { changed: number; opa
   return { changed, opaque };
 }
 
+const opaqueOf = (img: Rgba) => {
+  let n = 0;
+  for (let i = 3; i < img.data.length; i += 4) if (img.data[i]) n++;
+  return n;
+};
+
 export interface LayerChange {
   id: string;
   name: string;
@@ -358,6 +364,8 @@ export interface LayerChange {
   share: number;
   /** Over the limit: the fix redrew this layer. */
   over: boolean;
+  /** Motion mode (#111): over the pixel limit but every frame keeps the layer's size, so the part moved. */
+  moved?: boolean;
   /** The layer is gone. */
   removed?: boolean;
 }
@@ -376,7 +384,7 @@ export interface GuardResult {
  * does a removed layer. A layer that was empty at the checkpoint, or is new, is not guarded: drawing on it is
  * adding, not redrawing.
  */
-export function fixGuard(cp: ReviewCheckpoint, now: Map<string, { name: string; images: Map<number, Rgba> }>, limit = FIX_LIMIT): GuardResult {
+export function fixGuard(cp: ReviewCheckpoint, now: Map<string, { name: string; images: Map<number, Rgba> }>, limit = FIX_LIMIT, motion = false): GuardResult {
   const layers: LayerChange[] = [];
   for (const [id, before] of cp.layers) {
     const after = now.get(id);
@@ -396,7 +404,14 @@ export function fixGuard(cp: ReviewCheckpoint, now: Map<string, { name: string; 
       continue;
     }
     const share = changed / opaque;
-    layers.push({ id, name: before.name, changed, opaque, share, over: share > limit && changed > FIX_FLOOR });
+    let over = share > limit && changed > FIX_FLOOR;
+    // A motion fix (#111) moves, rotates or re-spaces a whole part: allowed when every frame keeps the part's size.
+    const moved = over && motion && [...before.images].every(([f, img]) => {
+      const a = opaqueOf(img), b = opaqueOf(after.images.get(f) ?? blank(img.width, img.height));
+      return a === 0 ? b === 0 : Math.abs(b - a) / a <= MOVE_SIZE;
+    });
+    if (moved) over = false;
+    layers.push({ id, name: before.name, changed, opaque, share, over, ...(moved ? { moved: true } : {}) });
   }
   const added = [...now.entries()].filter(([id]) => !cp.layers.has(id)).map(([id, l]) => `${id} ${l.name}`);
   return { ok: !layers.some((l) => l.over), layers, added, frames: cp.frames };
@@ -424,11 +439,14 @@ async function layersNow(aseprite: AsepriteRequester, cp: ReviewCheckpoint) {
 
 const pct = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : "new");
 
+/** Motion mode: a moved part may change its opaque pixel count by this share (rotation and rounding). */
+export const MOVE_SIZE = 0.15;
+
 export function formatGuard(g: GuardResult, checkpoint: string): string {
   const touched = g.layers.filter((l) => l.changed > 0);
   const lines = touched.map((l) => l.removed
     ? `- ${l.id} ${l.name}: removed (${l.opaque} opaque px at the checkpoint)`
-    : `- ${l.id} ${l.name}: ${l.changed} px changed of ${l.opaque} opaque (${pct(l.share)})${l.over ? " OVER" : ""}`);
+    : `- ${l.id} ${l.name}: ${l.changed} px changed of ${l.opaque} opaque (${pct(l.share)})${l.over ? " OVER" : l.moved ? " (moved: same size every frame, allowed as a motion fix)" : ""}`);
   if (g.added.length) lines.push(`- new since the checkpoint (not guarded): ${g.added.join(", ")}`);
   const head = g.ok
     ? `Fix guard passed against checkpoint "${checkpoint}": no layer changed more than ${pct(FIX_LIMIT)} of its opaque pixels.`
@@ -453,9 +471,9 @@ async function checkpointOfActive(aseprite: AsepriteRequester, name: string): Pr
 }
 
 /** Runs the guard for a named checkpoint. */
-export async function runFixGuard(aseprite: AsepriteRequester, name: string): Promise<GuardResult> {
+export async function runFixGuard(aseprite: AsepriteRequester, name: string, motion = false): Promise<GuardResult> {
   const cp = await checkpointOfActive(aseprite, name);
-  return fixGuard(cp, await layersNow(aseprite, cp));
+  return fixGuard(cp, await layersNow(aseprite, cp), FIX_LIMIT, motion);
 }
 
 // ---------------------------------------------------------------------------
@@ -711,13 +729,14 @@ export const CRITIC_TOOLS: Tool[] = [
       tag: z.string().optional().describe("Show this tag's frames."),
       layer: z.string().optional().describe("Judge only this layer. Default: the whole sprite."),
       checkpoint: z.string().optional().describe("Run the fix guard against this diff_visual checkpoint first."),
+      motion: z.boolean().optional().describe("The fix moved, rotated or re-spaced parts (#111): the guard lets a layer change many pixels when every frame keeps its size."),
     }),
     kind: "read",
     label: () => "Ask a fresh critic",
     async run(input, ctx) {
       let guardText = "";
       if (input.checkpoint !== undefined) {
-        const g = await runFixGuard(ctx, input.checkpoint);
+        const g = await runFixGuard(ctx, input.checkpoint, input.motion);
         guardText = formatGuard(g, input.checkpoint);
         if (!g.ok) return { content: [text(`${guardText}\nNo critique was run for this round.`)] };
       }
@@ -727,6 +746,7 @@ export const CRITIC_TOOLS: Tool[] = [
       const n = info.durations.length;
       const many = input.tag !== undefined || (input.frames !== undefined ? resolveFrames(input.frames, n, info.frame, "all").length > 1 : n > 1);
       let image: ImageBlock, shows: string;
+      const extra: ImageBlock[] = [];
       if (many) {
         const r = await snapshotView(ctx, { view: "filmstrip", tag: input.tag, frames: input.frames, layer: input.layer });
         if (r.isError) return r;
@@ -734,6 +754,17 @@ export const CRITIC_TOOLS: Tool[] = [
         if (!img || img.type !== "image") return failure("No filmstrip image");
         image = { label: "filmstrip", mimeType: img.mimeType, data: img.data };
         shows = "a filmstrip of the frames, numbered, read left to right.";
+        // An animation's tag: the trails view and the measured motion go along (#111).
+        if (input.tag !== undefined) {
+          const t = await snapshotView(ctx, { view: "trails", tag: input.tag });
+          const timg = t.content.find((c) => c.type === "image");
+          const ttext = t.content.find((c) => c.type === "text");
+          if (!t.isError && timg && timg.type === "image") {
+            extra.push({ label: "trails", mimeType: timg.mimeType, data: timg.data });
+            shows += " The second image is the trails view: every frame ghosted, each part's center per frame joined in frame order." +
+              (ttext && ttext.type === "text" ? `\n${ttext.text}` : "");
+          }
+        }
       } else {
         const frame = input.frames !== undefined ? resolveFrames(input.frames, n, info.frame, "all")[0] : info.frame;
         const px = await doc.pixels(input.layer, frame);
@@ -747,7 +778,7 @@ export const CRITIC_TOOLS: Tool[] = [
       try {
         const known = ruleIds();
         parsed = await askParsed(session, critiqueMessage({ what: input.what, state: stateSummary(info), images: shows, index: rulesIndex() }),
-          [image], (r) => parseCritique(r, known));
+          [image, ...extra], (r) => parseCritique(r, known));
       } finally {
         session.close();
       }
@@ -765,6 +796,7 @@ export const CRITIC_TOOLS: Tool[] = [
       "otherwise undo it. Or compare `a` and `b`: a layer and frames each. Pass at most a one-line `what`, never the brief.",
     input: z.object({
       checkpoint: z.string().optional().describe("Compare this diff_visual checkpoint (before) with the canvas now (after)."),
+      motion: z.boolean().optional().describe("The fix moved, rotated or re-spaced parts (#111): the guard lets a layer change many pixels when every frame keeps its size, and the critic sees the whole tag around the changed frames."),
       frames: framesSpec.optional().describe("checkpoint: frames to compare. Default: the frames that changed (at most 8)."),
       a: side.optional().describe("The first version: { layer, frame | frames }."),
       b: side.optional().describe("The second version."),
@@ -784,7 +816,7 @@ export const CRITIC_TOOLS: Tool[] = [
         } catch (e) {
           return failure((e as Error).message);
         }
-        const g = fixGuard(cp, await layersNow(ctx, cp));
+        const g = fixGuard(cp, await layersNow(ctx, cp), FIX_LIMIT, input.motion);
         guardText = formatGuard(g, input.checkpoint);
         if (!g.ok) return { content: [text(`${guardText}\nNo comparison was run for this round.`)] };
         const info = await doc.info();
@@ -802,6 +834,12 @@ export const CRITIC_TOOLS: Tool[] = [
           // A timing-only change: compare every kept frame, with the timing in the prompt.
           if (!frames.length && timing.length) frames = [...now.keys()];
           if (!frames.length) return { content: [text(`Nothing changed since checkpoint "${cp.name}"; there is nothing to compare.`)] };
+          // The changed frames inside one tag: show the whole tag (#111), so the critic sees them with their neighbors.
+          const tag = info.tags.find((t) => frames.every((f) => f >= t.from && f <= t.to));
+          if (tag && tag.to - tag.from + 1 <= AB_FRAMES) {
+            const all = Array.from({ length: tag.to - tag.from + 1 }, (_, i) => tag.from + i).filter((f) => cp.composite.has(f) && now.has(f));
+            if (all.length > frames.length) frames = all;
+          }
         }
         frames = frames.slice(0, AB_FRAMES);
         A = frames.map((f) => cp.composite.get(f)!);

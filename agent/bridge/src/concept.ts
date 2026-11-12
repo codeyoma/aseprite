@@ -6,6 +6,7 @@
 // The idea of splitting design (an image model) from pixel work (the agent), and of a pixel spec written from the
 // reference, comes from aseprite-ai-artist (MIT, https://github.com/with-pebbly/aseprite-ai-artist,
 // skills/concept/SKILL.md, docs/adr/0009-concept-first.md); the code is our own.
+import { silhouette } from "./motion_analysis.js";
 import { hex, hueName, quantize, toOklch, type RGBA } from "./color.js";
 import { bounds, crop, OPAQUE, type Rgba } from "./image.js";
 import { resample } from "./pixel_grid.js";
@@ -103,19 +104,13 @@ export interface FrameMeasure {
   pixels: number;
 }
 
-/** The silhouette of an image (alpha >= 128): bounds, center, top and feet. */
+/** The silhouette of an image (alpha >= 128): bounds, center, top and feet (motion_analysis.silhouette, #111). */
 export function measure(img: Rgba): FrameMeasure {
-  const b = bounds(img);
-  if (!b) return { bounds: null, center: null, top: null, feet: null, pixels: 0 };
-  const rowMid = (y: number): Point => {
-    let sum = 0, n = 0;
-    for (let x = b.x; x < b.x + b.w; x++) if (img.data[(y * img.width + x) * 4 + 3] >= OPAQUE) { sum += x; n++; }
-    return [Math.round(sum / n), y];
-  };
-  let pixels = 0;
-  for (let i = 3; i < img.data.length; i += 4) if (img.data[i] >= OPAQUE) pixels++;
-  const x1 = b.x + b.w - 1, y1 = b.y + b.h - 1;
-  return { bounds: [b.x, b.y, x1, y1], center: [(b.x + x1) / 2, (b.y + y1) / 2], top: rowMid(b.y), feet: rowMid(y1), pixels };
+  const s = silhouette(img, 0);
+  if (!s.bounds) return { bounds: null, center: null, top: null, feet: null, pixels: 0 };
+  const [x0, y0, x1, y1] = s.bounds;
+  const mid = (p: [number, number]): Point => [Math.round(p[0]), p[1]];
+  return { bounds: s.bounds, center: [(x0 + x1) / 2, (y0 + y1) / 2], top: mid(s.top!), feet: mid(s.feet!), pixels: s.area };
 }
 
 /** A dominant color of the reference and the role it probably plays. */

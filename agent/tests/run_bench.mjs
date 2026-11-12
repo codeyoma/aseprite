@@ -230,6 +230,10 @@ for (const bench of benches) {
       // A walk with errors comes back as a tool error; its text is the verdict.
       try { facts.text = textOf(await c.call("walk_check", crit.tag ? { tag: crit.tag } : {})); } catch (e) { facts.text = String(e.message ?? e); }
     }
+    else if (crit.type === "motion_check") {
+      // Errors come back as a tool error; its text is the report.
+      try { facts.text = textOf(await c.call("motion_check", crit.tag ? { tag: crit.tag } : {})); } catch (e) { facts.text = String(e.message ?? e); }
+    }
     else if (crit.type === "lua") facts.lua = await safeLua(linesOf(crit.code));
     result = evaluate(crit, facts, { skill: bench.skill });
     criteria.push({ id: crit.id, type: crit.type, desc: crit.desc ?? null, pass: result.pass, detail: result.detail ?? null });
@@ -246,6 +250,14 @@ for (const bench of benches) {
   // (a tile set beside its preview, a panel beside the button) and, when the benchmark
   // names them, layers alone (variants hidden under the top one).
   const extras = start ? [{ file: "start.png", what: `the sprite before the request, as it was given${startFrames > 1 ? `, its ${startFrames} frames side by side` : ""}, enlarged` }] : [];
+  // An animation: the trails view (#111), every frame ghosted with each part's path, for the motion axis.
+  if (bench.animated) {
+    try {
+      if (savePng(await c.call("snapshot", { view: "trails" }), join(dir, "trails.png"))) {
+        extras.push({ file: "trails.png", what: "the animation's frames ghosted together on a dark backdrop, the first solid, with each part's center per frame drawn as dots joined in frame order (even gaps: even spacing; bunched dots near poses: easing; a straight row on a limb: no arc; one long gap: a pop)" });
+      }
+    } catch { /* no tag to trace */ }
+  }
   const sliceNote = (s) => (list(s?.slices).length ? `; 9-patch slices (not drawn): ${list(s.slices).join("; ")}` : "");
   for (const s of sprites.filter((s) => s.index !== home && !s.empty)) {
     await activate(s.index);

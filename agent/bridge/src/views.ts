@@ -8,12 +8,14 @@
 import { documentOf, resolveFrames, type Document, type LayerInfo, type SpriteInfo } from "./document.js";
 import { composeNormal } from "./export.js";
 import { shownImageLayers } from "./export_tools.js";
-import { contactSheet, encodePng, flatten, sheetGeometry, type Rgba } from "./image.js";
+import { contactSheet, encodePng, flatten, scale, sheetGeometry, type Rgba } from "./image.js";
+import { describeReport, trackClip } from "./motion_analysis.js";
+import { MotionStore, clipParts, kindOf, viewOf } from "./motion_clip.js";
 import { encodeSnapshot } from "./png.js";
 import type { RGBA } from "./color.js";
 import { failure, text, type AsepriteRequester, type ToolResult } from "./tool.js";
 
-export type View = "filmstrip" | "onion" | "compare";
+export type View = "filmstrip" | "onion" | "compare" | "trails";
 
 export interface ViewInput {
   view: View;
@@ -203,6 +205,8 @@ export async function snapshotView(aseprite: AsepriteRequester, input: ViewInput
     return filmstrip(doc, info, frames, input);
   }
 
+  if (input.view === "trails") return trails(doc, info, input);
+
   if (input.view === "onion") {
     let first = 1, last = n, wrap = false, at = input.frame ?? info.frame;
     if (input.tag !== undefined) {
@@ -282,6 +286,68 @@ async function filmstrip(doc: ReturnType<typeof documentOf>, info: SpriteInfo, f
         `${picked.length} frames of ${w}x${h} px at ${layout.zoom}x, ${layout.columns} per row, ${timing} (${sheet.width}x${sheet.height}). ` +
         `Read left to right, top to bottom; the number above each is its frame (and, when durations differ, its ms at the right). Check that each frame moves on from the ` +
         `last, the silhouette keeps its size, and the loop's last frame leads into the first.${cut}`),
+    ],
+  };
+}
+
+/** Trail colors per tracked part (the whole figure first): distinct on the dark backdrop. */
+export const TRAIL_COLORS: RGBA[] = [
+  { r: 255, g: 255, b: 255, a: 255 }, { r: 255, g: 196, b: 0, a: 255 }, { r: 0, g: 220, b: 255, a: 255 }, { r: 255, g: 80, b: 160, a: 255 },
+  { r: 120, g: 255, b: 80, a: 255 }, { r: 255, g: 120, b: 40, a: 255 }, { r: 170, g: 130, b: 255, a: 255 }, { r: 255, g: 255, b: 120, a: 255 },
+];
+
+function plot(img: Rgba, x: number, y: number, c: RGBA, r: number) {
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const px = Math.round(x) + dx, py = Math.round(y) + dy;
+    if (px < 0 || py < 0 || px >= img.width || py >= img.height) continue;
+    img.data.set([c.r, c.g, c.b, 255], (py * img.width + px) * 4);
+  }
+}
+
+function line(img: Rgba, a: [number, number], b: [number, number], c: RGBA) {
+  const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])));
+  for (let i = 0; i <= n; i++) plot(img, a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n, c, 0);
+}
+
+/**
+ * The trails view (#111): every frame of a tag ghosted together on a dark backdrop, the first frame solid, and each
+ * tracked part's centroid path drawn over it (a dot per frame, a line between frames, the first dot larger), so
+ * spacing and arcs show in one still image. The motion numbers come with it as text.
+ */
+async function trails(doc: ReturnType<typeof documentOf>, info: SpriteInfo, input: ViewInput): Promise<ToolResult> {
+  let store: MotionStore;
+  try { store = await MotionStore.load(doc); } catch (e) { return failure((e as Error).message); }
+  const name = input.tag ?? store.active()?.name ?? (info.tags.length === 1 ? info.tags[0].name : undefined);
+  if (!name) return failure("trails needs a tag: pass tag.");
+  const tag = store.tag(name);
+  if (!tag) return failure(`No tag named "${name}" (tags: ${info.tags.map((x) => x.name).join(", ") || "none"})`);
+  const v = store.view(tag.name) ?? viewOf(tag, { kind: kindOf(tag.name), facing: "right", loop: kindOf(tag.name) !== "action", keys: [], stage: "none" }, info.durations);
+  const parts = input.layer ? [input.layer] : clipParts(store, v);
+  const report = await trackClip(doc, v, parts);
+  const { width: w, height: h } = info;
+  const s = Math.max(2, Math.min(input.scale ?? Math.floor(VIEW_TARGET / Math.max(w, h)), Math.floor(VIEW_MAX / Math.max(w, h))));
+  const frames = [];
+  for (const f of v.frames) frames.push(await doc.pixels(input.layer, f));
+  const layers = frames.slice(1).map((img) => ({ image: ghost(img, { r: 140, g: 140, b: 170, a: 255 }, 255), opacity: 70 }));
+  const art = composeNormal([...layers, { image: frames[0], opacity: 255 }], w, h);
+  const big = scale(flatten(art, SHEET_BACKDROP), s);
+  const out: Rgba = { width: big.width, height: big.height, data: new Uint8Array(big.data) };
+  const center = (p: [number, number]): [number, number] => [(p[0] + 0.5) * s, (p[1] + 0.5) * s];
+  report.tracks.forEach((t, i) => {
+    const c = TRAIL_COLORS[i % TRAIL_COLORS.length];
+    const pts = t.frames.map((f) => f.centroid && center(f.centroid));
+    for (let k = 1; k < pts.length; k++) if (pts[k] && pts[k - 1]) line(out, pts[k - 1]!, pts[k]!, c);
+    pts.forEach((p, k) => p && plot(out, p[0], p[1], c, k === 0 ? Math.max(2, Math.floor(s / 3)) : Math.max(1, Math.floor(s / 5))));
+  });
+  const names = ["white", "amber", "cyan", "pink", "green", "orange", "violet", "yellow"];
+  const legend = report.tracks.map((t, i) => `${names[i % names.length]} = ${t.part || "the whole figure"}`).join(", ");
+  return {
+    content: [
+      image(out),
+      text(`Trails of "${v.name}" (frames ${v.frames[0]}-${v.frames[v.frames.length - 1]}) at ${s}x: frame ${v.frames[0]} solid, the others ghosted; ` +
+        `each tracked part's center per frame is a dot (the first one larger) joined in frame order: ${legend}. Even gaps between dots are even ` +
+        `spacing; dots bunching near the keys are easing; a straight row of dots on a limb is a missing arc; one long gap is a pop.\n\n` +
+        describeReport(v.name, report)),
     ],
   };
 }

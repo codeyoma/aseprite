@@ -453,20 +453,29 @@ return function(handlers, D)
           end
         end
       end
+      -- frame-duration (#111): flat timing (4+ frames, every one the same: no key is held) and accidental
+      -- durations (under 20 ms, or more than 5 times the tag's usual); a deliberate hold is not a finding.
       if enabled["frame-duration"] and to > from then
         local durations = {}
         for f = from, to do durations[#durations + 1] = sprite.frames[f].duration end
         local sorted = { table.unpack(durations) }
         table.sort(sorted)
         local median = sorted[(#sorted + 1) // 2]
+        local ms = function(d) return math.floor(d * 1000 + 0.5) end
         local odd = {}
         for i, d in ipairs(durations) do
-          if median > 0 and math.abs(d - median) / median > 0.5 then odd[#odd + 1] = from + i - 1 end
+          if d < 0.02 or (median > 0 and d > 5 * median) then odd[#odd + 1] = from + i - 1 end
         end
         if #odd > 0 then
           add{ rule = "frame-duration", severity = "warning", tag = tag.name, frames = odd,
-               fix = string.format("Frames %s differ from the tag's usual %d ms; set them to %d ms unless the hold is deliberate",
-                 table.concat(odd, ","), math.floor(median * 1000 + 0.5), math.floor(median * 1000 + 0.5)) }
+               fix = string.format("Frames %s last %s ms against the tag's usual %d ms; that looks accidental, so set a duration on purpose",
+                 table.concat(odd, ","), table.concat((function() local t = {} for _, f in ipairs(odd) do t[#t + 1] = ms(sprite.frames[f].duration) end return t end)(), "/"), ms(median)) }
+        elseif #durations >= 4 and sorted[1] == sorted[#sorted] then
+          local all = {}
+          for f = from, to do all[#all + 1] = f end
+          add{ rule = "frame-duration", severity = "warning", tag = tag.name, frames = all,
+               fix = string.format("Every frame of tag %s lasts %d ms: hold the keys longer and pass through the in-betweens faster (rule:anim.ticks)",
+                 tag.name, ms(median)) }
         end
       end
     end

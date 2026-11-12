@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
-  __setReviewCheckpointForTest, abRecords, abSheet, askParsed, changedPixels, extractJson, FIX_LIMIT, fixGuard, formatCritique,
+  __setReviewCheckpointForTest, abRecords, abSheet, askParsed, changedPixels, extractJson, FIX_LIMIT, fixGuard, formatGuard, formatCritique,
   normalizeRuleId, parseAb, parseCritique, reviewCheckpoint, seededRandom,
 } from "../dist/critic.js";
 import { startHttpEndpoint } from "../dist/http.js";
@@ -196,6 +196,12 @@ test("the fix guard: at most 25% of a layer's opaque pixels, small fixes always 
   assert.equal(g2.ok, false);
   const l1 = g2.layers.find((l) => l.id === "L1");
   assert.ok(l1.over && l1.share > FIX_LIMIT, JSON.stringify(l1));
+  // Motion mode (#111): the same move keeps the part's size, so it passes as a motion fix; a growth does not.
+  const moved = fixGuard(cp, withBody(redraw), FIX_LIMIT, true);
+  assert.equal(moved.ok, true);
+  assert.equal(moved.layers.find((l) => l.id === "L1").moved, true);
+  assert.match(formatGuard(moved, "g"), /moved: same size every frame, allowed as a motion fix/);
+  assert.equal(fixGuard(cp, withBody(rect(W, W, [5, 5, 18, 18], BODY)), FIX_LIMIT, true).ok, false, "a part that grows is still a redraw");
 
   // Drawing on a layer that was empty, or on a new layer, is adding, not redrawing.
   const added = withBody(body, [["L9", { name: "Shadow", images: new Map([[1, img(rect(W, W, [0, 20, 31, 31], GROUND))]]) }]]);

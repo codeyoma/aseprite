@@ -2,6 +2,7 @@
 // contact frames from limbs the agent names (part layers, or colors within rows), never guessed from the whole
 // figure: the hand's offset from the shoulder and the foot's offset from the hip, toward the facing direction.
 import type { Rgba } from "./image.js";
+import { silhouette } from "./motion_analysis.js";
 import { parseHex, toOklab } from "./color.js";
 import type { Document } from "./document.js";
 
@@ -275,8 +276,7 @@ export async function measureWalk(doc: Document, input: WalkInput, stored: Parti
   const cycle: CycleReading[] = [];
   for (let frame = tag.from; frame <= (o.contactsOnly ? tag.from - 1 : tag.to); frame++) {
     const whole = await doc.pixels(undefined, frame);
-    let top: number | undefined;
-    for (let i = 3; i < whole.data.length; i += 4) if (whole.data[i] >= 128) { top = Math.floor((i - 3) / 4 / whole.width); break; }
+    const top = silhouette(whole, frame).bounds?.[1];
     const size = async (l: LimbSelector) => {
       const img = l.layer ? await doc.pixels(l.layer, frame) : whole;
       return fromTop(limbMask(img, l), img.width).filter(Boolean).length;

@@ -5,7 +5,7 @@ description: Complete a character's directions for top-down or isometric games: 
 category: Directions
 triggers: [8 directions, eight directions, 4 directions, four directions, all directions, isometric, top-down directions, facing]
 intents: [this sprite, this character, my sprite, my character, drawing, draw]
-tools: [read_guide, direction_plan, mirror_direction, spawn_agents, execute_lua, apply_timeline_text, rotate_layer, iso_project, iso_grid, snapshot]
+tools: [read_guide, direction_plan, mirror_direction, spawn_agents, execute_lua, apply_timeline_text, transform_layer, iso_project, iso_grid, snapshot]
 ---
 # Make 4 or 8 directions
 
@@ -26,7 +26,7 @@ Tools this skill uses that are not in your tool list: call them with call_tool, 
 - mirror_direction {tag: string, to?: string, new_tag?: string, keep_layers?: [string]}: Make a direction by mirroring another: copies a tag's frames to the end, flipped horizontally, as a new tag named for the new direction (walk_E -> walk_W).
 - spawn_agents {instruction?: string, tasks: [object], parallel?: integer 1-4}: Split a multi-frame job into sub-tasks and run them in parallel, one sub-agent each (up to 4 at once).
 - apply_timeline_text {text: string, plan?: boolean}: Change the timeline to match the text, in one undo step.
-- rotate_layer {layer: string, frames: [integer], angle: number, pivot_x?: number, pivot_y?: number}: Rotate a layer's drawing in some frames by an angle around a pivot, RotSprite-style (clean edges, no new colors).
+- transform_layer {layer: string, move: object, frames?: [integer], from_frame?: integer, to_frame?: integer, arc?: number, easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out"}: Move, turn, scale or squash a rigid part (a layer: an arm, a sword, a whole small sprite), RotSprite-style: pixels stay clean and no new colors appear.
 - iso_project {layer?: string, frame?: integer}: Turn a top-down square tile or shape (a layer, active frame) into a 2:1 isometric diamond, pixel-exact, opened as a new sprite.
 - iso_grid {tile?: integer 4-256}: Add a 2:1 isometric grid (tiles `tile` px wide) on an 'AI: iso grid' layer, as a drawing guide.
 </skill-tools>

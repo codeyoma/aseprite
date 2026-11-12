@@ -131,22 +131,23 @@ export const CORE_TOOLS: Tool[] = [
       "you only its first frame), pick a view: 'filmstrip' lays out a tag's or a range's frames in one image with " +
       "frame numbers (use it before you report an animation done); 'onion' shows a frame solid over its neighbors, " +
       "earlier ones ghosted red and later ones blue, to check spacing and arcs; 'compare' puts a reference layer " +
-      "(REF) beside the art without it (ART).",
+      "(REF) beside the art without it (ART); 'trails' ghosts a tag's frames together and draws each part's path " +
+      "(its center per frame), with the motion numbers, to judge spacing and arcs.",
     input: z.object({
       frame: z.number().int().min(1).optional().describe("1-based frame number. Default: active frame. onion: the frame in front."),
       layer: z.string().optional().describe("Render only this layer (by name). Default: all visible layers. compare: the art layer."),
       scale: z.number().int().min(1).max(32).optional()
         .describe("Upscale factor. Default: largest factor that keeps the image at or under 512 px (views: about 1024 px)."),
       background: z.string().optional().describe("'checker' (default), 'transparent', or a hex color like '#202020'."),
-      view: z.enum(["filmstrip", "onion", "compare"]).optional()
+      view: z.enum(["filmstrip", "onion", "compare", "trails"]).optional()
         .describe("A review view instead of one frame. Default: one frame."),
-      tag: z.string().optional().describe("filmstrip: the tag's frames. onion: neighbors wrap around the tag."),
+      tag: z.string().optional().describe("filmstrip: the tag's frames. onion: neighbors wrap around the tag. trails: the tag (default the clip in progress)."),
       frames: framesSpec.optional().describe("filmstrip: frames 3, [1,2] or '1-4' when there is no tag. Default: all."),
       ghosts: z.number().int().min(1).max(3).optional().describe("onion: neighbors on each side. Default 1."),
       reference: z.string().optional().describe("compare: the reference layer (name or id). Default: a layer named like 'reference'."),
     }),
     kind: "read",
-    label: (a) => ({ filmstrip: "Look at the filmstrip", onion: "Look at the onion skin", compare: "Compare with the reference" } as Record<string, string>)[a.view] ?? "Look at the sprite",
+    label: (a) => ({ filmstrip: "Look at the filmstrip", onion: "Look at the onion skin", compare: "Compare with the reference", trails: "Look at the motion trails" } as Record<string, string>)[a.view] ?? "Look at the sprite",
     run: (input, ctx) => snapshotContent(ctx, input),
   },
   {

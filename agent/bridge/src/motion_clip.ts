@@ -284,6 +284,15 @@ export class MotionStore {
   }
 }
 
+/** The layers a clip's motion is tracked by: its character's rig parts and its walk limbs (image layers that exist). */
+export function clipParts(store: MotionStore, v: ClipView): string[] {
+  const names = new Set<string>();
+  const rig = v.clip.character ? store.rig(v.clip.character) : undefined;
+  for (const p of rig?.parts ?? []) names.add(p.layer);
+  for (const l of [v.clip.walk?.nearArm?.layer, v.clip.walk?.nearLeg?.layer]) if (l) names.add(l);
+  return [...names].filter((n) => store.info.layers.some((l) => l.name === n && !l.group));
+}
+
 export function viewOf(tag: TagInfo, clip: Clip, durations: number[]): ClipView {
   const abs = (f: number) => tag.from + f - 1;
   const frames = Array.from({ length: tag.to - tag.from + 1 }, (_, i) => tag.from + i);

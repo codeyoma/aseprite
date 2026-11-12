@@ -82,7 +82,7 @@ The rule in one line: the near arm is forward exactly when the near leg is back.
 ### Attack {#anim.timing.attack}
 
 - Wind-up away from the target: 2-3 frames at 100-150 ms for enemies and bosses (the player's warning); for the player 0-1 frame of at most 50 ms, since more is input lag.
-- Strike: one smear frame of 40-60 ms (`smear_frame`), weapon tip on an arc.
+- Strike: one smear frame of 40-60 ms (`smear` mode sweep on that frame), weapon tip on an arc.
 - Contact hold 80-120 ms (more with `hit_stop`, see `rule:vfx.hitstop`), overshoot 1-2 px, then 2-3 recovery frames at about 100 ms.
 - Weight is in the recovery: a heavy swing recovers long, not winds up long.
 

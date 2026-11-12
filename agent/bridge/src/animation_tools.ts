@@ -2,10 +2,13 @@
 // arc, clean rotation, squash and stretch, smear frames. Each writes a
 // layer's cels through the document; no new colors are made.
 import * as z from "zod/v4";
-import { along, ease, imageColors, smear, squashStretch, subpixelShift, transform, type Easing } from "./animation.js";
+import { along, bounds, ease, imageColors, subpixelShift, transform, type Easing, type Transform } from "./animation.js";
 import { documentOf } from "./document.js";
 import { failure, text, type Tool } from "./tool.js";
-import { KINDS, MotionStore, defaultContacts, defaultKeys, deriveJoints, describeClip, describeRig, guessParent, kindOf, selText, type Rig, type RigPart } from "./motion_clip.js";
+import type { Rgba } from "./image.js";
+import { inbetweens, solveParts, type PartKeys } from "./inbetween.js";
+import { describeReport, trackClip } from "./motion_analysis.js";
+import { KINDS, MotionStore, clipParts, viewOf, defaultContacts, defaultKeys, deriveJoints, describeClip, describeRig, guessParent, kindOf, selText, type Rig, type RigPart } from "./motion_clip.js";
 import { measureWalk, type ContactReading, type LimbSelector } from "./walk_check.js";
 
 const limb = z.object({
@@ -24,6 +27,7 @@ const moveSchema = z.object({
   scale_y: z.number().min(0.1).max(4).optional(),
   pivot_x: z.number().optional().describe("Rotation/scale pivot in sprite pixels (e.g. a shoulder). Default: canvas center."),
   pivot_y: z.number().optional(),
+  squash: z.number().min(-0.6).max(0.6).optional().describe("Squash (< 0, e.g. -0.2 on landing) or stretch (> 0, take-off), area kept, on the ground line unless a pivot is given (rule:anim.squash)."),
 });
 
 export const ANIMATION_TOOLS: Tool[] = [
@@ -182,9 +186,133 @@ export const ANIMATION_TOOLS: Tool[] = [
       if (repeats.length) return failure(`Not done: frame${repeats.length > 1 ? "s" : ""} ${repeats.join(", ")} repeat${repeats.length > 1 ? "" : "s"} the frame before. A held pose is one frame with a longer duration.`);
       const w = await walkProblems(false);
       if (w) return failure(`Not done: ${w}`);
+      const report = await trackClip(doc, v, clipParts(store, v));
+      const errors = report.findings.filter((f) => f.severity === "error");
+      if (errors.length) return failure(`Not done: motion_check finds ${errors.map((e) => e.message).join("\n")}\n\n${describeReport(v.name, report)}`);
       store.setClip(v.tag, { ...v.clip, stage: "done" });
       await store.save("Motion clip: done");
-      return { content: [text(`Clip "${v.name}" is done.`)] };
+      const notes = report.findings.filter((f) => f.severity !== "error");
+      return { content: [text(`Clip "${v.name}" is done.` + (notes.length ? `\nStill worth a look:\n${notes.map((f) => `${f.severity}: [${f.metric}] ${f.message}`).join("\n")}` : ""))] };
+    },
+  },
+  {
+    name: "inbetween",
+    title: "In-betweens from keys",
+    description:
+      "Make the frames between approved keys (#110): each part layer is solved as a rigid move between its two keys " +
+      "(a turn about its joint, where it meets its parent, and the joint's travel) and sampled at each frame's elapsed " +
+      "time with an easing; children ride on their parent so joints stay joined, followers (motion_clip followers: hair, " +
+      "a cape) lag, sizes and colors stay the keys' (no new colors), and the keys are never written. Without from/to it " +
+      "fills every gap between the clip's keys (and, for a loop, from the last key back to the first). Parts default to " +
+      "the clip's rig (root first); without a rig, every shown image layer. Clean the joints after. Needs the clip past " +
+      "its keys stage (motion_clip advance).",
+    input: z.object({
+      tag: z.string().optional().describe("The clip's tag. Default: the clip in progress."),
+      from: z.number().int().min(1).optional().describe("A key frame (sprite frame); with `to`, fill only between them."),
+      to: z.number().int().min(1).optional(),
+      parts: z.array(z.string()).optional().describe("Part layers, root first. Default: the rig's parts."),
+      easing: z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]).optional().describe("Spacing between the keys (rule:anim.spacing). Default ease-in-out."),
+      arc: z.number().optional().describe("Bend the root part's path upward by this many pixels at the middle (a jump, a hop)."),
+    }),
+    kind: "edit",
+    label: (a) => (a.tag ? `In-betweens for ${a.tag}` : "In-betweens"),
+    async run(input, aseprite) {
+      const doc = documentOf(aseprite);
+      let store: MotionStore;
+      try { store = await MotionStore.load(doc); } catch (e) { return failure((e as Error).message); }
+      const name = input.tag ?? store.active()?.name;
+      if (!name) return failure("Name the tag (a clip planned with motion_clip).");
+      const v = store.view(name);
+      if (!v) return failure(`No clip for "${name}": plan one first (motion_clip action 'plan').`);
+      if (v.clip.stage === "keys") return failure(`The clip "${v.name}" is in its keys stage: check the keys, then motion_clip advance.`);
+      // Parts, root first: the rig's (parents before children), else every shown image layer as roots.
+      const rig = v.clip.character ? store.rig(v.clip.character) : undefined;
+      const given: { layer: string; parent?: string }[] = input.parts
+        ? input.parts.map((l: string) => ({ layer: l, parent: rig?.parts.find((p) => p.layer === l)?.parent }))
+        : rig?.parts.map((p) => ({ layer: p.layer, parent: p.parent }))
+          ?? store.info.layers.filter((l) => !l.group && l.visible && l.editable).map((l) => ({ layer: l.name }));
+      const missing = given.filter((p) => !store.info.layers.some((l) => l.name === p.layer && !l.group));
+      if (missing.length) return failure(`No image layer ${missing.map((m) => `"${m.layer}"`).join(", ")}.`);
+      const order: typeof given = [];
+      const pending = [...given];
+      while (pending.length) {
+        const i = pending.findIndex((p) => !p.parent || !pending.some((q) => q.layer === p.parent));
+        order.push(...pending.splice(i < 0 ? 0 : i, 1).map((p) => (given.some((q) => q.layer === p.parent) ? p : { layer: p.layer })));
+      }
+      // Segments: [key a, key b, the frames between] (sprite frames; a loop wraps from the last key to the first).
+      const keys = [...v.keys].sort((a, b) => a - b);
+      const segs: { a: number; b: number; frames: number[] }[] = [];
+      if (input.from !== undefined || input.to !== undefined) {
+        if (input.from === undefined || input.to === undefined || input.to <= input.from) return failure("Give from and to, with to after from.");
+        segs.push({ a: input.from, b: input.to, frames: v.frames.filter((f) => f > input.from! && f < input.to!) });
+      } else {
+        for (let i = 1; i < keys.length; i++) segs.push({ a: keys[i - 1], b: keys[i], frames: v.frames.filter((f) => f > keys[i - 1] && f < keys[i]) });
+        if (v.clip.loop && keys.length) {
+          const last = keys[keys.length - 1], first = keys[0];
+          const wrap = [...v.frames.filter((f) => f > last), ...v.frames.filter((f) => f < first)];
+          if (wrap.length) segs.push({ a: last, b: first, frames: wrap });
+        }
+      }
+      const todo = segs.filter((s) => s.frames.length);
+      if (!todo.length) return failure(`No frames between the keys of "${v.name}" (keys ${keys.join(", ")}).`);
+      const at = (f: number) => v.startMs[v.frames.indexOf(f)];
+      const items: { image: Rgba; frame: number; layer: string }[] = [];
+      const lines: string[] = [];
+      const lagOf = (layer: string) => v.clip.followers?.find((x) => x.layer === layer)?.lag ?? 0;
+      for (const seg of todo) {
+        const span = ((at(seg.b) - at(seg.a)) + v.lengthMs) % v.lengthMs || v.lengthMs;
+        const ts = seg.frames.map((f) => (((at(f) - at(seg.a)) + v.lengthMs) % v.lengthMs) / span);
+        const partKeys: PartKeys[] = [];
+        for (const p of order) {
+          partKeys.push({
+            layer: p.layer, parent: p.parent, lag: lagOf(p.layer),
+            a: await doc.pixels(p.layer, seg.a), b: await doc.pixels(p.layer, seg.b),
+          });
+        }
+        const sol = solveParts(partKeys);
+        const imgs = inbetweens(partKeys, sol, ts, { easing: (input.easing ?? "ease-in-out") as Easing, arc: input.arc, lagStep: 1 / (seg.frames.length + 1) });
+        for (const [layer, list] of imgs) list.forEach((image, i) => items.push({ image, frame: seg.frames[i], layer }));
+        const loose = sol.filter((x) => !x.empty && x.fit < 0.5);
+        lines.push(`frames ${seg.frames.join(", ")} between keys ${seg.a} and ${seg.b}: ` +
+          sol.map((x) => (x.empty ? `${x.layer} empty in a key (copied)` : `${x.layer} turns ${x.angle}°${x.joint ? ` about ${x.joint.join(",")}` : ""}` +
+            `${x.lag ? `, ${x.lag} frame${x.lag > 1 ? "s" : ""} late` : ""} (fit ${x.fit})`)).join("; ") +
+          (loose.length ? `\n  ${loose.map((x) => x.layer).join(", ")} change${loose.length > 1 ? "" : "s"} shape between these keys (fit under 0.5), so the move is a rough match: redraw ${loose.length > 1 ? "them" : "it"} in these frames from the keys.` : ""));
+      }
+      await doc.putImages(items, { label: `In-betweens ${v.name}` });
+      return { content: [text([`Made ${new Set(items.map((i) => i.frame)).size} in-between frame(s) of "${v.name}" for ${order.length} part(s), ${input.easing ?? "ease-in-out"}; keys untouched.`,
+        ...lines, "Clean where parts meet, then motion_check and snapshot view 'trails'."].join("\n"))] };
+    },
+  },
+  {
+    name: "motion_check",
+    title: "Motion check",
+    description:
+      "Measure how an animation moves (#111): per part (its layer) and for the whole figure in every frame of the tag, " +
+      "the spacing (px a frame: even, eased or popping), arcs (a limb sliding on a straight line), volume (a part that " +
+      "grows or shrinks), flicker (pixels that blink A->B->A and boil in play), the ground row, a planted foot sliding " +
+      "forward, the loop seam and flat timing. Errors (volume of a part, flicker, nothing moving) block motion_clip done. " +
+      "Parts default to the clip's rig and walk limbs; give layers to measure others.",
+    input: z.object({
+      tag: z.string().optional().describe("The animation's tag. Default: the clip in progress, else the only tag."),
+      parts: z.array(z.string()).optional().describe("Part layers to track (names)."),
+    }),
+    kind: "read",
+    label: (a) => (a.tag ? `Measure the motion of ${a.tag}` : "Measure the motion"),
+    async run(input, aseprite) {
+      const doc = documentOf(aseprite);
+      let store: MotionStore;
+      try { store = await MotionStore.load(doc); } catch (e) { return failure((e as Error).message); }
+      const tags = store.info.tags;
+      const name = input.tag ?? store.active()?.name ?? (tags.length === 1 ? tags[0].name : undefined);
+      if (!name) return failure(tags.length ? `Name the tag: ${tags.map((t) => t.name).join(", ")}.` : "Tag the animation's frames first.");
+      const tag = store.tag(name);
+      if (!tag) return failure(`No tag "${name}".`);
+      const v = store.view(tag.name) ?? viewOf(tag, { kind: kindOf(tag.name), facing: "right", loop: kindOf(tag.name) !== "action", keys: [], stage: "none" }, store.info.durations);
+      const parts = input.parts ?? clipParts(store, v);
+      const missing = parts.filter((p: string) => !store.info.layers.some((l) => l.name === p && !l.group));
+      if (missing.length) return failure(`No image layer ${missing.map((m: string) => `"${m}"`).join(", ")}.`);
+      const report = await trackClip(doc, v, parts);
+      return { content: [text(describeReport(v.name, report))], ...(report.findings.some((f) => f.severity === "error") ? { isError: true } : {}) };
     },
   },
   {
@@ -239,101 +367,61 @@ export const ANIMATION_TOOLS: Tool[] = [
   },
   {
     name: "transform_layer",
-    title: "In-between a part",
+    title: "Move a part",
     description:
-      "Animate a rigid part (a layer: an arm, a sword, a whole small sprite) from its drawing in from_frame through " +
-      "to_frame: each frame gets the drawing moved/rotated/scaled a bit further along `move`, eased, optionally " +
-      "along an arc bent upward by `arc` px. Rotation is RotSprite-style, so pixels stay clean and no new colors " +
-      "appear. Frames must exist (add them with apply_timeline_text first). Overwrites the layer's cels after from_frame.",
+      "Move, turn, scale or squash a rigid part (a layer: an arm, a sword, a whole small sprite), RotSprite-style: " +
+      "pixels stay clean and no new colors appear. With `frames`, apply `move` as it is to the layer in each of those " +
+      "frames (a turn, a squash on landing). With from_frame and to_frame, sweep it: each later frame gets the " +
+      "from_frame drawing a bit further along `move` (eased, optionally on an arc bent upward by `arc` px); for the " +
+      "frames between two drawn keys use inbetween instead, which reads both keys. Frames must exist (add them with " +
+      "apply_timeline_text first).",
     input: z.object({
       layer: z.string().describe("Layer name."),
-      from_frame: z.number().int().min(1),
-      to_frame: z.number().int().min(1),
-      move: moveSchema.describe("The full change at to_frame."),
-      arc: z.number().optional().describe("Bend the path upward by this many pixels at the middle."),
-      easing: z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]).optional().describe("Default ease-in-out."),
+      move: moveSchema.describe("The change: with frames, applied in each; with from/to, the full change at to_frame."),
+      frames: z.array(z.number().int().min(1)).min(1).optional().describe("Apply move to the layer in these frames."),
+      from_frame: z.number().int().min(1).optional(),
+      to_frame: z.number().int().min(1).optional(),
+      arc: z.number().optional().describe("Sweep: bend the path upward by this many pixels at the middle."),
+      easing: z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]).optional().describe("Sweep: default ease-in-out."),
     }),
     kind: "edit",
-    label: (a) => (a.layer ? `In-between ${a.layer}` : "In-between"),
+    label: (a) => (a.layer ? `Move ${a.layer}` : "Move a part"),
     async run(input, aseprite) {
-      if (input.to_frame <= input.from_frame) return failure("to_frame must come after from_frame.");
       const doc = documentOf(aseprite);
-      if (input.to_frame > (await doc.info()).durations.length) return failure("to_frame is past the last frame; add frames first.");
-      const base = await doc.pixels(input.layer, input.from_frame);
+      const count = (await doc.info()).durations.length;
       const m = input.move;
-      const to = { dx: m.dx, dy: m.dy, angle: m.angle, sx: m.scale_x, sy: m.scale_y, px: m.pivot_x, py: m.pivot_y };
+      const to: Transform = { dx: m.dx, dy: m.dy, angle: m.angle, sx: m.scale_x, sy: m.scale_y, px: m.pivot_x, py: m.pivot_y };
+      // Squash (< 0) or stretch (> 0) keeps the area: about the bottom center unless a pivot is given.
+      const shaped = (img: Rgba, t: Transform): Rgba => {
+        if (!m.squash) return transform(img, t);
+        const b = bounds(img);
+        const sy = 1 + m.squash;
+        return transform(img, { ...t, sy: (t.sy ?? 1) * sy, sx: (t.sx ?? 1) / sy, px: t.px ?? (b ? b.x + b.w / 2 : img.width / 2), py: t.py ?? (b ? b.y + b.h : img.height) });
+      };
+      if (input.frames) {
+        // Each frame once, all in one write (#101): one undo step; a frame listed twice is changed once.
+        const frames = [...new Set(input.frames as number[])];
+        const past = frames.filter((f) => f > count);
+        if (past.length) return failure(`Frame${past.length > 1 ? "s" : ""} ${past.join(", ")} ${past.length > 1 ? "don't" : "doesn't"} exist (${count} frames).`);
+        const items = [];
+        for (const f of frames) items.push({ image: shaped(await doc.pixels(input.layer, f), to), layer: input.layer, frame: f });
+        await doc.putImages(items, { label: `Move ${input.layer}` });
+        return { content: [text(`Moved ${input.layer} in frame${frames.length > 1 ? "s" : ""} ${frames.join(", ")}.`)] };
+      }
+      if (input.from_frame === undefined || input.to_frame === undefined) return failure("Give frames, or from_frame and to_frame.");
+      if (input.to_frame <= input.from_frame) return failure("to_frame must come after from_frame.");
+      if (input.to_frame > count) return failure("to_frame is past the last frame; add frames first.");
+      const base = await doc.pixels(input.layer, input.from_frame);
       const n = input.to_frame - input.from_frame;
       // Every frame in one write (#101): one transaction, one undo step, nothing half done.
       const items = [];
       for (let f = input.from_frame + 1; f <= input.to_frame; f++) {
         const t = (f - input.from_frame) / n;
-        items.push({ image: transform(base, along(to, t, input.arc ?? 0, (input.easing ?? "ease-in-out") as Easing)), layer: input.layer, frame: f });
+        const at = along(to, t, input.arc ?? 0, (input.easing ?? "ease-in-out") as Easing);
+        items.push({ image: m.squash ? shaped(base, { ...at }) : transform(base, at), layer: input.layer, frame: f });
       }
-      await doc.putImages(items, { label: `In-between ${input.layer}` });
+      await doc.putImages(items, { label: `Move ${input.layer}` });
       return { content: [text(`Animated ${input.layer} over frames ${input.from_frame + 1}-${input.to_frame} (${n} steps, ${input.easing ?? "ease-in-out"}${input.arc ? `, arc ${input.arc}px` : ""}).`)] };
-    },
-  },
-  {
-    name: "rotate_layer",
-    title: "Rotate cleanly",
-    description: "Rotate a layer's drawing in some frames by an angle around a pivot, RotSprite-style (clean edges, no new colors).",
-    input: z.object({
-      layer: z.string(),
-      frames: z.array(z.number().int().min(1)).min(1),
-      angle: z.number().describe("Degrees clockwise."),
-      pivot_x: z.number().optional(),
-      pivot_y: z.number().optional(),
-    }),
-    kind: "edit",
-    label: (a) => `Rotate ${a.layer ?? ""} ${a.angle ?? ""}°`.trim(),
-    async run(input, aseprite) {
-      const doc = documentOf(aseprite);
-      // Each frame once, all in one write (#101): one undo step; a frame listed twice is rotated once.
-      const frames = [...new Set(input.frames as number[])];
-      const items = [];
-      for (const f of frames) {
-        const img = await doc.pixels(input.layer, f);
-        items.push({ image: transform(img, { angle: input.angle, px: input.pivot_x, py: input.pivot_y }), layer: input.layer, frame: f });
-      }
-      await doc.putImages(items, { label: `Rotate ${input.layer}` });
-      return { content: [text(`Rotated ${input.layer} by ${input.angle}° in ${frames.length} frame(s).`)] };
-    },
-  },
-  {
-    name: "squash_stretch",
-    title: "Squash and stretch",
-    description: "Squash (amount < 0, e.g. -0.2 on landing) or stretch (> 0, e.g. 0.2 on take-off) a layer's drawing in a frame, keeping its area and its feet on the ground.",
-    input: z.object({ layer: z.string(), frame: z.number().int().min(1), amount: z.number().min(-0.6).max(0.6) }),
-    kind: "edit",
-    label: (a) => ((a.amount ?? 0) < 0 ? "Squash" : "Stretch"),
-    async run(input, aseprite) {
-      const doc = documentOf(aseprite);
-      const img = await doc.pixels(input.layer, input.frame);
-      await doc.putImage(squashStretch(img, input.amount), { layer: input.layer, frame: input.frame, label: input.amount < 0 ? "Squash" : "Stretch" });
-      return { content: [text(`${input.amount < 0 ? "Squashed" : "Stretched"} ${input.layer} in frame ${input.frame} by ${Math.abs(input.amount * 100).toFixed(0)}%.`)] };
-    },
-  },
-  {
-    name: "smear_frame",
-    title: "Smear frame",
-    description:
-      "Turn a frame into a smear: the layer's drawing at to_frame swept back along the path from from_frame, so a " +
-      "fast move (a swing, a dash) reads in one frame. Writes into `frame` (usually between the two).",
-    input: z.object({
-      layer: z.string(),
-      frame: z.number().int().min(1),
-      from_frame: z.number().int().min(1),
-      to_frame: z.number().int().min(1),
-      steps: z.number().int().min(2).max(16).optional(),
-    }),
-    kind: "edit",
-    label: () => "Smear frame",
-    async run(input, aseprite) {
-      const doc = documentOf(aseprite);
-      const a = await doc.pixels(input.layer, input.from_frame);
-      const b = await doc.pixels(input.layer, input.to_frame);
-      await doc.putImage(smear(a, b, input.steps), { layer: input.layer, frame: input.frame, label: "Smear" });
-      return { content: [text(`Frame ${input.frame} of ${input.layer} is now a smear from frame ${input.from_frame} to ${input.to_frame}.`)] };
     },
   },
   {

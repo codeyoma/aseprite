@@ -5,7 +5,7 @@ description: Complete a character's directions for top-down or isometric games: 
 category: Directions
 triggers: [8 directions, eight directions, 4 directions, four directions, all directions, isometric, top-down directions, facing]
 intents: [this sprite, this character, my sprite, my character, drawing, draw]
-tools: [read_guide, direction_plan, mirror_direction, spawn_agents, execute_lua, apply_timeline_text, rotate_layer, iso_project, iso_grid, snapshot]
+tools: [read_guide, direction_plan, mirror_direction, spawn_agents, execute_lua, apply_timeline_text, transform_layer, iso_project, iso_grid, snapshot]
 ---
 # Make 4 or 8 directions
 

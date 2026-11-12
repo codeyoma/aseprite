@@ -73,6 +73,12 @@
       "desc": "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
     },
     {
+      "id": "motion-measured",
+      "type": "motion_check",
+      "tag": "walk",
+      "desc": "motion_check on the walk: no part grows or shrinks, nothing boils, something moves (warnings allowed)"
+    },
+    {
       "id": "check-clean",
       "type": "check",
       "desc": "check: 0 errors"

@@ -121,14 +121,24 @@ test("multi-frame animation tools write once: one undo step; a bad frame writes 
   const writes = (fake) => fake.calls.filter((c) => ["put_image", "put_images"].includes(c.method));
 
   const rot = fresh();
-  const r1 = await runTool(findTool("rotate_layer"), { layer: "Arm", frames: [1, 2, 2, 3], angle: 90 }, rot);
+  const r1 = await runTool(findTool("transform_layer"), { layer: "Arm", frames: [1, 2, 2, 3], move: { angle: 90 } }, rot);
   assert.ok(!r1.isError, r1.content[0].text);
   assert.equal(writes(rot).length, 1, "one write");
-  assert.deepEqual(writes(rot)[0].params.images.map((i) => i.frame), [1, 2, 3], "a repeated frame is rotated once");
-  assert.match(r1.content[0].text, /in 3 frame/);
+  assert.deepEqual(writes(rot)[0].params.images.map((i) => i.frame), [1, 2, 3], "a repeated frame is turned once");
+  assert.match(r1.content[0].text, /Moved Arm in frames 1, 2, 3/);
+
+  // A squash in one frame keeps the area and the ground line (#110: squash_stretch folded into transform_layer).
+  const sq = fresh();
+  await runTool(findTool("transform_layer"), { layer: "Arm", frames: [2], move: { squash: -0.5 } }, sq);
+  const after = writes(sq)[0].params.images[0];
+  const px = Buffer.from(after.rgba, "base64");
+  let n = 0, low = 0;
+  for (let i = 0; i < px.length; i += 4) if (px[i + 3]) { n++; low = Math.max(low, Math.floor(i / 4 / W)); }
+  assert.ok(n >= 6 && n <= 10, `area ${n}`);
+  assert.equal(low, 5, "still on the ground row");
 
   const bad = fresh();
-  const r2 = await runTool(findTool("rotate_layer"), { layer: "Arm", frames: [1, 9], angle: 90 }, bad);
+  const r2 = await runTool(findTool("transform_layer"), { layer: "Arm", frames: [1, 9], move: { angle: 90 } }, bad);
   assert.equal(r2.isError, true);
   assert.equal(writes(bad).length, 0, "nothing written when a later frame is invalid");
 
