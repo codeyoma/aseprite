@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Windows stable updates rebuild in Visual Studio's environment
+- **How:** when the stable source already has a build, `stable.mjs prepare` on Windows writes `<stable root>/vs-build.cmd` (call vcvars64.bat, found with vswhere as build.cmd does, then `cmake --build build -- aseprite`) and runs it. A first build still goes through `build.cmd --auto --norun`; macOS and Linux are unchanged.
+- **Why:** outside Visual Studio's environment neither cmake nor the compiler is on PATH, and `build.cmd --auto` cannot rebuild: once a build exists, build.sh lists it, prints "No build selected" and exits 0. So the first update after an install (and every Check for Updates) installed the new extension and bridge with the old aseprite.exe.
+- **Architecture:** the installer owns how a rebuild runs per platform; build.cmd stays the first-build path.
+
 ## Windows draws at the screen's resolution: Screen Scaling 100%, UI Elements 200%
 - **How:** on Windows the fork's first run (`create_main_window`, `scale == 0`) keeps the window at scale 1 and puts the factor upstream would use as Screen Scaling into UI Elements Scaling (`general.ui_scale`): the same size on screen. An existing install changes it in Edit > Preferences > General (or `[general] screen_scale = 1`, `ui_scale = 2` while Aseprite is closed). LCD text (previous entry) is only used when the canvas reaches the screen 1:1 (`display->scale() == 1`).
 - **Why:** upstream's first run picks Screen Scaling 200% on a large screen, which draws the whole window at half resolution and lets the window double every pixel. Pixel art is fine with that, but the chat panel's system-font text was rasterized at about 7 px and shown doubled, so it looked low-res however it was antialiased (and LCD colors were doubled with it).

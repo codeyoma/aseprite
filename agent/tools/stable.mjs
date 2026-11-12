@@ -39,6 +39,21 @@ const run = (cmd, args, cwd) => {
 const readJson = (file) => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined);
 const log = (s) => process.stderr.write(`[stable] ${s}\n`);
 
+/**
+ * Windows: a script (in the stable root) that loads Visual Studio's C++ environment, found with vswhere as
+ * build.cmd does, then runs `command`. Returns its path.
+ */
+function visualStudioScript(command) {
+  const vswhere = join(process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)", "Microsoft Visual Studio", "Installer", "vswhere.exe");
+  const vcvars = existsSync(vswhere) && execFileSync(vswhere, ["-latest", "-products", "*", "-requires",
+    "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "-find", "VC\\Auxiliary\\Build\\vcvars64.bat"],
+  { encoding: "utf8", windowsHide: true }).trim().split(/\r?\n/)[0];
+  if (!vcvars) throw new Error("Visual Studio's C++ tools were not found (vcvars64.bat): see docs/BUILD-windows.md");
+  const script = join(STABLE.root, "vs-build.cmd");
+  writeFileSync(script, `@echo off\r\ncall "${vcvars}" >nul || exit /b 1\r\n${command}\r\n`);
+  return script;
+}
+
 /** Files that only need the agent layer copied (no C++ build). */
 export const agentOnly = (path) => path.startsWith("agent/") || /\.(md|txt)$/i.test(path) && !path.startsWith("src/");
 
@@ -70,7 +85,11 @@ export function prepare() {
   run("git", ["submodule", "update", "--init", "--recursive"], STABLE.src);
   if (c.needsBuild) {
     log("building Aseprite (the first build takes a while)");
-    if (existsSync(join(STABLE.src, "build", "build.ninja"))) run("cmake", ["--build", "build"], STABLE.src);
+    const built = existsSync(join(STABLE.src, "build", "build.ninja"));
+    // Windows rebuild: in Visual Studio's environment (cmake and the compiler are not on PATH otherwise); build.cmd
+    // can't do it, its --auto stops at "No build selected" once a build exists.
+    if (built && IS_WINDOWS) run("cmd", ["/c", `"${visualStudioScript("cmake --build build -- aseprite")}"`], STABLE.src);
+    else if (built) run("cmake", ["--build", "build"], STABLE.src);
     // build.cmd loads Visual Studio's environment and ends with `pause`: answer it. `.\`: cmd skips the current
     // folder when NoDefaultCurrentDirectoryInExePath is set.
     else if (IS_WINDOWS) run("cmd", ["/c", "echo.| .\\build.cmd --auto --norun"], STABLE.src);
