@@ -1,0 +1,155 @@
+benchmark: animate-imagegen
+skill: animate
+title: "Walk cycle and idle loop for a small side-view hero, keys from the image generator"
+provider: claude
+model: null
+commit: "5f996b051"
+date: "2026-11-12T01:49:40.247Z"
+seconds: 346
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 11
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 2-7
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 8-11
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 12 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs. Get the key poses from the image generator."
+    seconds: 318
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: anim.timing.walk"
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: "Read guide: character-motions"
+        status: ok
+      - tool: "Read guide: anim.walk.limbs"
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Generate a layered character
+        status: ok
+      - tool: Waiting for character img-1
+        status: ok
+      - tool: Waiting for character img-1
+        status: ok
+      - tool: Waiting for character img-1
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Read sprite state
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Redraw walk keys
+        status: failed
+      - tool: Redraw walk keys
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: "Motion stage: advance"
+        status: ok
+      - tool: Draw walk in-betweens
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: Show far arm behind on frame 5
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: "Motion stage: done"
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+    reply: "The generator's key poses came back as rough drafts (scrambled parts over the old copy of the hero), so I'm now redrawing the keys cleanly on the generated part layers, matching your original design.\nKeys pass walk_check. Advancing to the in-betweens.\nThe critic paired the limbs correctly but flagged frame 5 since the far arm is fully hidden there. I'll let the far (navy) hand peek out behind the body, as it does in front on frame 2.\nI added a 6-frame [walk](aseprite://tag/walk) on frames 2–7, facing right. Your original pose is unchanged on frame 1, now tagged `base`.\n\n**About the image generator:** I did use it for the four key poses, but what came back was too rough to keep. The body parts were jumbled and sat over a leftover copy of the hero. So I redrew all six frames by hand on the p"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 28
+    header: Claude
+    tools:
+      - tool: "Read guide: anim.timing.idle"
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Draw idle loop
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "I added a 4-frame [idle](aseprite://tag/idle) loop on frames 8–11, after the walk. I didn't touch frames 1–7.\n\n| Frame | Pose | ms |\n|---|---|---|\n| 8 | Resting stance, legs straight, arms at the sides | 300 |\n| 9 | Breathing in: head and chest rise 1 px | 150 |\n| 10 | Held at the top: arms catch up and rise 1 px | 300 |\n| 11 | Breathing out: head and chest settle back, arms still raised | 150 |\n\nThe arms move a frame behind the body, so the breath looks softer than a plain up-and-down. The feet never move. The loop takes 900 ms.\n\nIt's drawn on the same part layers as the walk and uses the same colors. The check found no repeated frames and no foot jitter in the idle. It did flag two things I left on purpose:\n- **Mixed frame lengths:** the 300/150 ms timing on frames 8 and 10 is intentiona"
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 51
+  scores:
+    readability: 2
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 1
+  overall: 1.6
+  note: "Clean color clusters preserve the character, with readable walk poses and a subtle idle bob. Limb transitions feel stiff, shading adds little volume, and the sheet shows 11 frames instead of the requested 10."

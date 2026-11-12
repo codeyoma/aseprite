@@ -165,6 +165,12 @@ for (const bench of benches) {
   await lua(`AsepriteAgent.newChat() for i = #app.sprites, 1, -1 do app.sprites[i]:close() end return true`);
   const n0 = (await lua("return { n = #app.sprites }")).n;
   let seen = (await entries()).length;
+  // allowImageGenerator: the image generator's consent prompt (generate_image, generate_character) is answered Allow;
+  // otherwise nothing answers it and it times out as a decline, as an unattended user would.
+  await lua(bench.allowImageGenerator
+    ? `AsepriteAgent.setPermissionAnswer(function(req) if tostring(req.text or ""):match("image generator") then
+        for i, o in ipairs(req.options or {}) do if tostring(o.kind):match("^allow") then return i end end end end) return true`
+    : "AsepriteAgent.setPermissionAnswer(nil) return true");
   await lua(`${linesOf(bench.fixture)}\nreturn { ok = true }`);
   // The starting sprite, so the judge scores what was made on it rather than the fixture's own design.
   const startFrames = (await lua("return { n = #app.sprite.frames }")).n;

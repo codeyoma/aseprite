@@ -1,0 +1,22 @@
+[
+  {
+    "file": "filmstrip.png",
+    "as": "image-1.png",
+    "what": "every frame of the result side by side, numbered, enlarged"
+  },
+  {
+    "file": "final.png",
+    "as": "image-2.png",
+    "what": "the last frame, enlarged so single pixels are visible"
+  },
+  {
+    "file": "final-1x.png",
+    "as": "image-3.png",
+    "what": "the last frame at its real size (1x)"
+  },
+  {
+    "file": "start.png",
+    "as": "image-4.png",
+    "what": "the sprite before the request, as it was given, enlarged"
+  }
+]

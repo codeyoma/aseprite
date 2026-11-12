@@ -2,6 +2,11 @@
 
 One short entry per change: how it works, why it was done this way, and where it sits in the architecture. Newest first. These notes are for future refactoring; terms are in `GLOSSARY.md`.
 
+## Benchmarks can allow the image generator (animate-imagegen, #99)
+- **How:** a benchmark's `allowImageGenerator: true` makes `run_bench.mjs` answer the image generator's consent prompt with Allow (`AsepriteAgent.setPermissionAnswer`, matching "image generator" in the prompt); without it the hook is cleared and the prompt times out as a decline. `animate-imagegen.json` is the Animate benchmark with that flag and "Get the key poses from the image generator" in its first prompt.
+- **Why:** every earlier Animate run drew the keys by hand because nothing answered the prompt, so the generate_character path was never measured. Measured: three runs (Claude x2, Codex) all used it and passed 9/9, in 311-493 s against 128-186 s for Claude by hand, with no gain on motion (2, 2, 1). The base pose that character-motions keeps as frame 1 makes 11 frames, which the judge reads as a mismatch (fit 1-2).
+- **Architecture:** benchmark runner and data only.
+
 ## Codex at medium effort, read_pixels over frames, fx_overlay's cut note
 - **How:**
   - `leanCodexConfig` (`bridge/src/providers/agent_home.ts`) keeps the user's `model_reasoning_effort` only when it is at most `medium` (`CODEX_EFFORTS_KEPT`); a higher one, or none, becomes `CODEX_AGENT_EFFORT` (`medium`). `ASEPRITE_AGENT_CODEX_EFFORT` still sets it outright.

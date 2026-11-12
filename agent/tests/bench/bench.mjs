@@ -34,7 +34,7 @@ export const CRITERIA = {
   lua: { code: "required" },
 };
 const COMMON = ["id", "type", "desc", "sprite"];
-const BENCH_KEYS = ["skill", "title", "fixture", "steps", "target", "showLayers", "animated", "criteria"];
+const BENCH_KEYS = ["skill", "title", "fixture", "steps", "target", "showLayers", "animated", "criteria", "allowImageGenerator"];
 const SELECTOR_KEYS = ["title", "minFrames"];
 
 const isInt = (v) => Number.isInteger(v) && v >= 0;
@@ -64,6 +64,7 @@ export function validateBench(b, { skills = builtInSkills() } = {}) {
   else if (!b.steps[0].startsWith(`/skill:${b.skill} `)) errors.push(`steps[0]: must start with /skill:${b.skill}`);
   if (typeof b.animated !== "boolean") errors.push("animated: true when the motion axis is scored");
   if (b.target !== undefined) checkSelector(b.target, "target", errors);
+  if (b.allowImageGenerator !== undefined && typeof b.allowImageGenerator !== "boolean") errors.push("allowImageGenerator: true to answer Allow when a tool asks for the image generator");
   if (b.showLayers !== undefined && !isRegex(b.showLayers)) errors.push("showLayers: a regular expression for layers the judge also sees alone");
   if (!Array.isArray(b.criteria) || !b.criteria.length) errors.push("criteria: a non-empty list");
   else {

@@ -1,0 +1,165 @@
+benchmark: animate-imagegen
+skill: animate
+title: "Walk cycle and idle loop for a small side-view hero, keys from the image generator"
+provider: codex
+model: null
+commit: "5f996b051"
+date: "2026-11-12T01:56:18.250Z"
+seconds: 493
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Codex · animate"
+      - Codex
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 11
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 2-7
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 8-11
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 11 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs. Get the key poses from the image generator."
+    seconds: 448
+    header: "Codex · animate"
+    tools:
+      - tool: Look at the sprite
+        status: ok
+      - tool: "Read guide: rules/animation"
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: find_tools
+        status: ok
+      - tool: Read the timeline
+        status: ok
+      - tool: "Read guide: character-motions"
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: "Motion stage: keys"
+        status: ok
+      - tool: Generate a layered character
+        status: ok
+      - tool: Waiting for character img-1
+        status: ok
+      - tool: Waiting for character img-1
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: failed
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Inspect generated parts
+        status: ok
+      - tool: Clean generated walk key poses
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: Clarify near hip overlap
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: "Motion stage: advance"
+        status: ok
+      - tool: Add walk down poses
+        status: ok
+      - tool: find_tools
+        status: ok
+      - tool: Polish foot spacing and hip joins
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: "Motion stage: done"
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+    reply: "I’m using the animate skill to build a six-frame right-facing walk, keeping frame 1 as the reference. I’ll generate the key poses with separate near and far arms and legs, then check their opposition before adding the in-betweens.\nThe reference has its feet on row 30 and hips at row 21. I’ll preserve it on frame 1 and put the six-frame [walk](aseprite://tag/walk) on frames 2–7, timed 120/100/100/120/100/100 ms, using separate limb, torso, head, and eye layers.\nThe generator is working on the four key poses: two contacts and two passing poses. The timeline is set; next I’ll check the generated limbs for opposite swing and clear near/far shading.\nThe generated drafts need cleanup: several parts are misaligned, and the near/far shading fails the walk check. I’ll rebuild those shapes on the ge"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 45
+    header: Codex
+    tools:
+      - tool: Read the timeline
+        status: ok
+      - tool: "Read guide: rules/animation"
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Add subtle breathing idle poses
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+    reply: "I’ll add four idle frames after the walk, reusing the character’s layers with a one-pixel breathing bob and planted feet. The walk will stay unchanged.\nAdded [idle](aseprite://tag/idle) on frames 8–11: rest → up 1 px → rest → down 1 px, timed **200/300/200/300 ms**.\n\nFeet stay planted; the walk is unchanged. Checks pass, with only intentional single-pixel eye warnings."
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: claude
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 17
+  scores:
+    readability: 2
+    form: 1
+    palette: 2
+    motion: 1
+    fit: 2
+  overall: 1.6
+  note: "Both parts of the request are covered: a 6-frame walk with opposing arms is followed by a 4-frame idle with a 1px bob and longer holds. However, the walk is choppy, with odd kicked passing poses in frames 4 and 7 and diagonal arms that smear across the torso, and the unchanged original frame left at the start blurs the tag structure."

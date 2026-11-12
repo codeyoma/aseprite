@@ -1,0 +1,157 @@
+benchmark: animate-imagegen
+skill: animate
+title: "Walk cycle and idle loop for a small side-view hero, keys from the image generator"
+provider: claude
+model: null
+commit: "5f996b051"
+date: "2026-11-12T01:43:12.243Z"
+seconds: 311
+passed: 9
+total: 9
+criteria:
+  - id: ran-skill
+    type: skill
+    desc: the first turn ran the animate skill
+    pass: true
+    detail:
+      - "Claude · animate"
+      - Claude
+  - id: size-kept
+    type: size
+    desc: the canvas keeps its size
+    pass: true
+    detail: "24x32"
+  - id: ten-frames
+    type: frames
+    desc: "6 walk + 4 idle frames or more"
+    pass: true
+    detail: 11
+  - id: walk-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: walk 2-7
+  - id: idle-tag
+    type: tag
+    desc: null
+    pass: true
+    detail: idle 8-11
+  - id: walk-moves
+    type: distinct
+    desc: every walk frame differs from the one before
+    pass: true
+    detail: 5
+  - id: no-repeats-or-jitter
+    type: check
+    desc: "check on the walk: no repeated frames and no foot jitter, warnings included (an idle may hold a frame)"
+    pass: true
+    detail: "0 errors, 0 warnings"
+  - id: arms-opposite-legs
+    type: walk_check
+    desc: "walk_check on the limbs the agent named: the near arm swings opposite the near leg at both contacts"
+    pass: true
+    detail: "WALK CHECK: ok"
+  - id: check-clean
+    type: check
+    desc: "check: 0 errors"
+    pass: true
+    detail: "0 errors, 12 warnings"
+steps:
+  - prompt: "/skill:animate Make a 6-frame walk cycle for this character facing right, tagged walk, with arms swinging opposite the legs. Get the key poses from the image generator."
+    seconds: 278
+    header: "Claude · animate"
+    tools:
+      - tool: "Read guide: character-motions"
+        status: failed
+      - tool: "Read guide: anim.timing.walk"
+        status: failed
+      - tool: Look at the sprite
+        status: failed
+      - tool: "Read guide: character-motions"
+        status: ok
+      - tool: "Read guide: anim.timing.walk"
+        status: ok
+      - tool: Look at the sprite
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: "Motion stage: keys"
+        status: ok
+      - tool: Generate a layered character
+        status: ok
+      - tool: Waiting for character img-1
+        status: ok
+      - tool: Waiting for character img-1
+        status: ok
+      - tool: Waiting for character img-1
+        status: ok
+      - tool: Look at the filmstrip
+        status: ok
+      - tool: Read sprite state
+        status: ok
+      - tool: Inspect pixels
+        status: ok
+      - tool: Look at the filmstrip
+        status: failed
+      - tool: Run Lua
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: "Motion stage: advance"
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Apply 1 ops
+        status: ok
+      - tool: "Check the walk's arms and legs"
+        status: ok
+      - tool: Ask a critic how the walk reads
+        status: ok
+      - tool: Check pixel art
+        status: ok
+      - tool: "Motion stage: done"
+        status: ok
+      - tool: Run Lua
+        status: ok
+    reply: "Keys are frames 2, 4, 5, 7 (contact, passing, contact, passing). Generating with 8 rough layers: far arm, far leg, torso, near leg, head, eyes, hair, near arm.\nKeys read well. Checking the arm/leg opposition:\nThe two new shades (lighter near leg, darker far hand) are intentional; I'll add them to the palette and drop the generator's unused near-duplicates.\nOne fix: in frame 6 the planted foot slid 2 px instead of 1, so it doesn't match frame 3. Making it match:\nThe walk cycle is done and tagged [walk](aseprite://tag/walk) on frames 2–7. Your original pose stays on frame 1, now tagged `base`.\n\nThe arm-swing check passed: on both contact frames the near arm swings opposite the near leg. A second automated review also read the near and far limbs the way they're meant to be. The basic checks f"
+    errors: []
+  - prompt: "Add a 4-frame idle loop after the walk, tagged idle, with a subtle one-pixel breathing bob. Keep the walk as it is."
+    seconds: 33
+    header: Claude
+    tools:
+      - tool: "Read guide: anim.timing.idle"
+        status: ok
+      - tool: Run Lua
+        status: ok
+      - tool: Read the timeline
+        status: ok
+      - tool: Apply timeline changes
+        status: ok
+      - tool: Check pixel art
+        status: ok
+    reply: "Idle plan (frames 8–11, 300/150/300/150 ms): the head and chest rise 1 px on the in-breath, and the arms follow one frame later. The feet never move.\nThe check reports frames 8–11 as part of the walk tag, so I'm checking whether adding frames stretched it:\nI added a 4-frame idle loop on frames 8–11, tagged [idle](aseprite://tag/idle).\n\n| Frame | Pose | Time |\n|---|---|---|\n| 8 | Rest | 300 ms |\n| 9 | Breathing in: head and chest rise 1 px, arms still down | 150 ms |\n| 10 | Top of the breath: arms rise 1 px too | 300 ms |\n| 11 | Breathing out: head and chest drop back, arms still up | 150 ms |\n\nThe arms trail the chest by one frame, so the bob looks soft rather than mechanical. The chest grows 1 px taller instead of lifting off the legs, and the feet stay on the same ground row throughout. "
+    errors: []
+files:
+  - filmstrip.png
+  - final.png
+  - final-1x.png
+  - start.png
+  - result.aseprite
+judge:
+  provider: codex
+  model: null
+  blind: true
+  images:
+    - filmstrip.png
+    - final.png
+    - final-1x.png
+    - start.png
+  seconds: 75
+  scores:
+    readability: 3
+    form: 0
+    palette: 3
+    motion: 2
+    fit: 1
+  overall: 1.8
+  note: "Clean pixel clusters and opposing arm–leg swings make the walk readable. Abrupt body-height changes weaken the loop, and the sheet shows 11 frames instead of the requested six walk plus four idle frames."
