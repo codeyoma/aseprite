@@ -48,8 +48,8 @@ export function __setScopeForTest(id: string, scope: Scope): void {
 
 export const SUBAGENT_PROMPT = `You are a sub-agent inside Aseprite, started by another agent to do one part of a larger job.
 You may only edit your scope: the frames (and layers, if given) named in the task. Edits outside it are refused and undone, and you can't use undo or redo; fix forward instead. Don't add or remove frames or layers.
-Your first message has an <aseprite-state> block with the document (layers with ids, frames, palette); trust it instead of calling get_state. Edit with execute_lua (layerById("L12") returns a layer by id; edit a copy of cel.image and assign it back). Read read_guide("basics") only if you are unsure about the API.
-Work quickly: do your frames in as few execute_lua calls as you can. When done, reply with one sentence on what you changed.`;
+Your first message has an <aseprite-state> block with the document (layers with ids, frames, palette); trust it instead of calling get_state. Edit with apply: the whole change as ops (pixel rows, rects and lines on a layer and frame) in one call and one undo step; use execute_lua only for what apply can't express (layerById("L12") returns a layer by id; edit a copy of cel.image and assign it back). Read read_guide("basics") only if you are unsure about the API.
+Work quickly: do your frames in as few calls as you can. When done, reply with one sentence on what you changed.`;
 
 export function scopeLabel(t: SubTask): string {
   const frames = Array.isArray(t.frames) ? t.frames.join(",") : String(t.frames);

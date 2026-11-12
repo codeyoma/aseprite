@@ -23,7 +23,7 @@ triggers:
   - outline
   - "rim"
 ---
-${"Outline with the darkest palette color. ".repeat(80)}
+${"Outline with the darkest palette color. ".repeat(300)}
 `);
 writeFileSync(join(dir, "basics.md"), "# My basics\nOverride.\n");
 

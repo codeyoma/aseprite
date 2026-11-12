@@ -4,7 +4,7 @@ Read this before editing. Every rule here was checked against Aseprite 1.3.18.
 
 ## Workflow
 
-1. `get_state` (document) and `get_context` (what the user selected).
+1. The `<aseprite-state>` block (document, selection, which frames each layer has art in, motion clips); `get_state` for anything it leaves out.
 2. Change things with `apply` (the whole change as data, one undo step) or, for what it can't express, `execute_lua`; Aseprite menu commands with `run_command`.
 3. Look after every visual change and fix what is wrong: pass `look: true` (or `"filmstrip"`) and `check: true` to `apply` or `execute_lua` to get the snapshot and the check findings with the edit, or call `snapshot` and `check`.
 4. Use `read_pixels` when exact pixels matter (outlines, small sprites, palette checks). To change a few pixels, edit its rows and send them back with `write_pixels` (same layer, same legend): one undo step, and a typo is refused with its row and column. For the next animation frame, read the last frame's rows, write them into the new frame, then change only what moves, so shapes keep their size.
@@ -13,20 +13,18 @@ Each `apply` or `execute_lua` call is one undo step. If an op fails or the code 
 
 ## One change, one call: apply
 
-`apply` takes a list of ops and runs them in order: layers (`add_layer`, `set_layer` to rename, hide, lock or change opacity and blend, `move_layer`, `delete_layer`), pixels (`pixels` with `read_pixels`' rows, `rect`, `line`), cels (`clear_cel`, `move_cel`), frames (`add_frames`, `delete_frames`, `set_duration`), tags (`set_tag`, `delete_tag`) and the palette (`set_palette`, `append_palette`). A layer added by an earlier op can be named by later ops; frames are numbered as the sprite is when the op runs. When any op fails nothing changes, and the result lists every problem by its path (`ops[2]: Layer not found: Bdy`). `dry_run: true` lists what the ops would change without changing anything.
+`apply` takes a list of ops and runs them in order: layers (`add_layer`, `set_layer` to rename, hide, lock or change opacity and blend, `move_layer`, `delete_layer`), pixels (`pixels` with `read_pixels`' rows, `rect`, `line`), cels (`clear_cel`, `move_cel`) and the palette (`set_palette`, `append_palette`). A layer added by an earlier op can be named by later ops. When any op fails nothing changes, and the result lists every problem by its path (`ops[2]: Layer not found: Bdy`). `dry_run: true` lists what the ops would change without changing anything. Frames, durations and tags are the timeline's: edit them as text (below).
 
 ```json
 { "ops": [
   { "op": "add_layer", "name": "AI: Shadow", "below": "Body", "opacity": 128 },
-  { "op": "rect", "layer": "AI: Shadow", "x": 4, "y": 14, "w": 8, "h": 1, "color": "#202020" },
-  { "op": "add_frames", "count": 3, "duration": 100 },
-  { "op": "set_tag", "name": "idle", "from": 1, "to": 4, "direction": "ping-pong" }
+  { "op": "rect", "layer": "AI: Shadow", "x": 4, "y": 14, "w": 8, "h": 1, "color": "#202020" }
 ], "look": true, "check": true }
 ```
 
 ## Tools you don't see
 
-Your tool list holds the core tools (state, `apply`, `execute_lua`, pixels, `snapshot`, `check`, undo, the guide). The rest (palettes and ramps, shading, outlines, dithering, animation helpers, timeline text, effects, tiles, UI, export, image generation, `run_command`, sub-agents, critics) are called with `call_tool({ name, input })`; `find_tools` searches them and shows their inputs. A skill lists the inputs of the tools it uses, so you can call them right away.
+Your tool list holds the core tools (state, `apply`, `execute_lua`, pixels, `snapshot`, `check`, the timeline as text, the animation flow: `motion_clip`, `inbetween`, `motion_check`, undo, the guide). The rest (palettes and ramps, shading, outlines, dithering, animation helpers, timeline text, effects, tiles, UI, export, image generation, `run_command`, sub-agents, critics) are called with `call_tool({ name, input })`; `find_tools` searches them and shows their inputs. A skill lists the inputs of the tools it uses, so you can call them right away.
 
 ## New art from words: an image draft first
 

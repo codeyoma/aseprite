@@ -82,8 +82,9 @@ test("find_tools searches the deferred tools and gives full schemas by name", as
 
 test("skills, the basics guide and the chat prompt name only tools they also tell how to call", () => {
   const prompt = systemPrompt();
-  // Every deferred tool the prompt or basics name has its signature in the prompt's <more-tools> block.
-  for (const n of toolsNamedIn(prompt.split("<more-tools>")[0])) {
+  // Every deferred tool the prompt or basics name has its signature in the prompt's <more-tools> block. The skills
+  // index (#113) only describes skills; its words are not instructions to call a tool.
+  for (const n of toolsNamedIn(prompt.split("<more-tools>")[0].replace(/<skills-index>[\s\S]*?<\/skills-index>/, ""))) {
     if (CORE_TOOL_NAMES.includes(n)) continue;
     assert.ok(prompt.includes(`- ${n} {`), `${n} is named in the chat prompt but its inputs are not`);
   }

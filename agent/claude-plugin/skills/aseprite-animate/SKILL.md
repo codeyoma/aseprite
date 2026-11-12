@@ -3,11 +3,20 @@ name: aseprite-animate
 title: Animate a character or object
 description: Make walk, run, idle, attack, jump and hit animations with proper keyframes, timing, arcs, squash and stretch and smears.
 category: Animation
-triggers: [animate, animation, walk cycle, run cycle, idle animation, attack animation, jump animation, smear]
+triggers: [animate, animation, walk cycle, run cycle, idle animation, attack animation, jump animation, smear, wave, waving, punch, kick, jump, dance]
 intents: [animate, cycle]
 tools: [generate_character, motion_clip, motion_check, walk_check, motion_review, read_guide, apply_timeline_text, get_timeline_text, execute_lua, read_pixels, write_pixels, inbetween, transform_layer, smear, subpixel_move, spawn_agents, check, snapshot]
 ---
 # Animate a character or object
+
+## Part layers already there: the short path
+When the character is on part layers (an arm, a torso, legs: the state block lists them), animate it with the tools, not with Lua drawing:
+1. Frames and tag as timeline text (`apply_timeline_text`), durations from `rule:anim.timing`.
+2. `motion_clip` `action: "rig"` with the parts (root first), then `action: "plan"` with the tag and the keys (the extremes: for a wave, arm down, arm up, the far end of the swing; each key's pose in `pose`).
+3. Pose each key with `transform_layer` on the part layers (`frames`: that key, `move.angle` about the joint `pivot_x`/`pivot_y`), then `motion_clip` `action: "advance"`.
+4. `inbetween` fills every frame between the keys (arcs about the joints, eased, keys untouched).
+5. `motion_check` and `snapshot` `view: "trails"`, fix what they list, `motion_clip` `action: "done"`.
+The rest of this skill is for drawing a motion from scratch.
 
 ## Plan first
 1. Read the timing table before you plan: `read_guide("rules/animation")` (`rule:anim.timing` for frames, durations and key poses per animation; `rule:anim.budget` for how many frames the sprite's size can carry). Don't plan from memory.
@@ -39,13 +48,8 @@ Then: `review`, then `export-game` for a game.
 <skill-tools>
 Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "generate_character", input: { ... } }). Their inputs:
 - generate_character {subject?: string, view?: string, poses?: [string], frames?: [integer], tag?: string, target_size?: [integer 1-512, integer 1-512]|object, layers?: [object], colors?: integer 4-64, name?: string, reference?: boolean, base_frame?: integer, inbetweens?: boolean, job?: string}: A new character as body-part layers from the image generator (#103): first a master sheet with the whole character in every key pose, then one image per laye…
-- motion_clip {action?: "show"|"plan"|"advance"|"done"|"rig"|"remove", tag?: string, kind?: "walk"|"run"|"idle"|"cycle"|"action", facing?: "right"|"left", loop?: boolean, keys?: [integer|object], contacts?: [integer], root_travel?: number, followers?: [object], character?: string, staged?: boolean, base_frame?: integer, parts?: [object]}: The animation's plan as data on the sprite (#109), one clip per tag: kind, facing, loop, key frames with their poses, contacts, root travel and followers (ha…
-- motion_check {tag?: string, parts?: [string]}: Measure how an animation moves (#111): per part (its layer) and for the whole figure in every frame of the tag, the spacing (px a frame: even, eased or poppi…
 - walk_check {tag?: string, facing?: "right"|"left", contacts?: [integer, integer], near_arm?: object, near_leg?: object}: Check a side-view walk's arms against its legs on the two contact frames: the near arm must swing opposite the near leg, and each must change sides between t…
 - motion_review {tag?: string}: A fresh critic looks at a walk's two contact frames (enlarged, no measurements, no brief) and says which arm it notices, which leg it pairs with that arm, an…
-- apply_timeline_text {text: string, plan?: boolean}: Change the timeline to match the text, in one undo step.
-- get_timeline_text {}: The active sprite's timeline as compact text: frame count, frame durations, tags (range, direction, repeats) and linked cels.
-- inbetween {tag?: string, from?: integer, to?: integer, parts?: [string], easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out", arc?: number}: Make the frames between approved keys (#110): each part layer is solved as a rigid move between its two keys (a turn about its joint, where it meets its pare…
 - transform_layer {layer: string, move: object, frames?: [integer], from_frame?: integer, to_frame?: integer, arc?: number, easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out"}: Move, turn, scale or squash a rigid part (a layer: an arm, a sword, a whole small sprite), RotSprite-style: pixels stay clean and no new colors appear.
 - smear {mode: "sweep"|"stretch"|"afterimage"|"multiples", layer?: string, tag?: string, loop?: boolean, frames?: string|integer|[integer], insert_after?: integer, vector?: object, min_px?: number 0-256, refine?: boolean, length?: number 0.1-2, taper?: number 0-1, thin?: boolean, fill?: "ramp"|"edge"|"source", amount?: number 0-2, copies?: integer 1-8, duration_ms?: integer 10-2000, preview?: boolean}: Make smears and motion trails from a layer's own motion, in one undo step.
 - subpixel_move {layer: string, from_frame: integer, to_frame: integer, dx?: number -4-4, dy?: number -4-4, easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out"}: Move a layer's drawing by less than a pixel per frame without it jumping: each frame from from_frame+1 to to_frame shifts it a fraction further toward (dx, d…

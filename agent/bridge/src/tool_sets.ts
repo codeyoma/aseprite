@@ -16,13 +16,15 @@ import { findTool, runTool, TOOLS } from "./tools.js";
 
 /**
  * The core tools: listed by default. Read the document, look and check, edit
- * (apply first, execute_lua as the fallback, the pixel grid), undo, the guide,
- * and the chat's own steps (ask the user, show variations). The meta tools
- * find_tools and call_tool are listed with them (15 in all).
+ * (apply first, execute_lua as the fallback, the pixel grid), the timeline as
+ * text, the animation flow (#113: the clip, in-betweens, the motion check),
+ * undo, the guide, and the chat's own steps (ask the user, show variations).
+ * The meta tools find_tools and call_tool are listed with them (18 in all).
  */
 export const CORE_TOOL_NAMES: readonly string[] = [
-  "get_state", "get_context", "apply", "execute_lua", "snapshot", "check", "read_pixels", "write_pixels",
-  "undo", "redo", "read_guide", "ask_user", "propose_variations",
+  "get_state", "apply", "execute_lua", "snapshot", "check", "read_pixels", "write_pixels",
+  "get_timeline_text", "apply_timeline_text", "motion_clip", "inbetween", "motion_check",
+  "undo", "read_guide", "ask_user", "propose_variations",
 ];
 
 export const META_TOOL_NAMES = ["find_tools", "call_tool"] as const;

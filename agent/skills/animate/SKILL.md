@@ -3,11 +3,20 @@ name: animate
 title: Animate a character or object
 description: Make walk, run, idle, attack, jump and hit animations with proper keyframes, timing, arcs, squash and stretch and smears.
 category: Animation
-triggers: [animate, animation, walk cycle, run cycle, idle animation, attack animation, jump animation, smear]
+triggers: [animate, animation, walk cycle, run cycle, idle animation, attack animation, jump animation, smear, wave, waving, punch, kick, jump, dance]
 intents: [animate, cycle]
 tools: [generate_character, motion_clip, motion_check, walk_check, motion_review, read_guide, apply_timeline_text, get_timeline_text, execute_lua, read_pixels, write_pixels, inbetween, transform_layer, smear, subpixel_move, spawn_agents, check, snapshot]
 ---
 # Animate a character or object
+
+## Part layers already there: the short path
+When the character is on part layers (an arm, a torso, legs: the state block lists them), animate it with the tools, not with Lua drawing:
+1. Frames and tag as timeline text (`apply_timeline_text`), durations from `rule:anim.timing`.
+2. `motion_clip` `action: "rig"` with the parts (root first), then `action: "plan"` with the tag and the keys (the extremes: for a wave, arm down, arm up, the far end of the swing; each key's pose in `pose`).
+3. Pose each key with `transform_layer` on the part layers (`frames`: that key, `move.angle` about the joint `pivot_x`/`pivot_y`), then `motion_clip` `action: "advance"`.
+4. `inbetween` fills every frame between the keys (arcs about the joints, eased, keys untouched).
+5. `motion_check` and `snapshot` `view: "trails"`, fix what they list, `motion_clip` `action: "done"`.
+The rest of this skill is for drawing a motion from scratch.
 
 ## Plan first
 1. Read the timing table before you plan: `read_guide("rules/animation")` (`rule:anim.timing` for frames, durations and key poses per animation; `rule:anim.budget` for how many frames the sprite's size can carry). Don't plan from memory.

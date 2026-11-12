@@ -418,6 +418,38 @@ function M.new(opts)
     return d > 0 and (1 / d) or nil
   end
 
+  -- Frame numbers as ranges: { 1, 2, 3, 5 } -> "1-3,5".
+  local function ranges(fs)
+    table.sort(fs)
+    local out, i = {}, 1
+    while i <= #fs do
+      local j = i
+      while j < #fs and fs[j + 1] == fs[j] + 1 do j = j + 1 end
+      out[#out + 1] = i == j and tostring(fs[i]) or (fs[i] .. "-" .. fs[j])
+      i = j + 1
+    end
+    return table.concat(out, ",")
+  end
+
+  -- The Motion Clip store's clips (sprite property aseprite-agent "motion"), one line each: tag, keys, stage.
+  local function motionLines(sprite)
+    local text = sprite.properties("aseprite-agent")["motion"]
+    if type(text) ~= "string" or text == "" then return {} end
+    local ok, store = pcall(json.decode, text)
+    if not ok or (type(store) ~= "table" and type(store) ~= "userdata") then return {} end
+    local out = {}
+    for _, t in ipairs(sprite.tags) do
+      local c = store.clips and store.clips[t.name]
+      if c then
+        local keys = {}
+        for _, k in ipairs(c.keys or {}) do keys[#keys + 1] = math.floor(t.fromFrame.frameNumber + (tonumber(k.at) or 1) - 1) end
+        out[#out + 1] = string.format("motion clip: %s (%s%s) keys %s, stage %s", t.name, tostring(c.kind),
+          c.character and (", " .. tostring(c.character)) or "", #keys > 0 and ranges(keys) or "none", tostring(c.stage))
+      end
+    end
+    return out
+  end
+
   -- A compact, deterministic description of the document and the user's
   -- selection. Facts, not instructions; ids (L12) are stable for the session.
   -- site (#90): a request's site, whose sprite it describes (default: the active one).
@@ -460,8 +492,15 @@ function M.new(opts)
               flags[#flags + 1] = string.format("%d%%", math.floor(l.opacity / 2.55 + 0.5))
             end
             if active and l == active then flags[#flags + 1] = "active" end
-            items[#items + 1] = string.format("%s[%s] %s%s", string.rep("  ", depth), layerId(l), l.name,
-              #flags > 0 and (" (" .. table.concat(flags, ", ") .. ")") or "")
+            -- Which frames have art on the layer (#113), when there is more than one frame.
+            local art = ""
+            if l.isImage and #sprite.frames > 1 then
+              local fs = {}
+              for _, c in ipairs(l.cels) do fs[#fs + 1] = c.frameNumber end
+              art = #fs == 0 and " no art" or (#fs < #sprite.frames and (" art " .. ranges(fs)) or "")
+            end
+            items[#items + 1] = string.format("%s[%s] %s%s%s", string.rep("  ", depth), layerId(l), l.name,
+              #flags > 0 and (" (" .. table.concat(flags, ", ") .. ")") or "", art)
           end
           if l.isGroup then walk(l.layers, depth + 1) end
         end
@@ -479,6 +518,16 @@ function M.new(opts)
         end
         add("tags: " .. table.concat(tags, " · "))
       end
+
+      -- Frame durations when they vary (#113): holds and fast frames are part of the motion.
+      if #sprite.frames > 1 and not fps and #sprite.frames <= 64 then
+        local ms = {}
+        for _, f in ipairs(sprite.frames) do ms[#ms + 1] = tostring(math.floor(f.duration * 1000 + 0.5)) end
+        add("durations (ms): " .. table.concat(ms, " "))
+      end
+
+      -- Motion clips (#109, #113): each planned tag's keys and stage.
+      for _, l in ipairs(motionLines(sprite)) do add(l) end
 
       -- The active layer, frame, cel and the timeline range: the same context get_state reports (contextOf).
       local ctx = contextOf(sprite, site)

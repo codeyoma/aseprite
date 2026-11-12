@@ -196,8 +196,17 @@ export function readGuide(topic: string): string | undefined {
   return s?.body;
 }
 
-/** Skills inlined into a message are capped at this many characters; longer ones get a hint. */
-export const INLINE_SKILL_CHARS = 2000;
+/**
+ * The routed skill is inlined into the message up to this many characters (#113: every built-in skill fits, so the
+ * agent starts working without a read_guide round trip); longer user skills get a hint.
+ */
+export const INLINE_SKILL_CHARS = 9000;
+
+/** One line per built-in and user skill (name: description), for the system prompt's skills index. */
+export function skillIndex(skills = allSkills()): string {
+  return [...skills.values()].filter((s) => s.name !== "basics" && (s.triggers.length || s.description))
+    .map((s) => `- ${s.name}: ${(s.description ?? s.title ?? "").replace(/\s+/g, " ").slice(0, 160)}`).join("\n");
+}
 
 /** How well a skill fits a message: trigger hits (longer phrases count more) and intent words (#100). 0: no trigger. */
 export function skillScore(s: Skill, words: string): { score: number; hit?: string } {

@@ -25,7 +25,6 @@ Tools this skill uses that are not in your tool list: call them with call_tool, 
 - direction_plan {count?: 4|8}: Which of the 4 or 8 directions the sprite's tags cover (tags named like 'walk_E', 'SE', 'idle-north'), which missing ones can be made by mirroring (E<->W, NE…
 - mirror_direction {tag: string, to?: string, new_tag?: string, keep_layers?: [string]}: Make a direction by mirroring another: copies a tag's frames to the end, flipped horizontally, as a new tag named for the new direction (walk_E -> walk_W).
 - spawn_agents {instruction?: string, tasks: [object], parallel?: integer 1-4}: Split a multi-frame job into sub-tasks and run them in parallel, one sub-agent each (up to 4 at once).
-- apply_timeline_text {text: string, plan?: boolean}: Change the timeline to match the text, in one undo step.
 - transform_layer {layer: string, move: object, frames?: [integer], from_frame?: integer, to_frame?: integer, arc?: number, easing?: "linear"|"ease-in"|"ease-out"|"ease-in-out"}: Move, turn, scale or squash a rigid part (a layer: an arm, a sword, a whole small sprite), RotSprite-style: pixels stay clean and no new colors appear.
 - iso_project {layer?: string, frame?: integer}: Turn a top-down square tile or shape (a layer, active frame) into a 2:1 isometric diamond, pixel-exact, opened as a new sprite.
 - iso_grid {tile?: integer 4-256}: Add a 2:1 isometric grid (tiles `tile` px wide) on an 'AI: iso grid' layer, as a drawing guide.

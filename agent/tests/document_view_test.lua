@@ -52,6 +52,14 @@ do
   check("state: active line", block:match("active: layer L%d+ Body, frame %d+") ~= nil)
   check("state: pixel selection", block:match("pixel selection: x=2 y=3 4x5") ~= nil)
   check("state: deterministic and ids stable", V.stateBlock() == block)
+  check("state: art frames per layer", block:match("Body %(active%) art 1\n") ~= nil and block:match("Glow %(50%%%) no art") ~= nil, block)
+  spr.frames[2].duration = 0.3
+  spr.properties("aseprite-agent")["motion"] = json.encode{ version = 1, rigs = {}, clips = { idle = { kind = "idle", keys = { { at = 1 }, { at = 3 } }, stage = "keys" } } }
+  local more = V.stateBlock()
+  check("state: varied durations", more:match("durations %(ms%): 100 300 100 100") ~= nil, more)
+  check("state: motion clip line", more:match("motion clip: idle %(idle%) keys 1,3, stage keys") ~= nil, more)
+  spr.properties("aseprite-agent")["motion"] = ""
+  spr.frames[2].duration = 0.1
 
   local id = "L" .. glow.id
   check("layerById by id and name", V.layerById(id) == glow and V.layerById(glow.id) == glow and V.layerById("Body") == body)

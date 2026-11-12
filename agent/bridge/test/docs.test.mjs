@@ -72,3 +72,14 @@ test("GLOSSARY file paths exist", () => {
   }
   assert.deepEqual(bad, [], "GLOSSARY names files that do not exist");
 });
+
+test("one way to edit the timeline: the chat rules, the guide and the skills name timeline text, never apply's frame ops (#113)", async () => {
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const { systemPrompt } = await import("../dist/chat.js");
+  const root = new URL("../../", import.meta.url);
+  const skills = readdirSync(new URL("skills/", root)).map((d) => { try { return readFileSync(new URL(`skills/${d}/SKILL.md`, root), "utf8"); } catch { return ""; } });
+  const texts = [systemPrompt(), readFileSync(new URL("guide/basics.md", root), "utf8"), ...skills];
+  for (const t of texts) assert.doesNotMatch(t, /\b(add_frames|delete_frames|set_duration|set_tag|delete_tag)\b/, "frame and tag edits go through apply_timeline_text");
+  assert.match(systemPrompt(), /The timeline \(frame counts, durations, tags, linked cels\) is edited as text: get_timeline_text, then apply_timeline_text/);
+  assert.match(systemPrompt(), /<skills-index>\n- pixel-art: /);
+});

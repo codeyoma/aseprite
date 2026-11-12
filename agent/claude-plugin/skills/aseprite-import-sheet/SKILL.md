@@ -26,5 +26,4 @@ Then: `retime-animation`, then `export-game`.
 Tools this skill uses that are not in your tool list: call them with call_tool, e.g. call_tool({ name: "import_sheet", input: { ... } }). Their inputs:
 - import_sheet {path: string, mode?: "auto"|"grid"|"atlas", cell_w?: integer, cell_h?: integer, margin_x?: integer, margin_y?: integer, padding_x?: integer, padding_y?: integer, order?: "rows"|"columns", atlas?: string, merge_distance?: integer 0-32, row_tags?: [string], align?: "bottom-center"|"center"|"top-left", duration_ms?: integer, name?: string}: Slice a sprite sheet image (e.g.
 - import_animation {path: string, into?: "new"|"layer", frame?: integer, name?: string, timing?: boolean, x?: integer, y?: integer}: Turn an animated image file (GIF, WebP, APNG, .aseprite, FLI; e.g.
-- apply_timeline_text {text: string, plan?: boolean}: Change the timeline to match the text, in one undo step.
 </skill-tools>
