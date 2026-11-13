@@ -43,6 +43,8 @@ export interface Protocol {
   bridgeMethods: Record<string, BridgeMethodSpec>;
   /** Named object types (field -> type); "...": "Other" includes Other's fields. */
   shapes: Record<string, Record<string, string>>;
+  /** apply's ops (#116): op name -> its params (besides op) in the params' type grammar; "description" is prose. */
+  applyOps: Record<string, Record<string, string>> & { description: string };
   notifications: { "chat.event": { types: string[]; fields: string[] } };
 }
 

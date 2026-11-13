@@ -221,6 +221,8 @@ export interface Document {
   frames(spec?: unknown): Promise<number[]>;
   /** A layer's pixels at sprite size (or the whole sprite when no layer). */
   pixels(layer: string | undefined, frame?: number): Promise<Rgba>;
+  /** The whole sprite rendered as Aseprite does (blend modes, groups) with these layers (ids or names) left out (#116). */
+  pixelsWithout(exclude: string[], frame?: number): Promise<Rgba>;
   /** The same for several frames in one request per 64 frames (#114), in the order given. */
   pixelsMany(layer: string | undefined, frames: number[]): Promise<Rgba[]>;
   putImage(img: Rgba, o?: PutImage): Promise<{ layer: string; name: string }>;
@@ -425,6 +427,13 @@ export function documentOf(aseprite: AsepriteRequester): Document {
         }
       }
       return out;
+    },
+    async pixelsWithout(exclude, frame) {
+      const { result, binary } = await aseprite.request("snapshot", { exclude, frame });
+      if (!binary) throw new Error("Aseprite sent no pixel data");
+      const img = { width: result.width, height: result.height, data: new Uint8Array(binary) };
+      checkSize(img, "snapshot");
+      return img;
     },
     async pixels(layer, frame) {
       const { result, binary } = await aseprite.request("snapshot", { layer, frame });

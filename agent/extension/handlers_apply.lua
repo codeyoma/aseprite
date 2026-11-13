@@ -19,26 +19,16 @@ return function(handlers, D)
   local DIRS = { forward = AniDir.FORWARD, reverse = AniDir.REVERSE, ["ping-pong"] = AniDir.PING_PONG,
                  ["ping-pong-reverse"] = AniDir.PING_PONG_REVERSE }
 
-  -- Op name -> the keys it takes (besides `op`). Kept in step with the
-  -- bridge's schema (agent/bridge/src/apply.ts).
-  local KEYS = {
-    add_layer = { "name", "group", "parent", "above", "below", "opacity", "blend", "visible" },
-    set_layer = { "layer", "name", "visible", "opacity", "blend", "locked" },
-    move_layer = { "layer", "above", "below", "parent" },
-    delete_layer = { "layer" },
-    pixels = { "layer", "frame", "x", "y", "rows", "legend" },
-    rect = { "layer", "frame", "x", "y", "w", "h", "color", "fill" },
-    line = { "layer", "frame", "points", "color" },
-    clear_cel = { "layer", "frames" },
-    move_cel = { "layer", "frames", "dx", "dy" },
-    add_frames = { "count", "after", "empty", "duration" },
-    delete_frames = { "frames" },
-    set_duration = { "frames", "ms" },
-    set_tag = { "name", "from", "to", "direction", "repeat", "rename" },
-    delete_tag = { "name" },
-    set_palette = { "colors" },
-    append_palette = { "colors" },
-  }
+  -- Op name -> the keys it takes (besides `op`): protocol.json applyOps,
+  -- the one definition the bridge's apply tool and the fake share (#116).
+  local KEYS = {}
+  for name, params in pairs(D.protocol.applyOps) do
+    if name ~= "description" then
+      local keys = {}
+      for k in pairs(params) do keys[#keys + 1] = k end
+      KEYS[name] = keys
+    end
+  end
   -- Ops a sub-agent may run: the scope guard checks pixels and cels only.
   local SCOPED = { pixels = true, rect = true, line = true, clear_cel = true, move_cel = true }
 

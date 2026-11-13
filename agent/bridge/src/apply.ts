@@ -14,6 +14,7 @@ import * as z from "zod/v4";
 import { checkContent, snapshotContent } from "./core_tools.js";
 import { failure, text, type Tool, type ToolResult } from "./tool.js";
 import { framesSpec } from "./tool_inputs.js";
+import { PROTOCOL } from "./protocol.js";
 
 const int = z.number().int();
 const layerRef = z.string().min(1).describe("Layer id ('L12') or name, also one added by an earlier op.");
@@ -21,36 +22,39 @@ const color = z.union([z.string().min(1), int.min(0)]);
 const BLEND = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "color_dodge", "color_burn", "hard_light",
   "soft_light", "difference", "exclusion", "hue", "saturation", "color", "luminosity", "addition", "subtract", "divide"] as const;
 const hexColor = z.string().regex(/^#?([0-9a-f]{6}|[0-9a-f]{8})$/i, "a color is #rrggbb or #rrggbbaa");
-const cel = { layer: layerRef.optional(), frame: int.min(1).optional() };
+// The ops' keys and base types come from protocol.json applyOps (#116), the one definition the extension and the
+// fake share; the bridge adds value ranges and enums, by key name (a key means the same in every op).
+const BASE: Record<string, z.ZodType> = {
+  string: z.string(), integer: int, boolean: z.boolean(), any: z.any(), layer: layerRef, frames: framesSpec,
+  "string[]": z.array(z.string()), "string{}": z.record(z.string(), z.string()), "integer[][]": z.array(z.array(int)),
+};
+const REFINED: Record<string, z.ZodType> = {
+  name: z.string().min(1), rename: z.string().min(1),
+  frame: int.min(1), from: int.min(1), to: int.min(1), after: int.min(1), duration: int.min(1), ms: int.min(1),
+  w: int.min(1), h: int.min(1), count: int.min(1).max(256), repeat: int.min(0), opacity: int.min(0).max(255),
+  blend: z.enum(BLEND), direction: z.enum(["forward", "reverse", "ping-pong", "ping-pong-reverse"]),
+  color, rows: z.array(z.string()).min(1), points: z.array(z.tuple([int, int])).min(1), colors: z.array(hexColor).min(1),
+};
 
-/** The ops, one strict object each (the Lua handler checks the same keys: handlers_apply.lua KEYS). */
-export const OP_SCHEMAS = [
-  z.strictObject({ op: z.literal("add_layer"), name: z.string().min(1), group: z.boolean().optional(), parent: layerRef.optional(),
-    above: layerRef.optional(), below: layerRef.optional(), opacity: int.min(0).max(255).optional(), blend: z.enum(BLEND).optional(),
-    visible: z.boolean().optional() }),
-  z.strictObject({ op: z.literal("set_layer"), layer: layerRef, name: z.string().min(1).optional(), visible: z.boolean().optional(),
-    locked: z.boolean().optional(), opacity: int.min(0).max(255).optional(), blend: z.enum(BLEND).optional() }),
-  z.strictObject({ op: z.literal("move_layer"), layer: layerRef, above: layerRef.optional(), below: layerRef.optional(), parent: layerRef.optional() }),
-  z.strictObject({ op: z.literal("delete_layer"), layer: layerRef }),
-  z.strictObject({ op: z.literal("pixels"), ...cel, x: int.optional(), y: int.optional(), rows: z.array(z.string()).min(1),
-    legend: z.record(z.string(), z.string()).optional() }),
-  z.strictObject({ op: z.literal("rect"), ...cel, x: int, y: int, w: int.min(1), h: int.min(1), color, fill: z.boolean().optional() }),
-  z.strictObject({ op: z.literal("line"), ...cel, points: z.array(z.tuple([int, int])).min(1), color }),
-  z.strictObject({ op: z.literal("clear_cel"), layer: layerRef, frames: framesSpec.optional() }),
-  z.strictObject({ op: z.literal("move_cel"), layer: layerRef, frames: framesSpec.optional(), dx: int.optional(), dy: int.optional() }),
-  z.strictObject({ op: z.literal("add_frames"), count: int.min(1).max(256).optional(), after: int.min(1).optional(), empty: z.boolean().optional(),
-    duration: int.min(1).optional() }),
-  z.strictObject({ op: z.literal("delete_frames"), frames: framesSpec }),
-  z.strictObject({ op: z.literal("set_duration"), frames: framesSpec.optional(), ms: int.min(1) }),
-  z.strictObject({ op: z.literal("set_tag"), name: z.string().min(1), from: int.min(1).optional(), to: int.min(1).optional(),
-    direction: z.enum(["forward", "reverse", "ping-pong", "ping-pong-reverse"]).optional(), repeat: int.min(0).optional(),
-    rename: z.string().min(1).optional() }),
-  z.strictObject({ op: z.literal("delete_tag"), name: z.string().min(1) }),
-  z.strictObject({ op: z.literal("set_palette"), colors: z.array(hexColor).min(1) }),
-  z.strictObject({ op: z.literal("append_palette"), colors: z.array(hexColor).min(1) }),
-] as const;
+/** One op's strict schema from its applyOps entry. */
+function opSchemaOf(name: string, params: Record<string, string>) {
+  const shape: Record<string, z.ZodType> = { op: z.literal(name) };
+  for (const [key, type] of Object.entries(params)) {
+    const optional = type.endsWith("?");
+    const base = type.replace(/\?$/, "");
+    const t = REFINED[key] ?? BASE[base];
+    if (!t) throw new Error(`protocol.json applyOps.${name}.${key}: no schema for type ${type}`);
+    shape[key] = optional ? t.optional() : t;
+  }
+  return z.strictObject(shape);
+}
 
-export const OP_NAMES = OP_SCHEMAS.map((s) => s.shape.op.value);
+/** The ops, one strict object each, in protocol.json order. */
+export const OP_SCHEMAS = Object.entries(PROTOCOL.applyOps)
+  .filter(([k]) => k !== "description")
+  .map(([name, params]) => opSchemaOf(name, params as Record<string, string>));
+
+export const OP_NAMES = OP_SCHEMAS.map((s) => (s.shape.op as z.ZodLiteral<string>).value);
 const opSchema = z.discriminatedUnion("op", OP_SCHEMAS as any);
 export type ApplyOp = z.infer<typeof opSchema>;
 

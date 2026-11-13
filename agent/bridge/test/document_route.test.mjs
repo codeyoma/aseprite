@@ -21,8 +21,13 @@ import { fakeDocument, rect } from "./helpers/fake_document.mjs";
 const ASEPRITE = process.env.ASEPRITE;
 const extensionDir = fileURLToPath(new URL("../../extension", import.meta.url));
 
+test("protocol 45: snapshot leaves layers out; apply's ops in applyOps (#116)", () => {
+  assert.equal(PROTOCOL.version, 45);
+  assert.equal(PROTOCOL.requests.snapshot.params.exclude, "array?");
+  assert.equal(PROTOCOL.applyOps.rect.color, "any");
+});
+
 test("protocol 44: snapshot reads several frames in one reply (#114)", () => {
-  assert.equal(PROTOCOL.version, 44);
   assert.equal(PROTOCOL.requests.snapshot.params.frames, "array?");
 });
 

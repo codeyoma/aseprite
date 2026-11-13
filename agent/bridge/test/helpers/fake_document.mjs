@@ -354,6 +354,16 @@ export function fakeDocument({
       };
     },
     snapshot: (p) => {
+      if (p.exclude != null) {
+        // Layers left out of the sprite (#116): hidden for this read only, then shown again.
+        if (p.layer !== undefined) throw new Error("exclude leaves layers out of the whole sprite; drop layer");
+        if (!Array.isArray(p.exclude)) throw new Error("exclude must list layer ids or names");
+        const fail = (m) => { throw new Error(m); };
+        const hidden = p.exclude.map((r) => byRef(r) ?? fail(`Layer not found: ${r}`)).filter((l) => l.visible);
+        for (const l of hidden) l.visible = false;
+        try { return handlers.snapshot({ ...p, exclude: undefined }); }
+        finally { for (const l of hidden) l.visible = true; }
+      }
       if (p.frames !== undefined) {
         // Several frames in one reply (#114).
         if (!Array.isArray(p.frames) || !p.frames.length || p.frames.length > 64) throw new Error("frames must list 1 to 64 frame numbers");
@@ -858,24 +868,8 @@ export function fakeDocument({
     apply: (p) => {
       const s = active.sprite;
       if (!Array.isArray(p.ops) || !p.ops.length) throw new Error("ops must list at least one op");
-      const KEYS = {
-        add_layer: ["name", "group", "parent", "above", "below", "opacity", "blend", "visible"],
-        set_layer: ["layer", "name", "visible", "opacity", "blend", "locked"],
-        move_layer: ["layer", "above", "below", "parent"],
-        delete_layer: ["layer"],
-        pixels: ["layer", "frame", "x", "y", "rows", "legend"],
-        rect: ["layer", "frame", "x", "y", "w", "h", "color", "fill"],
-        line: ["layer", "frame", "points", "color"],
-        clear_cel: ["layer", "frames"],
-        move_cel: ["layer", "frames", "dx", "dy"],
-        add_frames: ["count", "after", "empty", "duration"],
-        delete_frames: ["frames"],
-        set_duration: ["frames", "ms"],
-        set_tag: ["name", "from", "to", "direction", "repeat", "rename"],
-        delete_tag: ["name"],
-        set_palette: ["colors"],
-        append_palette: ["colors"],
-      };
+      // protocol.json applyOps, as the extension and the bridge read it (#116).
+      const KEYS = Object.fromEntries(Object.entries(PROTOCOL.applyOps).filter(([k]) => k !== "description").map(([k, v]) => [k, Object.keys(v)]));
       const SCOPED = new Set(["pixels", "rect", "line", "clear_cel", "move_cel"]);
       const isInt = Number.isInteger;
       const fail = (m) => { throw new Error(m); };

@@ -188,9 +188,8 @@ export async function artWithout(doc: Document, info: SpriteInfo, ref: LayerInfo
   const shown = shownImageLayers(info);
   const others = shown.filter((l) => l.id !== ref.id);
   if (others.length === shown.length) return doc.pixels(undefined, frame);
-  // Bottom first, as they are composed.
-  const layers = await Promise.all([...others].reverse().map(async (l) => ({ image: await doc.pixels(l.id, frame), opacity: l.opacity ?? 255 })));
-  return composeNormal(layers, info.width, info.height);
+  // Aseprite renders the rest itself, blend modes and groups included (#116).
+  return doc.pixelsWithout([ref.id], frame);
 }
 
 /** snapshot with `view`: compose the view from per-frame or per-layer snapshots. Nothing changes. */

@@ -95,3 +95,17 @@ test("Document.apply sends the ops and returns the result", async () => {
   const r = await documentOf(doc).apply([{ op: "append_palette", colors: ["#123456"] }], { dryRun: true });
   assert.deepEqual([r.ok, r.applied, r.dryRun, r.changes], [true, false, true, ["Palette: added 1 colors"]]);
 });
+
+test("apply's ops come from protocol.json applyOps (#116): the same names, keys and optionality as the schemas", async () => {
+  const { PROTOCOL } = await import("../dist/protocol.js");
+  const { OP_SCHEMAS } = await import("../dist/apply.js");
+  const ops = Object.entries(PROTOCOL.applyOps).filter(([k]) => k !== "description");
+  assert.deepEqual(OP_NAMES, ops.map(([k]) => k));
+  for (const [i, [name, params]] of ops.entries()) {
+    const shape = OP_SCHEMAS[i].shape;
+    assert.deepEqual(Object.keys(shape).filter((k) => k !== "op").sort(), Object.keys(params).sort(), name);
+    for (const [k, t] of Object.entries(params)) assert.equal(shape[k].safeParse(undefined).success, t.endsWith("?"), `${name}.${k}`);
+  }
+  // The apply description names every op.
+  for (const [name] of ops) assert.ok(PROTOCOL.apply.includes(name), name);
+});

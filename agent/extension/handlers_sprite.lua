@@ -180,6 +180,7 @@ return function(handlers, D)
   local function toIndexed(img, sprite)
     local pal, pc = sprite.palettes[1], app.pixelColor
     local mask = sprite.transparentColor
+    if img.toIndexed then return img:toIndexed(pal, mask) end   -- this fork's native search (#116)
     local entries = {}
     for i = 0, #pal - 1 do
       if i ~= mask then local c = pal:getColor(i); entries[#entries + 1] = { i = i, r = c.red, g = c.green, b = c.blue } end

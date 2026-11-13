@@ -223,4 +223,49 @@ do
   check("diff image: native and Lua agree", StepCapture.diff(a, b).image:isEqual(luaDiff.image))
 end
 
+-- #116: Image:remap and Image:toIndexed against the Lua walks they replace.
+do
+  local img = Image(10, 6, ColorMode.RGB)
+  for y = 0, 5 do for x = 0, 9 do img:drawPixel(x, y, pc.rgba((x % 3) * 100, y * 40, 50, 255)) end end
+  local map = { [pc.rgba(0, 0, 50, 255)] = pc.rgba(9, 9, 9, 255), [pc.rgba(100, 40, 50, 255)] = pc.rgba(1, 1, 1, 128),
+    [pc.rgba(200, 200, 50, 255)] = pc.rgba(200, 200, 50, 255) } -- an identity entry changes nothing
+  local lua, nLua = img:clone(), 0
+  for it in lua:pixels() do local to = map[it()]; if to and to ~= it() then it(to); nLua = nLua + 1 end end
+  local nat = img:clone()
+  local n = nat:remap(map)
+  check("remap: count matches the Lua walk", n == nLua and n > 0, n .. " vs " .. nLua)
+  check("remap: pixels match the Lua walk", nat:isEqual(lua))
+  check("remap: empty map changes nothing", img:clone():remap({}) == 0)
+
+  local pal = Palette(5)
+  pal:setColor(0, Color(0, 0, 0, 0))
+  pal:setColor(1, Color(255, 0, 0)); pal:setColor(2, Color(0, 255, 0))
+  pal:setColor(3, Color(0, 0, 255)); pal:setColor(4, Color(255, 0, 0)) -- duplicate: the lowest index wins
+  local src = Image(16, 4, ColorMode.RGB)
+  for y = 0, 3 do for x = 0, 15 do src:drawPixel(x, y, pc.rgba(x * 16, y * 60, 255 - x * 16, (x + y) % 5 == 0 and 0 or 255)) end end
+  local function luaIndexed(im, p, mask)
+    local out = Image(im.width, im.height, ColorMode.INDEXED); out:clear(mask)
+    for it in im:pixels() do
+      local v = it()
+      if pc.rgbaA(v) > 0 then
+        local best, idx = math.huge, mask
+        for i = 0, #p - 1 do if i ~= mask then
+          local c = p:getColor(i)
+          local d = (c.red - pc.rgbaR(v)) ^ 2 + (c.green - pc.rgbaG(v)) ^ 2 + (c.blue - pc.rgbaB(v)) ^ 2
+          if d < best then best, idx = d, i end
+        end end
+        out:drawPixel(it.x, it.y, idx)
+      end
+    end
+    return out
+  end
+  for _, mask in ipairs{ 0, 3 } do
+    local nat = src:toIndexed(pal, mask)
+    check("toIndexed (mask " .. mask .. "): indexed", nat.colorMode == ColorMode.INDEXED)
+    check("toIndexed (mask " .. mask .. "): matches the Lua search", nat:isEqual(luaIndexed(src, pal, mask)))
+  end
+  check("toIndexed: exact red is index 1, not its duplicate", src:toIndexed(pal, 0):getPixel(0, 1) ~= 4)
+  check("toIndexed: needs RGB", fails(function() Image(2, 2, ColorMode.INDEXED):toIndexed(pal) end, "RGB"))
+end
+
 print(failures == 0 and "ALL PASSED" or (failures .. " FAILED"))

@@ -38,15 +38,18 @@
 #include "doc/cel.h"
 #include "doc/image.h"
 #include "doc/image_ref.h"
+#include "doc/palette.h"
 #include "doc/primitives.h"
 #include "doc/sprite.h"
 #include "render/render.h"
 #include "ui/scale.h"
 
 #include <algorithm>
+#include <climits>
 #include <cstring>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 namespace app { namespace script {
 
@@ -854,6 +857,98 @@ int Image_diff(lua_State* L)
   return 2;
 }
 
+// Image:remap(map) -> changed: replaces, in place, every pixel whose raw value
+// is a key of map (a Lua table raw value -> raw value) with that key's value,
+// and returns how many changed. Callers clone a cel's image first. Fork-only
+// (aseprite-agent #116): apply_color_map instead of a per-pixel walk in Lua.
+int Image_remap(lua_State* L)
+{
+  auto obj = get_obj<ImageObj>(L, 1);
+  doc::Image* img = obj->image(L);
+  luaL_checktype(L, 2, LUA_TTABLE);
+  std::unordered_map<doc::color_t, doc::color_t> map;
+  lua_pushnil(L);
+  while (lua_next(L, 2) != 0) {
+    if (lua_isinteger(L, -2) && lua_isinteger(L, -1))
+      map[doc::color_t(lua_tointeger(L, -2))] = doc::color_t(lua_tointeger(L, -1));
+    lua_pop(L, 1);
+  }
+  lua_Integer changed = 0;
+  if (!map.empty()) {
+    const int w = img->width(), h = img->height();
+    for (int y = 0; y < h; ++y) {
+      for (int x = 0; x < w; ++x) {
+        const doc::color_t c = img->getPixel(x, y);
+        auto it = map.find(c);
+        if (it != map.end() && it->second != c) {
+          img->putPixel(x, y, it->second);
+          ++changed;
+        }
+      }
+    }
+  }
+  lua_pushinteger(L, changed);
+  return 1;
+}
+
+// Image:toIndexed(palette [, maskIndex]) -> image: this RGB image as an
+// indexed one through palette: alpha 0 is maskIndex (default 0); any other
+// pixel is the exact entry, else the nearest by RGB distance (the lowest
+// index on a tie), never maskIndex. Fork-only (aseprite-agent #116): replaces
+// put_images' per-pixel nearest-entry search in Lua.
+int Image_toIndexed(lua_State* L)
+{
+  const auto obj = get_obj<ImageObj>(L, 1);
+  const doc::Image* img = obj->image(L);
+  const doc::Palette* pal = get_palette_from_arg(L, 2);
+  if (!pal)
+    return luaL_error(L, "toIndexed needs a palette");
+  const int mask = int(luaL_optinteger(L, 3, 0));
+  if (img->pixelFormat() != doc::IMAGE_RGB)
+    return luaL_error(L, "toIndexed converts an RGB image");
+  struct Entry { int i, r, g, b; };
+  std::vector<Entry> entries;
+  for (int i = 0; i < pal->size(); ++i) {
+    if (i == mask)
+      continue;
+    const doc::color_t c = pal->getEntry(i);
+    entries.push_back({ i, int(doc::rgba_getr(c)), int(doc::rgba_getg(c)), int(doc::rgba_getb(c)) });
+  }
+  const int w = img->width(), h = img->height();
+  doc::Image* out = doc::Image::create(doc::IMAGE_INDEXED, w, h);
+  out->clear(mask);
+  std::unordered_map<doc::color_t, int> memo;
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      const doc::color_t v = doc::get_pixel_fast<doc::RgbTraits>(img, x, y);
+      if (doc::rgba_geta(v) == 0)
+        continue;
+      const doc::color_t key = v & 0xffffff;
+      auto it = memo.find(key);
+      int idx = mask;
+      if (it != memo.end())
+        idx = it->second;
+      else {
+        const int r = doc::rgba_getr(v), g = doc::rgba_getg(v), b = doc::rgba_getb(v);
+        int best = INT_MAX;
+        for (const auto& e : entries) {
+          const int d = (e.r - r) * (e.r - r) + (e.g - g) * (e.g - g) + (e.b - b) * (e.b - b);
+          if (d < best) {
+            best = d;
+            idx = e.i;
+          }
+          if (d == 0)
+            break;
+        }
+        memo[key] = idx;
+      }
+      doc::put_pixel_fast<doc::IndexedTraits>(out, x, y, idx);
+    }
+  }
+  push_new<ImageObj>(L, out);
+  return 1;
+}
+
 // Image:isolatedPixels([limit]) -> count, { { x, y }, ... }: the pixels that
 // draw something and have no 8-neighbor of the same raw value (orphan
 // pixels), counted, with the first `limit` (default all) listed row by row.
@@ -942,6 +1037,8 @@ const luaL_Reg Image_methods[] = {
   { "histogram",      Image_histogram      },
   { "isolatedPixels", Image_isolatedPixels },
   { "diff",           Image_diff           },
+  { "remap",          Image_remap          },
+  { "toIndexed",      Image_toIndexed      },
   { "__gc",         Image_gc           },
   { "__eq",         Image_eq           },
   { nullptr,        nullptr            }

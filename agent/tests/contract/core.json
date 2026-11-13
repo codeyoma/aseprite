@@ -59,7 +59,14 @@
         { "request": "snapshot", "params": { "layer": "Nope" }, "error": "Layer not found: Nope" },
         { "request": "snapshot", "params": { "frames": [1, 1] }, "result": { "width": 3, "height": 1, "frames": [1, 1] } },
         { "request": "snapshot", "params": { "frames": [] }, "error": "frames must list 1 to 64 frame numbers" },
-        { "request": "snapshot", "params": { "frames": [1, 2] }, "error": "Frame 2 is out of range (1-1)" }
+        { "request": "snapshot", "params": { "frames": [1, 2] }, "error": "Frame 2 is out of range (1-1)" },
+        { "pixels": { "exclude": ["Top"] }, "rows": ["b.b"] },
+        { "pixels": { "exclude": [{ "$id": "Bottom" }, "Hidden"] }, "rows": ["h.."] },
+        { "pixels": {}, "rows": ["p.b"] },
+        { "state": { "layers": [{ "name": "Hidden", "visible": false }, { "name": "HG", "visible": false }, { "name": "Top", "visible": true }, { "name": "Bottom", "visible": true }] } },
+        { "request": "snapshot", "params": { "exclude": ["Nope"] }, "error": "Layer not found: Nope" },
+        { "request": "snapshot", "params": { "exclude": ["Top"], "layer": "Bottom" }, "error": "exclude leaves layers out of the whole sprite" },
+        { "pixels": { "exclude": ["Top"], "frames": [1] }, "rows": ["b.b"] }
       ]
     },
     {

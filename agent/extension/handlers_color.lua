@@ -159,9 +159,12 @@ return function(handlers, D)
             seen[cel.image.id] = true
             local img = cel.image:clone()
             local n = 0
-            for it in img:pixels() do
-              local to = map[it()]
-              if to then it(to); n = n + 1 end
+            if img.remap then n = img:remap(map)   -- this fork's native remap (#116)
+            else
+              for it in img:pixels() do
+                local to = map[it()]
+                if to then it(to); n = n + 1 end
+              end
             end
             if n > 0 then cel.image = img; changed = changed + n end
           end

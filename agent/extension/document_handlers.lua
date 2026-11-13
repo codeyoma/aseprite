@@ -528,7 +528,29 @@ function M.new(opts)
     return capture:diffVisual(params, here())
   end
 
-  handlers.snapshot = function(params)
+  -- Runs fn with the layers in `exclude` (ids or names) hidden, then shows
+  -- them again, even when fn fails (#116). Outside a transaction a visibility
+  -- change adds no undo step, so the document's history is untouched; reads
+  -- never run inside one.
+  local function withoutLayers(exclude, fn)
+    if exclude == nil then return fn() end
+    if type(exclude) ~= "table" then error("exclude must list layer ids or names") end
+    local sprite = here().sprite
+    if not sprite then error("No active sprite") end
+    local hidden = {}
+    for _, ref in ipairs(exclude) do
+      local layer = layerById(ref, sprite)
+      if not layer then error("Layer not found: " .. tostring(ref)) end
+      if layer.isVisible then hidden[#hidden + 1] = layer end
+    end
+    for _, l in ipairs(hidden) do l.isVisible = false end
+    local results = table.pack(pcall(fn))
+    for _, l in ipairs(hidden) do l.isVisible = true end
+    if not results[1] then error(results[2], 0) end
+    return table.unpack(results, 2, results.n)
+  end
+
+  local function snapshotFrames(params)
     -- Several frames in one reply (#114): their RGBA one after another in one binary frame.
     if params.frames ~= nil then
       if type(params.frames) ~= "table" or #params.frames == 0 or #params.frames > 64 then
@@ -545,6 +567,11 @@ function M.new(opts)
       return { width = header.width, height = header.height, frames = list, layer = params.layer }, table.concat(parts)
     end
     return snapshot(params)   -- header, raw RGBA bytes
+  end
+
+  handlers.snapshot = function(params)
+    if params.exclude ~= nil and params.layer ~= nil then error("exclude leaves layers out of the whole sprite; drop layer") end
+    return withoutLayers(params.exclude, function() return snapshotFrames(params) end)
   end
 
   handlers.get_state = function()
@@ -909,7 +936,7 @@ function M.new(opts)
   local D = {
     -- A bytes param's bytes (base64 or a slice of the request's binary frame).
     bytes = function(v) return wireParams.bytes(v, blob, px.base64Decode) end,
-    px = px, view = view, layerById = layerById, variations = variations, wireParams = wireParams,
+    px = px, view = view, layerById = layerById, variations = variations, wireParams = wireParams, protocol = PROTOCOL,
     framesFromParam = framesFromParam, imageLayers = imageLayers,
     -- The request's sprite (#90): its site, one undo step on it, running with it active, moving its frame and layer.
     site = here, transaction = transaction, withActive = withActive, select = selectSite,
