@@ -41,3 +41,17 @@ You make key art and key poses in ComfyUI; the agent imports them into Aseprite 
 - **The same canvas and character size for every pose**, so one scale fits them all.
 - **OpenPose keypoints** (DWPose or OpenPose preprocessor plus a node that saves keypoints as JSON): the poses line up by the hips, and the joints become landmarks on the clip's keys.
 - **A mask per part** (segmentation, one per part prompt): each pose is cut into part layers, which is what lets `inbetween` move each limb. Without part layers the in-betweens are drawn by hand.
+
+## Checking it against a real server
+
+`node agent/tests/run_live.mjs --providers claude comfy` asks the agent to run a saved workflow (default `fox_pose`, with one image param `reference`) and import its pose with `poses_to_frames`; it prints SKIP when no ComfyUI answers. Comfy Desktop keeps its Python in `<install>/ComfyUI/.venv` (not `standalone-env`, which has no torch), so the server can also run without the Desktop window: `.venv/bin/python3 main.py --port 8188 --extra-model-paths-config "<Comfy Desktop>/instance-model-paths/<instance>.yaml"`.
+
+## Other ComfyUI agent tools
+
+The bridge talks to ComfyUI itself (`/prompt`, `/history`, `/view`, `/upload/image`), the same public API every ComfyUI MCP server wraps. Checked in November 2026:
+
+- **Comfy-Org/comfy-mcp** (official, Python over stdio, needs comfy-cli): runs workflows, searches nodes, models and templates, installs nodes and downloads models. Worth registering beside this bridge for setting up ComfyUI itself; the sprite workflows stay on the bridge's tools.
+- **Comfy Cloud MCP** (official, hosted): runs on cloud GPUs only, not a local server.
+- **comfy-agent** (`--enable-agent`, release candidate): a chat assistant inside the ComfyUI window, not a tool another agent can call.
+- **artokun/comfyui-mcp** and **joenorton/comfyui-mcp-server** (community): larger or less maintained; nothing the bridge lacks for this pipeline.
+- **ACP** (Agent Client Protocol): no ComfyUI support anywhere.
